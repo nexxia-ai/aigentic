@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	utils.LoadEnvFile("../../.env")
+	utils.LoadEnvFile("../.env")
 }
 
 // TestSimpleAddAndDelete tests basic file upload and delete functionality

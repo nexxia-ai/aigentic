@@ -228,7 +228,7 @@ func (fm *OpenAIFileManager) uploadToOpenAI(ctx context.Context, file *os.File, 
 		}
 
 		// Add purpose field
-		err = writer.WriteField("purpose", "assistants")
+		err = writer.WriteField("purpose", "user_data")
 		if err != nil {
 			return "", fmt.Errorf("failed to add purpose field: %w", err)
 		}

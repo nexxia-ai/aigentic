@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	loader.LoadEnvFile("../.env")
+	loader.LoadEnvFile("./.env")
 }
 
 // NewMagicNumberTool returns a SimpleTool struct for testing
@@ -38,7 +38,6 @@ func NewMagicNumberTool() ai.Tool {
 }
 
 func TestAgent_Basic(t *testing.T) {
-	loader.LoadEnvFile("../.env")
 	model := ai.NewOllamaModel("qwen3:1.7b", "")
 
 	emptyAgent := Agent{}
@@ -103,7 +102,6 @@ func TestAgent_Basic(t *testing.T) {
 }
 
 func TestAgent_Run(t *testing.T) {
-	loader.LoadEnvFile("../.env")
 	model := ai.NewOllamaModel("qwen3:1.7b", "")
 
 	agent := Agent{

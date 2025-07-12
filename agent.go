@@ -8,8 +8,7 @@ import (
 	"encoding/json"
 
 	"github.com/google/uuid"
-	"github.com/irai/rag/ai"
-	"github.com/irai/rag/loader"
+	"github.com/nexxia-ai/aigentic/ai"
 )
 
 // Attachment represents a file attachment for LLM requests
@@ -48,7 +47,6 @@ type Agent struct {
 	// Agent Streaming
 	Stream bool
 
-	Loader      *loader.DocumentLoader
 	Attachments []Attachment // Slice of attachments to include in LLM requests
 
 	// Run history
@@ -176,13 +174,13 @@ func (a *Agent) generate(message string) (string, error) {
 	}
 	a.run.generateCounter++
 
-	userMsg := a.createUserMsg(message)
+	userMsgs := a.createUserMsg2(message)
 	sysMsg := a.createSystemMessage("")
 
 	msgs := []ai.Message{
 		ai.SystemMessage{Role: ai.SystemRole, Content: sysMsg},
-		ai.UserMessage{Role: ai.UserRole, Content: userMsg},
 	}
+	msgs = append(msgs, userMsgs...)
 	msgs = append(msgs, a.run.msgHistory...)
 	if a.Trace != nil {
 		a.Trace.LLMCall(a.Model.ModelName, a.Name, msgs)
@@ -337,4 +335,29 @@ func (a *Agent) createUserMsg(message string) string {
 		message += "\n</attachments>\n"
 	}
 	return message
+}
+
+// createUserMsg2 returns a list of Messages, with each attachment as a separate Resource message
+func (a *Agent) createUserMsg2(message string) []ai.Message {
+	var messages []ai.Message
+
+	// Add the main user message if there's content
+	if message != "" {
+		userMsg := ai.UserMessage{Role: ai.UserRole, Content: message}
+		messages = append(messages, userMsg)
+	}
+
+	// Add each attachment as a separate message with the file content
+	for _, attachment := range a.Attachments {
+		attachmentMsg := ai.ResourceMessage{
+			Role: ai.UserRole,
+			URI:  "",
+			Name: attachment.Name,
+			Body: attachment.Content,
+			Type: attachment.Type,
+		}
+		messages = append(messages, attachmentMsg)
+	}
+
+	return messages
 }

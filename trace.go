@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/irai/rag/ai"
+	"github.com/nexxia-ai/aigentic/ai"
 )
 
 // Trace stores the execution trace of an LLM.
@@ -63,31 +63,62 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 	fmt.Fprintf(t.file, "\n====> [%s] Start %s (%s)\n", time.Now().Format("15:04:05"), agentName, modelName)
 
 	for _, message := range messages {
-		role, content := message.Value()
+		role, _ := message.Value()
 		fmt.Fprintf(t.file, "⬆️  %s:\n", role)
 
-		// Split long messages into multiple lines for readability
-		if content != "" {
-			lines := strings.Split(content, "\n")
-			fmt.Fprintf(t.file, " content:\n")
-			for _, line := range lines {
-				if line != "" {
-					fmt.Fprintf(t.file, "   %s\n", line)
-				}
+		// Handle each message type specifically
+		switch msg := message.(type) {
+		case ai.UserMessage:
+			t.logMessageContent("content", msg.Content)
+		case ai.SystemMessage:
+			t.logMessageContent("content", msg.Content)
+		case ai.AIMessage:
+			t.logMessageContent("content", msg.Content)
+			if msg.Think != "" {
+				t.logMessageContent("thinking", msg.Think)
 			}
-		}
-
-		if aiMsg, ok := message.(ai.AIMessage); ok && aiMsg.Think != "" {
-			fmt.Fprintf(t.file, " thinking:\n")
-			lines := strings.Split(aiMsg.Think, "\n")
-			for _, line := range lines {
-				if line != "" {
-					fmt.Fprintf(t.file, "   %s\n", line)
-				}
+		case ai.ToolMessage:
+			t.logMessageContent("content", msg.Content)
+			fmt.Fprintf(t.file, " tool_call_id: %s\n", msg.ToolCallID)
+		case ai.ResourceMessage:
+			var contentLen int
+			if body, ok := msg.Body.([]byte); ok && body != nil {
+				contentLen = len(body)
+			} else {
+				contentLen = len(msg.Name)
 			}
+			fmt.Fprintf(t.file, " resource: %s (content length: %d)\n", msg.Name, contentLen)
+			if msg.URI != "" {
+				fmt.Fprintf(t.file, " uri: %s\n", msg.URI)
+			}
+			if msg.MIMEType != "" {
+				fmt.Fprintf(t.file, " mime_type: %s\n", msg.MIMEType)
+			}
+			if msg.Description != "" {
+				fmt.Fprintf(t.file, " description: %s\n", msg.Description)
+			}
+		default:
+			// Fallback for unknown message types
+			_, content := message.Value()
+			t.logMessageContent("content", content)
 		}
 	}
 	return nil
+}
+
+// logMessageContent is a helper method to format and log message content
+func (t *Trace) logMessageContent(contentType, content string) {
+	if content == "" {
+		return
+	}
+
+	fmt.Fprintf(t.file, " %s:\n", contentType)
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		if line != "" {
+			fmt.Fprintf(t.file, "   %s\n", line)
+		}
+	}
 }
 
 // FinishLLMInteraction adds a closing line to mark the end of an LLM interaction

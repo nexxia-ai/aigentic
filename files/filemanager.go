@@ -88,8 +88,21 @@ func (fm *OpenAIFileManager) AddFile(ctx context.Context, filePath string) (*Fil
 	return fileInfo, nil
 }
 
-// ListFiles retrieves all files from OpenAI and returns them
-func (fm *OpenAIFileManager) ListFiles(ctx context.Context) ([]FileInfo, error) {
+// ListFiles retrieves files created by this instance
+func (fm *OpenAIFileManager) ListFiles() []FileInfo {
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
+
+	files := make([]FileInfo, 0, len(fm.files))
+	for _, file := range fm.files {
+		files = append(files, file)
+	}
+
+	return files
+}
+
+// ListAllFiles retrieves all files from OpenAI and returns them
+func (fm *OpenAIFileManager) ListAllFiles(ctx context.Context) ([]FileInfo, error) {
 	// Retry logic for server errors
 	maxRetries := 3
 	for attempt := 1; attempt <= maxRetries; attempt++ {

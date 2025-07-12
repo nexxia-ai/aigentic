@@ -198,10 +198,7 @@ func TestOpenAIFileManagerRealIntegration(t *testing.T) {
 	// Test 3: List files from OpenAI
 	t.Run("ListFiles", func(t *testing.T) {
 		// List all files
-		files, err := fileManager.ListFiles(context.Background())
-		if err != nil {
-			t.Fatalf("Failed to list files: %v", err)
-		}
+		files := fileManager.ListFiles()
 
 		t.Logf("Found %d files in OpenAI account", len(files))
 

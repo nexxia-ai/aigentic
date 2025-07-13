@@ -300,7 +300,14 @@ func openAIConvertMessages(messages []Message) []OpenAIMessage {
 				}
 				openaiMessages[i].Content = contentParts
 			default:
-				openaiMessages[i].Content = r.Body
+				// Handle text content by converting bytes to string to avoid base64 encoding
+				if bodyBytes, ok := r.Body.([]byte); ok {
+					openaiMessages[i].Content = string(bodyBytes)
+				} else if bodyStr, ok := r.Body.(string); ok {
+					openaiMessages[i].Content = bodyStr
+				} else {
+					openaiMessages[i].Content = r.Body
+				}
 			}
 		default:
 			panic(fmt.Sprintf("unsupported message type: %T - check that message is not a pointer", r))

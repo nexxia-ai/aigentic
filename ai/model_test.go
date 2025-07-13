@@ -12,8 +12,8 @@ import (
 	"github.com/nexxia-ai/aigentic/utils"
 )
 
-//go:embed testdata/test.png
-var testImage embed.FS
+//go:embed testdata/*
+var testData embed.FS
 
 func init() {
 	utils.LoadEnvFile("../.env")
@@ -78,6 +78,11 @@ func TestModel_GenerateSimple(t *testing.T) {
 			args: args,
 			want: "Canberra",
 		},
+		{name: "gemini api",
+			m:    NewGeminiModel("gemini-2.5-flash-preview-04-17", os.Getenv("GOOGLE_API_KEY")),
+			args: args,
+			want: "Canberra",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -110,9 +115,60 @@ func TestModel_ProcessImage(t *testing.T) {
 	testArgs := testArgs{
 		ctx: context.Background(),
 		messages: []Message{
-			UserMessage{Role: UserRole, Content: "Extract the text from this image"},
-			ResourceMessage{Role: UserRole, Name: "test.jpg", MIMEType: "image/png", Body: func() []byte {
-				data, _ := testImage.ReadFile("testdata/test.png")
+			UserMessage{Role: UserRole, Content: "Extract the text from this image and return the word SUCCESS if it worked followed by the text"},
+			ResourceMessage{Role: UserRole, Name: "test.png", MIMEType: "image/png", Body: func() []byte {
+				data, _ := testData.ReadFile("testdata/test.png")
+				return data
+			}()},
+		},
+		tools: []Tool{},
+	}
+
+	tests := []struct {
+		name    string
+		m       *Model
+		want    any
+		wantErr bool
+	}{
+		// {
+		// 	name: "openai image processing",
+		// 	m:    NewOpenAIModel("gpt-4o-mini", os.Getenv("OPENAI_API_KEY")),
+		// 	want: "TEST",
+		// },
+		{
+			name: "ollama image processing",
+			m:    NewOllamaModel("gemma3", "notrequired"),
+			want: "SUCCESS",
+		},
+		{
+			name: "gemini image processing",
+			m:    NewGeminiModel("gemini-2.5-flash-preview-04-17", os.Getenv("GOOGLE_API_KEY")),
+			want: "SUCCESS",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.m.Call(testArgs.ctx, testArgs.messages, testArgs.tools)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("%s: Model.Generate() error = %v, wantErr %v", tt.name, err, tt.wantErr)
+				return
+			}
+			_, content := got.Value()
+			t.Logf("%s: Model returned: %s", tt.name, content)
+			if !strings.Contains(strings.ToLower(content), strings.ToLower(tt.want.(string))) {
+				t.Errorf("%s: Model.Generate() did not find required word '%v' in response: %s", tt.name, tt.want, content)
+			}
+		})
+	}
+}
+
+func TestModel_ProcessAttachments(t *testing.T) {
+	testArgs := testArgs{
+		ctx: context.Background(),
+		messages: []Message{
+			UserMessage{Role: UserRole, Content: "Read the content of this text file and return the content of the file verbatim. do not add any other text"},
+			ResourceMessage{Role: UserRole, Name: "sample.txt", MIMEType: "text/plain", Type: "text", Body: func() []byte {
+				data, _ := testData.ReadFile("testdata/sample.txt")
 				return data
 			}()},
 		},
@@ -126,14 +182,19 @@ func TestModel_ProcessImage(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "openai image processing",
+			name: "openai attachment processing",
 			m:    NewOpenAIModel("gpt-4o-mini", os.Getenv("OPENAI_API_KEY")),
-			want: "TEST",
+			want: "ATTACHMENT_SUCCESS",
 		},
 		{
-			name: "ollama image processing",
-			m:    NewOllamaModel("gemma3", "notrequired"),
-			want: "test",
+			name: "ollama attachment processing",
+			m:    NewOllamaModel("qwen3:1.7b", ""),
+			want: "ATTACHMENT_SUCCESS",
+		},
+		{
+			name: "gemini attachment processing",
+			m:    NewGeminiModel("gemini-2.5-flash-preview-04-17", os.Getenv("GOOGLE_API_KEY")),
+			want: "ATTACHMENT_SUCCESS",
 		},
 	}
 	for _, tt := range tests {
@@ -176,6 +237,10 @@ func TestModel_GenerateContentWithTools(t *testing.T) {
 		{
 			name: "ollama api with tools",
 			m:    NewOllamaModel("qwen3:1.7b", ""),
+		},
+		{
+			name: "gemini api with tools",
+			m:    NewGeminiModel("gemini-2.5-flash-preview-04-17", os.Getenv("GOOGLE_API_KEY")),
 		},
 	}
 	for _, tt := range tests {

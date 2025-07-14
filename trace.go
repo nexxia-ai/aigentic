@@ -81,13 +81,37 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 			t.logMessageContent("content", msg.Content)
 			fmt.Fprintf(t.file, " tool_call_id: %s\n", msg.ToolCallID)
 		case ai.ResourceMessage:
+			// Determine if this is a file ID reference or has content
+			var isFileID bool
 			var contentLen int
+			var contentPreview string
+
 			if body, ok := msg.Body.([]byte); ok && body != nil {
+				// Has actual content
+				isFileID = false
 				contentLen = len(body)
+				if contentLen > 0 {
+					// Show first 64 characters of content
+					previewLen := 64
+					if contentLen < previewLen {
+						previewLen = contentLen
+					}
+					contentPreview = string(body[:previewLen])
+				}
 			} else {
+				// Likely a file ID reference
+				isFileID = true
 				contentLen = len(msg.Name)
 			}
-			fmt.Fprintf(t.file, " resource: %s (content length: %d)\n", msg.Name, contentLen)
+
+			// Log the resource type and basic info
+			if isFileID {
+				fmt.Fprintf(t.file, " resource: %s (file ID reference)\n", msg.Name)
+			} else {
+				fmt.Fprintf(t.file, " resource: %s (content length: %d)\n", msg.Name, contentLen)
+			}
+
+			// Log additional metadata
 			if msg.URI != "" {
 				fmt.Fprintf(t.file, " uri: %s\n", msg.URI)
 			}
@@ -96,6 +120,11 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 			}
 			if msg.Description != "" {
 				fmt.Fprintf(t.file, " description: %s\n", msg.Description)
+			}
+
+			// Log content preview if available
+			if contentPreview != "" {
+				t.logMessageContent("content_preview", contentPreview)
 			}
 		default:
 			// Fallback for unknown message types

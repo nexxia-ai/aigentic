@@ -79,7 +79,7 @@ func TestModel_GenerateSimple(t *testing.T) {
 			want: "Canberra",
 		},
 		{name: "gemini api",
-			m:    NewGeminiModel("gemini-2.5-flash-preview-04-17", os.Getenv("GOOGLE_API_KEY")),
+			m:    NewGeminiModel("gemini-2.5-flash", os.Getenv("GOOGLE_API_KEY")),
 			args: args,
 			want: "Canberra",
 		},

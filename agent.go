@@ -82,15 +82,15 @@ func (a *Agent) init(message string) error {
 	if a.Model == nil {
 		a.Model = ai.NewOpenAIModel("gpt-4o-mini", "")
 	}
-	a.Session = NewSession(a)
+	if a.Session == nil {
+		a.Session = NewSession()
+	}
 	a.run = &RunResponse{
 		Agent:   a.Name,
 		Session: a.Session,
 	}
-	if a.Session.Trace != nil {
+	if a.Trace == nil && a.Session.Trace != nil {
 		a.Trace = a.Session.Trace
-	} else {
-		a.Session.Trace = a.Trace
 	}
 	for _, aa := range a.Agents {
 		aa.Session = a.Session

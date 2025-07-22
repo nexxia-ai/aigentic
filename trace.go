@@ -2,39 +2,77 @@ package aigentic
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 )
+
+const (
+	defaultTraceDirectory    = "traces"
+	defaultRetentionDuration = 7 * 24 * time.Hour
+	defaultMaxTraceFiles     = 10
+)
+
+type TraceConfig struct {
+	SessionID         string
+	Directory         string
+	RetentionDuration time.Duration
+	MaxTraceFiles     int
+}
 
 // Trace stores the execution trace of an LLM.
 type Trace struct {
 	sync.Mutex
-	SessionID string    // Unique session ID for the entire interaction
-	StartTime time.Time // Start time of the trace
-	EndTime   time.Time // End time of the trace
-	filename  string    // Path to the trace file
-	file      *os.File  // File to write traces to
+	SessionID         string        // Unique session ID for the entire interaction
+	StartTime         time.Time     // Start time of the trace
+	EndTime           time.Time     // End time of the trace
+	directory         string        // Path to the trace directory
+	filename          string        // Path to the trace file
+	file              *os.File      // File to write traces to
+	RetentionDuration time.Duration // How long to keep traces
+	MaxTraceFiles     int           // Maximum number of files to keep
 }
 
-// NewTrace creates a new Trace instance.
-func NewTrace() *Trace {
-	directory := "traces"
+// NewTrace creates a new Trace instance with default cleanup settings.
+func NewTrace(config ...TraceConfig) *Trace {
+	cfg := TraceConfig{
+		Directory:         defaultTraceDirectory,
+		RetentionDuration: defaultRetentionDuration,
+		MaxTraceFiles:     defaultMaxTraceFiles,
+		SessionID:         uuid.New().String(),
+	}
+
+	if len(config) > 0 {
+		if config[0].Directory != "" {
+			cfg.Directory = config[0].Directory
+		}
+		if config[0].RetentionDuration > 0 {
+			cfg.RetentionDuration = config[0].RetentionDuration
+		}
+		if config[0].MaxTraceFiles > 0 {
+			cfg.MaxTraceFiles = config[0].MaxTraceFiles
+		}
+		if config[0].SessionID != "" {
+			cfg.SessionID = config[0].SessionID
+		}
+	}
 
 	// Create the trace directory if it doesn't exist
-	if _, err := os.Stat(directory); os.IsNotExist(err) {
-		if err := os.MkdirAll(directory, 0755); err != nil {
+	if _, err := os.Stat(cfg.Directory); os.IsNotExist(err) {
+		if err := os.MkdirAll(cfg.Directory, 0755); err != nil {
+			slog.Error("Failed to create trace directory", "directory", cfg.Directory, "error", err)
 			return nil
 		}
 	}
 
-	sessionID := time.Now().Format("20060102150405") // Unique session ID
-	filename := filepath.Join(directory, fmt.Sprintf("trace-%s.txt", sessionID))
+	filename := filepath.Join(cfg.Directory, fmt.Sprintf("trace-%s.txt", cfg.SessionID))
 
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -42,13 +80,83 @@ func NewTrace() *Trace {
 	}
 
 	t := &Trace{
-		SessionID: sessionID,
-		StartTime: time.Now(),
-		filename:  filename,
-		file:      file,
+		SessionID:         cfg.SessionID,
+		StartTime:         time.Now(),
+		filename:          filename,
+		file:              file,
+		directory:         cfg.Directory,
+		RetentionDuration: cfg.RetentionDuration,
+		MaxTraceFiles:     cfg.MaxTraceFiles,
 	}
+	t.Cleanup()
 
 	return t
+}
+
+// Cleanup removes old trace files based on retention policy
+func (t *Trace) Cleanup() {
+	entries, err := os.ReadDir(t.directory)
+	if err != nil {
+		slog.Error("Failed to read trace directory", "error", err)
+		return
+	}
+
+	var traceFiles []struct {
+		path    string
+		modTime time.Time
+	}
+
+	cutoffTime := time.Now().Add(-t.RetentionDuration)
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "trace-") || !strings.HasSuffix(entry.Name(), ".txt") {
+			continue
+		}
+
+		filePath := filepath.Join(t.directory, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		traceFiles = append(traceFiles, struct {
+			path    string
+			modTime time.Time
+		}{
+			path:    filePath,
+			modTime: info.ModTime(),
+		})
+	}
+
+	// Sort by modification time (oldest first)
+	sort.Slice(traceFiles, func(i, j int) bool {
+		return traceFiles[i].modTime.Before(traceFiles[j].modTime)
+	})
+
+	// Remove files older than retention duration
+	if t.RetentionDuration > 0 {
+		for _, file := range traceFiles {
+			if file.modTime.Before(cutoffTime) {
+				if err := os.Remove(file.path); err != nil {
+					slog.Error("Failed to remove old trace file", "file", file.path, "error", err)
+				} else {
+					slog.Debug("Removed old trace file", "file", filepath.Base(file.path))
+				}
+			}
+		}
+	}
+
+	// If we still have too many files, remove the oldest ones
+	if t.MaxTraceFiles > 0 && len(traceFiles) > t.MaxTraceFiles {
+		filesToRemove := len(traceFiles) - t.MaxTraceFiles
+		for i := 0; i < filesToRemove && i < len(traceFiles); i++ {
+			if err := os.Remove(traceFiles[i].path); err != nil {
+				slog.Error("Failed to remove excess trace file", "file", traceFiles[i].path, "error", err)
+			} else {
+				slog.Debug("Removed excess trace file", "file", filepath.Base(traceFiles[i].path))
+			}
+		}
+	}
 }
 
 // LLMCall records the initial interaction with the LLM (model and messages).
@@ -60,7 +168,7 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 	t.Lock()
 	defer t.Unlock()
 
-	fmt.Fprintf(t.file, "\n====> [%s] Start %s (%s)\n", time.Now().Format("15:04:05"), agentName, modelName)
+	fmt.Fprintf(t.file, "\n====> [%s] Start %s (%s) sessionID: %s\n", time.Now().Format("15:04:05"), agentName, modelName, t.SessionID)
 
 	for _, message := range messages {
 		role, _ := message.Value()
@@ -229,7 +337,7 @@ func (t *Trace) RecordError(err error) error {
 }
 
 // End ends the trace and saves the trace information to a file.
-func (t *Trace) End() error {
+func (t *Trace) Close() error {
 	if t == nil {
 		return nil
 	}
@@ -247,6 +355,6 @@ func (t *Trace) End() error {
 		return err
 	}
 
-	log.Printf("Trace saved to %s\n", t.filename)
+	slog.Debug("Trace saved", "file", t.filename)
 	return nil
 }

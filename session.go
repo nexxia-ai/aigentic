@@ -32,7 +32,7 @@ type Session struct {
 }
 
 // NewSession creates a new session with default settings
-func NewSession(a *Agent) *Session {
+func NewSession() *Session {
 	s := &Session{
 		ID:        uuid.New().String(),
 		Context:   context.Background(),
@@ -40,9 +40,6 @@ func NewSession(a *Agent) *Session {
 		UpdatedAt: time.Now(),
 		State:     make(map[string]interface{}),
 		Logger:    slog.New(slog.NewTextHandler(os.Stdout, nil)),
-	}
-	if a.Trace != nil {
-		s.Trace = a.Trace
 	}
 	return s
 }

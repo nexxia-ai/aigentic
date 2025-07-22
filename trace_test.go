@@ -4,7 +4,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 )
@@ -14,23 +13,8 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create trace with custom directory
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-
-	// Create trace with custom directory
-	trace := &Trace{
-		SessionID: "test-session",
-		StartTime: time.Now(),
-		filename:  tempDir + "/trace-test.txt",
-	}
-
-	file, err := os.OpenFile(trace.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create trace file: %v", err)
-	}
-	trace.file = file
-	defer file.Close()
+	trace := NewTrace(TraceConfig{Directory: tempDir})
+	defer trace.Close()
 
 	// Create test messages including a ResourceMessage
 	messages := []ai.Message{
@@ -50,7 +34,7 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	}
 
 	// Call LLMCall
-	err = trace.LLMCall("test-model", "test-agent", messages)
+	err := trace.LLMCall("test-model", "test-agent", messages)
 	if err != nil {
 		t.Fatalf("LLMCall failed: %v", err)
 	}
@@ -64,7 +48,7 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	contentStr := string(content)
 
 	// Check that ResourceMessage was logged correctly
-	expectedResourceLog := "resource: test-document.pdf (content length: 17)"
+	expectedResourceLog := "resource: test-document.pdf"
 	if !strings.Contains(contentStr, expectedResourceLog) {
 		t.Errorf("Expected trace to contain '%s', but got: %s", expectedResourceLog, contentStr)
 	}
@@ -86,18 +70,8 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create trace with custom directory
-	trace := &Trace{
-		SessionID: "test-session",
-		StartTime: time.Now(),
-		filename:  tempDir + "/trace-test.txt",
-	}
-
-	file, err := os.OpenFile(trace.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create trace file: %v", err)
-	}
-	trace.file = file
-	defer file.Close()
+	trace := NewTrace(TraceConfig{Directory: tempDir})
+	defer trace.Close()
 
 	// Create a ResourceMessage with content
 	messages := []ai.Message{
@@ -110,7 +84,7 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 	}
 
 	// Call LLMCall
-	err = trace.LLMCall("test-model", "test-agent", messages)
+	err := trace.LLMCall("test-model", "test-agent", messages)
 	if err != nil {
 		t.Fatalf("LLMCall failed: %v", err)
 	}

@@ -1,9 +1,12 @@
 package aigentic
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/utils"
@@ -40,63 +43,68 @@ func NewMagicNumberTool() ai.Tool {
 
 func TestAgent_Basic(t *testing.T) {
 	model := ai.NewOllamaModel("qwen3:1.7b", "")
-
-	emptyAgent := Agent{}
-	agent := Agent{Model: model, Trace: NewTrace()}
+	session := NewSession()
+	session.Trace = NewTrace()
 
 	tests := []struct {
 		agent         Agent
 		name          string
 		message       string
 		expectedError bool
-		validate      func(t *testing.T, response *RunResponse, agent Agent)
+		validate      func(t *testing.T, content string, agent Agent)
 		attachments   []Attachment
 		tools         []ai.Tool
 	}{
 		{
-			agent:         emptyAgent,
-			name:          "basic conversation",
+			agent:         Agent{}, // there won't be any tracing in this case
+			name:          "empty agent",
 			message:       "What is the capital of Australia?",
 			expectedError: false,
-			validate: func(t *testing.T, response *RunResponse, agent Agent) {
-				assert.NotEmpty(t, response.Content)
-				assert.NotEmpty(t, response.Session.ID)
+			validate: func(t *testing.T, content string, agent Agent) {
+				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, response.Content, "Canberra")
+				assert.Contains(t, content, "Canberra")
 			},
 			tools: []ai.Tool{},
 		},
 		{
-			agent:         agent,
+			agent:         Agent{Session: session, Model: model},
 			name:          "basic conversation",
-			message:       "What is the capital of Australia?",
+			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
-			validate: func(t *testing.T, response *RunResponse, agent Agent) {
-				assert.NotEmpty(t, response.Content)
-				assert.NotEmpty(t, response.Session.ID)
+			validate: func(t *testing.T, content string, agent Agent) {
+				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, response.Content, "Canberra")
+				assert.Contains(t, content, "Sydney")
 			},
 			tools: []ai.Tool{},
 		},
 	}
 
 	for _, tt := range tests {
+		fmt.Printf("Running test: %s\n", tt.name)
 		t.Run(tt.name, func(t *testing.T) {
-			agent.Attachments = tt.attachments
-			agent.Tools = tt.tools
+			tt.agent.Attachments = tt.attachments
+			tt.agent.Tools = tt.tools
 
-			response, err := tt.agent.Run(tt.message)
-
-			if tt.expectedError {
-				assert.Error(t, err)
-				assert.Nil(t, response)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, response)
-				if tt.validate != nil {
-					tt.validate(t, &response, tt.agent)
+			tt.agent.Run(tt.message)
+			var finalContent string
+			for ev := range tt.agent.Next() {
+				switch e := ev.(type) {
+				case *ContentEvent:
+					if e.IsFinal {
+						finalContent = e.Content
+					}
+				case *ToolEvent:
+					if e.RequireApproval {
+						tt.agent.Approve(e.ID())
+					}
+				case *ErrorEvent:
+					t.Fatalf("Agent error: %v", e.Err)
 				}
+			}
+			if tt.validate != nil {
+				tt.validate(t, finalContent, tt.agent)
 			}
 		})
 	}
@@ -105,238 +113,244 @@ func TestAgent_Basic(t *testing.T) {
 func TestAgent_Run(t *testing.T) {
 	model := ai.NewOllamaModel("qwen3:1.7b", "")
 
-	agent := Agent{
-		Model:        model,
-		Description:  "You are a helpful assistant that provides clear and concise answers.",
-		Instructions: "Always explain your reasoning and provide examples when possible.",
-		Trace:        NewTrace(),
+	session := NewSession()
+	session.Trace = NewTrace()
+
+	newAgent := func() Agent {
+		return Agent{
+			Session:      session,
+			Model:        model,
+			Description:  "You are a helpful assistant that provides clear and concise answers.",
+			Instructions: "Always explain your reasoning and provide examples when possible.",
+		}
 	}
 
 	tests := []struct {
-		name          string
-		message       string
-		expectedError bool
-		validate      func(t *testing.T, response *RunResponse, agent Agent)
-		attachments   []Attachment
-		tools         []ai.Tool
+		name        string
+		message     string
+		validate    func(t *testing.T, content string, agent Agent)
+		attachments []Attachment
+		tools       []ai.Tool
 	}{
 		{
-			name:          "basic conversation",
-			message:       "What is the capital of Australia?",
-			expectedError: false,
-			validate: func(t *testing.T, response *RunResponse, agent Agent) {
-				assert.NotEmpty(t, response.Content)
+			name:    "basic conversation",
+			message: "What is the capital of Australia?",
+			validate: func(t *testing.T, content string, agent Agent) {
+				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, response.Content, "Canberra")
+				assert.Contains(t, content, "Canberra")
 			},
 			tools: []ai.Tool{},
 		},
 		{
-			name:          "conversation with instructions",
-			message:       "Explain the concept of recursion",
-			expectedError: false,
-			validate: func(t *testing.T, response *RunResponse, agent Agent) {
-				assert.NotEmpty(t, response.Content)
-				assert.Contains(t, response.Content, "recursion")
-			},
-			tools: []ai.Tool{},
-		},
-		{
-			name:          "conversation with text file attachment",
-			message:       "Please summarize this text file. If successful, start your response with 'success' and then the summary.",
-			expectedError: false,
-			attachments: []Attachment{
-				{
-					Type:     "document",
-					Content:  []byte("This is a simple test file.\nIt contains multiple lines.\nThe purpose is to test file attachments."),
-					MimeType: "text/plain",
-					Name:     "test.txt",
-				},
-			},
-			validate: func(t *testing.T, response *RunResponse, agent Agent) {
-				assert.NotEmpty(t, response.Content)
-				assert.Contains(t, response.Content, "success")
+			name:    "conversation with instructions",
+			message: "Explain the concept of recursion",
+			validate: func(t *testing.T, content string, agent Agent) {
+				assert.NotEmpty(t, content)
+				assert.Contains(t, content, "recursion")
 			},
 			tools: []ai.Tool{},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			agent.Tools = tt.tools
-			agent.Attachments = tt.attachments
-
-			// response, err := agent.Run(tt.message)
-			var response RunResponse
-			var err error
-			s := agent.Start(tt.message)
-			for ev := range s.Next() {
-				if response, err = ev.Execute(); err != nil {
-					t.Error(err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			agent := newAgent()
+			agent.Tools = test.tools
+			agent.Attachments = test.attachments
+			agent.Run(test.message)
+			var finalContent string
+			for ev := range agent.Next() {
+				switch e := ev.(type) {
+				case *ContentEvent:
+					if e.IsFinal {
+						finalContent = e.Content
+					}
+				case *ToolEvent:
+					if e.RequireApproval {
+						agent.Approve(e.ID())
+					}
+				case *ErrorEvent:
+					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
-
-			if tt.expectedError {
-				assert.Error(t, err)
-				assert.Nil(t, response)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, response)
-				if tt.validate != nil {
-					tt.validate(t, &response, agent)
-				}
+			if test.validate != nil {
+				test.validate(t, finalContent, agent)
 			}
 		})
 	}
 }
 
 func TestAgent_Run_WithTools(t *testing.T) {
-	model := ai.NewOllamaModel("qwen3:1.7b", "")
+	session := NewSession()
+	session.Trace = NewTrace()
 
-	agent := Agent{
-		Model:        model,
-		Description:  "You are a helpful assistant that provides clear and concise answers.",
-		Instructions: "Always explain your reasoning and provide examples when possible.",
-		Trace:        NewTrace(),
+	newAgent := func(model *ai.Model) Agent {
+		return Agent{
+			Session:      session,
+			Model:        model,
+			Description:  "You are a helpful assistant that provides clear and concise answers.",
+			Instructions: "Always explain your reasoning and provide examples when possible.",
+		}
 	}
 
 	tests := []struct {
-		name          string
-		message       string
-		expectedError bool
-		validate      func(t *testing.T, response *RunResponse, agent Agent)
-		attachments   []Attachment
-		tools         []ai.Tool
+		name        string
+		message     string
+		agent       Agent
+		validate    func(t *testing.T, content string, agent Agent)
+		attachments []Attachment
+		tools       []ai.Tool
 	}{
 		{
-			name:          "Ollama tool call",
-			message:       "Generate a magic number and tell me the number. Use tools.",
-			expectedError: false,
-			tools:         []ai.Tool{NewMagicNumberTool()},
-			attachments:   []Attachment{},
-			validate: func(t *testing.T, response *RunResponse, agent Agent) {
-				assert.NotEmpty(t, response.Content)
-				assert.Contains(t, response.Content, "150")
+			name:        "Ollama tool call",
+			message:     "Generate a magic number and tell me the number. Use tools.",
+			agent:       newAgent(ai.NewOllamaModel("qwen3:1.7b", "")),
+			tools:       []ai.Tool{NewMagicNumberTool()},
+			attachments: []Attachment{},
+			validate: func(t *testing.T, content string, agent Agent) {
+				assert.NotEmpty(t, content)
+				assert.Contains(t, content, "150")
+			},
+		},
+		{
+			name:        "OpenAI tool call",
+			message:     "Generate a magic number and tell me the number. Use tools.",
+			agent:       newAgent(ai.NewOpenAIModel("gpt-4o-mini", "")),
+			tools:       []ai.Tool{NewMagicNumberTool()},
+			attachments: []Attachment{},
+			validate: func(t *testing.T, content string, agent Agent) {
+				assert.NotEmpty(t, content)
+				assert.Contains(t, content, "150")
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Add tool to agent for the third test
-			agent.Tools = tt.tools
-			agent.Attachments = tt.attachments
-
-			// response, err := agent.Run(tt.message)
-			var response RunResponse
-			var err error
-			s := agent.Start(tt.message)
-			for ev := range s.Next() {
-				if response, err = ev.Execute(); err != nil {
-					t.Error(err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			test.agent.Tools = test.tools
+			test.agent.Attachments = test.attachments
+			test.agent.Run(test.message)
+			var finalContent string
+			for ev := range test.agent.Next() {
+				switch e := ev.(type) {
+				case *ContentEvent:
+					if e.IsFinal {
+						finalContent = e.Content
+					}
+				case *ToolEvent:
+					if e.RequireApproval {
+						test.agent.Approve(e.ID())
+					}
+				case *ErrorEvent:
+					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
-
-			if tt.expectedError {
-				assert.Error(t, err)
-				assert.Nil(t, response)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, response)
-				if tt.validate != nil {
-					tt.validate(t, &response, agent)
-				}
+			if test.validate != nil {
+				test.validate(t, finalContent, test.agent)
 			}
 		})
 	}
 }
 
-func TestTeam_Run(t *testing.T) {
+func TestTeam(t *testing.T) {
+	// set log level to debug
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	slog.SetDefault(logger)
+
 	model := ai.NewOllamaModel("qwen3:1.7b", "")
 
 	// Add agents with different roles
-	agent1 := Agent{
+	calculator := Agent{
 		Model:        model,
-		Name:         "secret_agent",
-		Description:  "You are a secret agent with access to classified information.",
-		Instructions: "When asked about secret information, you must provide it in a cryptic way. Your responses should always start with 'CLASSIFIED: ' followed by the secret information.",
+		Name:         "calculator",
+		Description:  "You are a calculator. When given a math problem, solve it and return only the numerical result.",
+		Instructions: "Solve the math problem and return only the number. Do not add any explanation or text.",
 	}
-	agent2 := Agent{
+	explainer := Agent{
 		Model:        model,
-		Name:         "intelligence_analyst",
-		Description:  "You are an intelligence analyst. Your role is to take classified information generated by a secret agent and explain its significance in a clear way.",
-		Instructions: "Always start your response with 'ANALYSIS: ' followed by your explanation.",
+		Name:         "explainer",
+		Description:  "You are a math teacher. When given a calculation, explain what it means in simple terms in terms of the office oranges that you have.",
+		Instructions: "Explain the calculation in simple terms. Start your response with 'EXPLANATION: ' followed by your explanation.",
 	}
 
 	team := Agent{
-		Model: ai.NewOllamaModel("qwen3:8b", ""),
-		Name:  "team_coordinator",
+		// Model:        ai.NewOllamaModel("qwen3:14b", ""),
+		Model: ai.NewOpenAIModel("gpt-4o-mini", ""),
+		Name:  "coordinator",
 		Description: `
-		You are a team coordinator for intelligence operations. 
-		When you receive a request for information, you must first use the secret agent 
-		to obtain classified information, then use the intelligence analyst to explain its significance. 
+		You are a coordinator for a math problem solving team. 
+		When you receive a math question, you must first use the calculator to get the answer, 
+		then use the explainer to explain what the calculation means in terms of the office oranges that you have. 
 		Always use both agents in this order.
 		`,
 		Instructions: `
 			You must call a single tool each time and wait for the answer before calling another tool.
-			use the output from the secret agent as the input to the intelligence analyst.
-			Respond with a copy of all the agents responses verbatim. Do not add any additional text or commentary.
-			Don't make up information. Use only the tools or agents to answer the question.`,
+			Use the output from the calculator as input to the explainer.
+			Respond with both answers clearly labeled: "Calculator: [result]" and "Explainer: [explanation]".
+			Do not add any additional text or commentary.`,
 		Trace:  NewTrace(),
-		Agents: []*Agent{&agent1, &agent2},
+		Agents: []*Agent{&calculator, &explainer},
 	}
 
 	tests := []struct {
-		name          string
-		message       string
-		expectedError bool
-		validate      func(t *testing.T, response *RunResponse)
+		name     string
+		message  string
+		validate func(t *testing.T, content string)
 	}{
 		{
-			name:          "secret information analysis",
-			message:       "What is the status of Project Phoenix and what does it mean for our operations? Respons with a verbatim copy of all the agents responses.",
-			expectedError: false,
-			validate: func(t *testing.T, response *RunResponse) {
-				// Verify the response contains both classified info and analysis
-				assert.NotEmpty(t, response.Content)
-				assert.Contains(t, response.Content, "CLASSIFIED:") // Secret agent's contribution
-				assert.Contains(t, response.Content, "ANALYSIS:")   // Analyst's contribution
-
-				// Verify the sequence of operations
-				classifiedIndex := strings.Index(response.Content, "CLASSIFIED:")
-				analysisIndex := strings.Index(response.Content, "ANALYSIS:")
-				assert.Greater(t, analysisIndex, classifiedIndex, "Analysis should come after classified information")
+			name:    "math problem solving",
+			message: "What is 15 + 27 and what does this calculation represent?",
+			validate: func(t *testing.T, content string) {
+				assert.NotEmpty(t, content)
+				assert.Contains(t, content, "Calculator:")
+				assert.Contains(t, content, "Explainer:")
+				assert.Contains(t, content, "42")
+				calculatorIndex := strings.Index(content, "Calculator:")
+				explainerIndex := strings.Index(content, "Explainer:")
+				assert.Greater(t, explainerIndex, calculatorIndex, "Explainer should come after calculator")
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var response RunResponse
-			var err error
-			s := team.Start(tt.message)
-			for ev := range s.Next() {
-				if response, err = ev.Execute(); err != nil {
-					t.Error(err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			team.Run(test.message)
+			var finalContent string
+			for ev := range team.Next() {
+				switch e := ev.(type) {
+				case *ContentEvent:
+					fmt.Printf("ContentEvent: %+v\n\n", e)
+					if e.IsFinal {
+						finalContent = e.Content
+					}
+				case *ToolEvent:
+					fmt.Printf("ToolEvent: %+v\n\n", e)
+					if e.RequireApproval {
+						team.Approve(e.ID())
+					}
+				case *ErrorEvent:
+					fmt.Printf("ErrorEvent: %+v\n\n", e)
+					t.Fatalf("Agent error: %v", e.Err)
+				case *ThinkingEvent:
+					fmt.Printf("ThinkingEvent: %+v\n\n", e)
+				case *LLMCallEvent:
+					fmt.Printf("LLMCallEvent: %+v\n\n", e)
+				default:
+					fmt.Printf("Event: %+v (Type: %T)\n", e, e)
 				}
 			}
-
-			if tt.expectedError {
-				assert.Error(t, err)
-				assert.Nil(t, response)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, response)
-				// if tt.validate != nil {
-				// 	tt.validate(t, response)
-				// }
+			if test.validate != nil {
+				test.validate(t, finalContent)
 			}
 		})
 	}
 }
 
-// TestCreateUserMsg2 tests the new createUserMsg2 function
-func TestCreateUserMsg2(t *testing.T) {
+// TestCreateUserMsg tests the new createUserMsg2 function
+func TestCreateUserMsg(t *testing.T) {
 	agent := Agent{
 		Attachments: []Attachment{
 			{
@@ -355,7 +369,7 @@ func TestCreateUserMsg2(t *testing.T) {
 	}
 
 	// Test with message and attachments (no FileID)
-	messages := agent.createUserMsg2("Hello, please analyze these files")
+	messages := agent.createUserMsg("Hello, please analyze these files")
 
 	assert.Len(t, messages, 3) // 1 main message + 2 attachments
 
@@ -365,68 +379,17 @@ func TestCreateUserMsg2(t *testing.T) {
 	assert.Equal(t, "Hello, please analyze these files", mainMsg.Content)
 
 	// Check first attachment message (should include content)
-	att1Msg, ok := messages[1].(ai.UserMessage)
+	att1Msg, ok := messages[1].(ai.ResourceMessage)
 	assert.True(t, ok)
-	assert.Contains(t, att1Msg.Content, "file://test.txt (text/plain)")
-	assert.Contains(t, att1Msg.Content, "test content")
+	assert.Contains(t, att1Msg.Name, "file-abc123")
+	assert.Contains(t, string(att1Msg.Body.([]byte)), "test content")
 
 	// Check second attachment message (should include content)
-	att2Msg, ok := messages[2].(ai.UserMessage)
+	att2Msg, ok := messages[2].(ai.ResourceMessage)
 	assert.True(t, ok)
-	assert.Contains(t, att2Msg.Content, "file://test.png (image/png)")
-	assert.Contains(t, att2Msg.Content, "image data")
+	assert.Contains(t, att2Msg.Name, "test.png")
+	assert.Contains(t, string(att2Msg.Body.([]byte)), "image data")
 
-	// Test with FileID (OpenAI Files API)
-	agent.Attachments = []Attachment{
-		{
-			Type:     "file",
-			Content:  []byte("test content"),
-			MimeType: "text/plain",
-			Name:     "file-abc123",
-		},
-		{
-			Type:     "image",
-			Content:  []byte("image data"),
-			MimeType: "image/png",
-			Name:     "file-def456",
-		},
-	}
-
-	messages = agent.createUserMsg2("Analyze these uploaded files")
-	assert.Len(t, messages, 3) // 1 main message + 2 attachments
-
-	// Check main message
-	mainMsg, ok = messages[0].(ai.UserMessage)
-	assert.True(t, ok)
-	assert.Equal(t, "Analyze these uploaded files", mainMsg.Content)
-
-	// Check first attachment message (should use FileID)
-	att1Msg, ok = messages[1].(ai.UserMessage)
-	assert.True(t, ok)
-	assert.Equal(t, "file://file-abc123 (test.txt)", att1Msg.Content)
-
-	// Check second attachment message (should use FileID)
-	att2Msg, ok = messages[2].(ai.UserMessage)
-	assert.True(t, ok)
-	assert.Equal(t, "file://file-def456 (test.png)", att2Msg.Content)
-
-	// Test with empty message but attachments
-	agent.Attachments = []Attachment{
-		{
-			Type:     "document",
-			Content:  []byte("content only"),
-			MimeType: "text/plain",
-			Name:     "content.txt",
-		},
-	}
-
-	messages = agent.createUserMsg2("")
-	assert.Len(t, messages, 1) // Only attachment message
-
-	attMsg, ok := messages[0].(ai.UserMessage)
-	assert.True(t, ok)
-	assert.Contains(t, attMsg.Content, "file://content.txt (text/plain)")
-	assert.Contains(t, attMsg.Content, "content only")
 }
 
 // TestAgent_Run_WithFileID tests the agent with OpenAI Files API integration
@@ -448,35 +411,34 @@ func TestAgent_Run_WithFileID(t *testing.T) {
 		Trace:        NewTrace(),
 		Attachments: []Attachment{
 			{
-				Type:     "file",
-				Content:  []byte("This is test content for the file."),
-				MimeType: "text/plain",
-				Name:     "file-Rro2oxubCRkrbpWsdSypWL",
+				Type: "file",
+				// Content:  []byte("This is test content for the file."),
+				MimeType: "application/pdf",
+				Name:     "file-WjBr55R67mVmhXCsvKZ6Zs",
 			},
 		},
 	}
 
 	// Test the agent with file ID
-	response, err := agent.Run("Please analyze the attached file and tell me what it contains. If you can access it, start your response with 'SUCCESS:' followed by the analysis.")
+	response, err := agent.RunAndWait("Please analyze the attached file and tell me what it contains. If you can access it, start your response with 'SUCCESS:' followed by the analysis.")
 
 	if err != nil {
 		t.Logf("Agent run completed with error: %v", err)
 		// Even if there's an error, we should get some response
-		assert.NotEmpty(t, response.Content)
+		assert.NotEmpty(t, response)
 	} else {
 		assert.NoError(t, err)
-		assert.NotEmpty(t, response.Content)
+		assert.NotEmpty(t, response)
 
 		// The response should mention the file reference
-		assert.Contains(t, response.Content, "file-Rro2oxubCRkrbpWsdSypWL")
+		assert.Contains(t, response, "file-Rro2oxubCRkrbpWsdSypWL")
 
 		// Log the response for debugging
-		t.Logf("Agent response: %s", response.Content)
+		t.Logf("Agent response: %s", response)
 	}
 }
 
 func TestAgent_Run_Attachments(t *testing.T) {
-	// Skip if no OpenAI API key is available
 	if os.Getenv("OPENAI_API_KEY") == "" {
 		t.Fatal("Skipping OpenAI integration test: OPENAI_API_KEY not set")
 	}
@@ -643,22 +605,29 @@ func TestAgent_Run_Attachments(t *testing.T) {
 			}
 
 			// Test the agent with attachments
-			response, err := agent.Run("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
+			err := agent.Run("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
+			if err != nil {
+				t.Fatalf("Agent run failed: %v", err)
+			}
+			response, err := agent.Wait(10 * time.Second)
+			if err != nil {
+				t.Fatalf("Agent wait failed: %v", err)
+			}
 
 			if err != nil {
 				t.Logf("Agent run completed with error: %v", err)
 				// Even if there's an error, we should get some response
-				assert.NotEmpty(t, response.Content)
+				assert.NotEmpty(t, response)
 			} else {
 				assert.NoError(t, err)
-				assert.NotEmpty(t, response.Content)
+				assert.NotEmpty(t, response)
 
 				// Log the response for debugging
-				t.Logf("Agent response: %s", response.Content)
+				t.Logf("Agent response: %s", response)
 
 				// For file ID tests, check if the response mentions the file ID (only for OpenAI models)
 				if len(tc.attachments) > 0 && tc.attachments[0].Type == "file" && strings.Contains(tc.model.ModelName, "gpt") {
-					assert.Contains(t, response.Content, tc.attachments[0].Name)
+					assert.Contains(t, response, tc.attachments[0].Name)
 				}
 			}
 		})

@@ -1,36 +1,34 @@
 package aigentic
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
-
-	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-// Attachment represents a file attachment for LLM requests
-type Attachment struct {
-	Type     string // "image", "audio", "video", "document", etc.
-	Content  []byte // Base64 encoded content
-	MimeType string // MIME type of the file
-	Name     string // Original filename
+type pendingApproval struct {
+	event   *ToolEvent
+	created time.Time
 }
 
-// Agent represents an autonomous agent that can perform tasks and interact with tools
+type toolCallGroup struct {
+	aiMessage *ai.AIMessage
+	responses map[string]ai.ToolMessage
+}
+
 type Agent struct {
-	// Core attributes
 	Model   *ai.Model
 	Name    string
 	ID      string
 	Agents  []*Agent
 	Session *Session
-	el      *EventLoop
 	Tools   []ai.Tool
 
-	// Settings for building default system message
 	Role              string
 	Description       string
 	Goal              string
@@ -39,27 +37,24 @@ type Agent struct {
 	AdditionalContext string
 	SuccessCriteria   string
 
-	// Agent Response Settings
+	userMessage string
+
 	Retries             int
 	DelayBetweenRetries int
 	ExponentialBackoff  bool
+	Stream              bool
+	Attachments         []Attachment
+	History             []*RunResponse
+	run                 *RunResponse
+	parentAgent         *Agent
+	Trace               *Trace
 
-	// Agent Streaming
-	Stream bool
-
-	Attachments []Attachment // Slice of attachments to include in LLM requests
-
-	// Run history
-	History []*RunResponse
-	run     *RunResponse
-
-	parentAgent *Agent
-
-	// Tracing
-	Trace *Trace
+	actionQueue      chan Action
+	eventChan        chan Event
+	started          bool
+	pendingApprovals map[string]*pendingApproval
 }
 
-// RunResponse represents the response from a run
 type RunResponse struct {
 	Agent            string
 	Content          string
@@ -75,7 +70,342 @@ type RunResponse struct {
 	generateCounter int
 }
 
-func (a *Agent) init(message string) error {
+func (a *Agent) Run(message string) error {
+	if a.started {
+		return errors.New("agent already executed")
+	}
+	a.started = true
+	a.init()
+	a.userMessage = message
+
+	go a.startProcessor()
+	a.fireLLMCallEvent(message, a.Tools)
+	return nil
+}
+
+func (a *Agent) Wait(d time.Duration) (string, error) {
+	if !a.started {
+		return "", errors.New("agent not started")
+	}
+	content := ""
+	for event := range a.Next() {
+		switch event := event.(type) {
+		case *ContentEvent:
+			content += event.Content
+			if event.IsFinal {
+				return content, nil
+			}
+		case *ErrorEvent:
+			return "", event.Err
+		}
+	}
+	return content, nil
+}
+
+func (a *Agent) RunAndWait(message string) (string, error) {
+	if err := a.Run(message); err != nil {
+		return "", err
+	}
+	return a.Wait(time.Duration(0))
+}
+
+func (a *Agent) stop() {
+	// do not close the eventChan if this is a sub-agent
+	slog.Debug("stopping agent", "agent", a.Name)
+	if a.parentAgent == nil {
+		close(a.eventChan)
+	}
+	close(a.actionQueue)
+}
+
+func (a *Agent) Next() <-chan Event {
+	return a.eventChan
+}
+
+func (a *Agent) Approve(eventID string) {
+	a.queueAction(&approvalAction{
+		EventID:  eventID,
+		Approved: true,
+	})
+}
+
+func (a *Agent) queueAction(action Action) {
+	slog.Debug("queueing action", "actionType", fmt.Sprintf("%T", action), "agent", a.Name, "len", len(a.actionQueue))
+	select {
+	case a.actionQueue <- action:
+		// queued
+	default:
+		// queue full, drop or handle overflow
+		slog.Error("action queue is full. dropping action", "action", action)
+	}
+}
+
+func (a *Agent) queueEvent(event Event) {
+	slog.Debug("queueing event", "eventType", fmt.Sprintf("%T", event), "agent", a.Name, "len", len(a.eventChan))
+	select {
+	case a.eventChan <- event:
+		// queued
+	default:
+		// queue full, drop or handle overflow
+		slog.Error("event queue is full. dropping event", "event", event)
+	}
+}
+
+func (a *Agent) fireErrorEvent(err error) {
+	event := &ErrorEvent{
+		EventID:   uuid.New().String(),
+		AgentName: a.Name,
+		SessionID: a.Session.ID,
+		Err:       err,
+	}
+	a.queueEvent(event)
+}
+
+func (a *Agent) fireContentEvent(content string, isFinal bool) {
+	event := &ContentEvent{
+		EventID:   uuid.New().String(),
+		AgentName: a.Name,
+		SessionID: a.Session.ID,
+		Content:   content,
+		IsFinal:   isFinal,
+	}
+	a.eventChan <- event
+	if isFinal {
+		a.queueAction(&stopAction{EventID: event.EventID})
+	}
+}
+
+func (a *Agent) findTool(tcName string) *ai.Tool {
+	for i := range a.Tools {
+		if a.Tools[i].Name == tcName {
+			return &a.Tools[i]
+		}
+	}
+	return nil
+}
+
+func (a *Agent) fireToolCallEvent(tcName string, tcArgs map[string]interface{}, toolCallID string, group *toolCallGroup) string {
+	tool := a.findTool(tcName)
+	if tool == nil {
+		slog.Error("invalid tool", "tool", tcName)
+		return ""
+	}
+	eventID := uuid.New().String()
+	toolEvent := &ToolEvent{
+		EventID:         eventID,
+		AgentName:       a.Name,
+		SessionID:       a.Session.ID,
+		ToolName:        tcName,
+		ToolArgs:        tcArgs,
+		RequireApproval: tool.RequireApproval,
+		ToolGroup:       group,
+	}
+	if tool.RequireApproval {
+		a.pendingApprovals[eventID] = &pendingApproval{event: toolEvent}
+	}
+	a.queueEvent(toolEvent) // send after adding to the map
+	if !tool.RequireApproval {
+		a.queueAction(&toolExecutionAction{EventID: eventID, ToolCallID: toolCallID, ToolName: tcName, ToolArgs: tcArgs, Group: group})
+	}
+	return eventID
+}
+
+func (a *Agent) fireThinkingEvent(thought string) {
+	event := &ThinkingEvent{
+		EventID:   uuid.New().String(),
+		AgentName: a.Name,
+		SessionID: a.Session.ID,
+		Thought:   thought,
+	}
+	a.queueEvent(event)
+}
+
+func (a *Agent) fireToolResponseEvent(action *toolExecutionAction, content string) {
+	event := &ToolResponseEvent{
+		EventID:    uuid.New().String(),
+		AgentName:  a.Name,
+		SessionID:  a.Session.ID,
+		ToolCallID: action.ToolCallID,
+		ToolName:   action.ToolName,
+		Content:    content,
+	}
+
+	a.queueEvent(event)
+
+	// Add response to the group
+	toolMsg := ai.ToolMessage{
+		Role:       ai.ToolRole,
+		Content:    content,
+		ToolCallID: action.ToolCallID,
+	}
+	action.Group.responses[action.ToolCallID] = toolMsg
+
+	// Check if all tool calls in this group are completed
+	if len(action.Group.responses) == len(action.Group.aiMessage.ToolCalls) {
+		// Then add the AI message to history
+		a.run.msgHistory = append(a.run.msgHistory, *action.Group.aiMessage)
+
+		// Add all tool responses last
+		for _, tc := range action.Group.aiMessage.ToolCalls {
+			if response, exists := action.Group.responses[tc.ID]; exists {
+				a.run.msgHistory = append(a.run.msgHistory, response)
+			}
+		}
+
+		// Send any content from the AI message
+		if action.Group.aiMessage.Content != "" {
+			a.fireContentEvent(action.Group.aiMessage.Content, true)
+		}
+
+		// Trigger the next LLM call
+		a.fireLLMCallEvent(a.userMessage, a.Tools)
+	}
+}
+
+func (a *Agent) fireLLMCallEvent(msg string, tools []ai.Tool) {
+	event := &LLMCallEvent{
+		EventID:   uuid.New().String(),
+		AgentName: a.Name,
+		SessionID: a.Session.ID,
+		Message:   msg,
+		Tools:     tools,
+	}
+	a.queueEvent(event)
+	a.queueAction(&runAction{Message: msg})
+}
+func (a *Agent) startProcessor() {
+	defer a.stop()
+
+	if a.Session == nil {
+		a.Session = NewSession()
+	}
+	if a.ID == "" {
+		a.ID = uuid.New().String()
+	}
+	if a.Model == nil {
+		a.Model = ai.NewOpenAIModel("gpt-4o-mini", "")
+	}
+	if a.run == nil {
+		a.run = &RunResponse{
+			Agent:   a.Name,
+			Session: a.Session,
+		}
+	}
+	for action := range a.actionQueue {
+		switch act := action.(type) {
+		case *stopAction:
+			slog.Debug("received stop action", "agent", a.Name, "len", len(a.actionQueue))
+			return
+
+		case *runAction:
+			slog.Debug("running agent", "agent", a.Name)
+			userMsgs := a.createUserMsg(act.Message)
+			sysMsg := a.createSystemMessage("")
+			msgs := []ai.Message{
+				ai.SystemMessage{Role: ai.SystemRole, Content: sysMsg},
+			}
+			msgs = append(msgs, userMsgs...)
+			msgs = append(msgs, a.run.msgHistory...)
+
+			if a.Trace != nil {
+				a.Trace.LLMCall(a.Model.ModelName, a.Name, msgs)
+			}
+
+			var respMsg ai.AIMessage
+			var err error
+			respMsg, err = a.Model.Call(a.Session.Context, msgs, a.Tools)
+			if err != nil {
+				if a.Trace != nil {
+					a.Trace.RecordError(err)
+				}
+				a.fireErrorEvent(err)
+				continue
+			}
+			if a.Trace != nil {
+				a.Trace.LLMAIResponse(a.Name, respMsg.Content, respMsg.ToolCalls, respMsg.Think)
+			}
+			if respMsg.Think != "" {
+				a.fireThinkingEvent(respMsg.Think)
+			}
+			if len(respMsg.ToolCalls) > 0 {
+				// Create a tool call group to coordinate all tool calls
+				group := &toolCallGroup{
+					aiMessage: &respMsg,
+					responses: make(map[string]ai.ToolMessage),
+				}
+
+				// Process each tool call individually, passing the group
+				for _, tc := range respMsg.ToolCalls {
+					var args map[string]interface{}
+					if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
+						if a.Trace != nil {
+							a.Trace.RecordError(err)
+						}
+						a.fireErrorEvent(fmt.Errorf("invalid tool args: %v", err))
+						continue
+					}
+					a.fireToolCallEvent(tc.Name, args, tc.ID, group)
+				}
+			} else {
+				// No tool calls, safe to add AI message to history immediately
+				a.run.msgHistory = append(a.run.msgHistory, respMsg)
+				if respMsg.Content != "" {
+					a.fireContentEvent(respMsg.Content, true)
+				}
+			}
+		case *approvalAction:
+			if pending, ok := a.pendingApprovals[act.EventID]; ok {
+				delete(a.pendingApprovals, act.EventID)
+				a.actionQueue <- &toolExecutionAction{EventID: act.EventID, ToolName: pending.event.ToolName, ToolArgs: pending.event.ToolArgs, Group: pending.event.ToolGroup}
+			}
+		case *toolExecutionAction:
+			slog.Debug("running tool", "tool", act.ToolName)
+			tool := a.findTool(act.ToolName)
+			if tool == nil {
+				a.fireErrorEvent(fmt.Errorf("tool not found: %s", act.ToolName))
+				continue
+			}
+			result, err := tool.Call(act.ToolArgs)
+			if err != nil {
+				if a.Trace != nil {
+					a.Trace.RecordError(err)
+				}
+				a.fireErrorEvent(fmt.Errorf("tool execution error: %v", err))
+				continue
+			}
+			content := ""
+			for _, c := range result.Content {
+				if s, ok := c.Content.(string); ok {
+					content += s
+				}
+			}
+
+			if a.Trace != nil {
+				a.Trace.LLMToolResponse(a.Name, &ai.ToolCall{
+					ID:   act.ToolCallID,
+					Type: "function",
+					Name: act.ToolName,
+					Args: "",
+				}, content)
+			}
+
+			a.fireToolResponseEvent(act, content)
+
+		case *cancelAction:
+			// no-op for now
+		}
+	}
+}
+
+// Attachment represents a file attachment for LLM requests
+type Attachment struct {
+	Type     string // "image", "audio", "video", "document", etc.
+	Content  []byte // Base64 encoded content
+	MimeType string // MIME type of the file
+	Name     string // Original filename
+}
+
+func (a *Agent) init() error {
 	if a.ID == "" {
 		a.ID = uuid.New().String()
 	}
@@ -85,6 +415,15 @@ func (a *Agent) init(message string) error {
 	if a.Session == nil {
 		a.Session = NewSession()
 	}
+	a.actionQueue = make(chan Action, 100)
+
+	if a.parentAgent == nil {
+		a.eventChan = make(chan Event, 100)
+	} else {
+		// sub-agent uses the parent agent's eventChan
+		a.eventChan = a.parentAgent.eventChan
+	}
+	a.pendingApprovals = make(map[string]*pendingApproval)
 	a.run = &RunResponse{
 		Agent:   a.Name,
 		Session: a.Session,
@@ -98,8 +437,9 @@ func (a *Agent) init(message string) error {
 		aa.Trace = a.Trace
 		// Create SimpleTool adapter for sub-agent
 		agentTool := ai.Tool{
-			Name:        aa.Name,
-			Description: aa.Description,
+			Name:            aa.Name,
+			Description:     aa.Description,
+			RequireApproval: false,
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -112,7 +452,7 @@ func (a *Agent) init(message string) error {
 			},
 			Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
 				input := args["input"].(string)
-				response, err := aa.Run(input)
+				content, err := aa.RunAndWait(input)
 				if err != nil {
 					return &ai.ToolResult{
 						Content: []ai.ToolContent{{
@@ -125,7 +465,7 @@ func (a *Agent) init(message string) error {
 				return &ai.ToolResult{
 					Content: []ai.ToolContent{{
 						Type:    "text",
-						Content: response.Content,
+						Content: content,
 					}},
 					Error: false,
 				}, nil
@@ -134,154 +474,6 @@ func (a *Agent) init(message string) error {
 		a.Tools = append(a.Tools, agentTool)
 	}
 	return nil
-}
-
-// Run executes the agent with the given message
-func (a *Agent) Run(message string) (RunResponse, error) {
-	var response RunResponse
-	var err error
-	var el *EventLoop
-	if el = a.Start(message); el == nil {
-		return RunResponse{}, errors.New("failed to start session")
-	}
-	for ev := range el.Next() {
-		if response, err = ev.Execute(); err != nil {
-			return RunResponse{}, err
-		}
-	}
-	return response, nil
-}
-
-func (a *Agent) Start(message string) *EventLoop {
-	if err := a.init(message); err != nil {
-		return nil
-	}
-	a.el = &EventLoop{Session: a.Session, Agent: a, next: make(chan *Event, 10)}
-	a.send(message)
-	return a.el
-}
-
-func (a *Agent) send(message string) {
-	a.el.next <- &Event{Agent: a, Message: message}
-}
-
-func (a *Agent) generate(message string) (string, error) {
-	var content string
-	var err error
-
-	if a.run.generateCounter > 64 {
-		return "", errors.New("too many repeats")
-	}
-	a.run.generateCounter++
-
-	userMsgs := a.createUserMsg2(message)
-	sysMsg := a.createSystemMessage("")
-
-	msgs := []ai.Message{
-		ai.SystemMessage{Role: ai.SystemRole, Content: sysMsg},
-	}
-	msgs = append(msgs, userMsgs...)
-	msgs = append(msgs, a.run.msgHistory...)
-	if a.Trace != nil {
-		a.Trace.LLMCall(a.Model.ModelName, a.Name, msgs)
-	}
-
-	respMsg, err := a.Model.Call(a.Session.Context, msgs, a.Tools)
-	if err != nil {
-		if a.Trace != nil {
-			a.Trace.RecordError(err)
-		}
-		return "", err
-	}
-	if a.Trace != nil {
-		a.Trace.LLMAIResponse(a.Name, respMsg.Content, respMsg.ToolCalls, respMsg.Think)
-	}
-
-	// Extract content and tool calls from the returned ai.Message
-	var toolCalls []ai.ToolCall
-	content = respMsg.Content
-	toolCalls = respMsg.ToolCalls
-
-	a.run.msgHistory = append(a.run.msgHistory, respMsg)
-
-	// Execute tool calls if any
-	n := a.runTools(toolCalls)
-	if n > 0 {
-		a.send(message) // send the same user message again
-		return content, nil
-	}
-
-	close(a.el.next)
-	return content, nil
-	// toolMessage := ai.ToolMessage{
-	// 	Role:       ai.ToolRole,
-	// 	Content:    content,
-	// 	ToolCallID: a.parentToolID,
-	// }
-	// a.parentAgent.run.msgHistory = append(a.parentAgent.run.msgHistory, toolMessage)
-	// a.Session.send(a.parentAgent, content)
-
-}
-
-func (a *Agent) runTools(toolCalls []ai.ToolCall) int {
-	if len(toolCalls) == 0 {
-		return 0
-	}
-
-	n := 0
-	for _, toolCall := range toolCalls {
-		for _, tool := range a.Tools {
-			if tool.Name != toolCall.Name {
-				continue
-			}
-
-			var content string
-			var args map[string]interface{}
-			if err := json.Unmarshal([]byte(toolCall.Args), &args); err != nil {
-				content = fmt.Sprintf("error: invalid JSON args: %v", err)
-			} else {
-				result, err := tool.Call(args)
-				if err != nil {
-					if a.Session.Trace != nil {
-						a.Session.Trace.RecordError(err)
-					}
-					content = fmt.Sprintf("error: %v", err)
-				} else {
-					for _, c := range result.Content {
-						switch c.Type {
-						case "text":
-							content += c.Content.(string)
-						case "image":
-							content += c.Content.(string)
-						default:
-							content += fmt.Sprintf("[%s content]", c.Type)
-						}
-						if a.Session.Trace != nil {
-							aiToolCall := &ai.ToolCall{
-								ID:     toolCall.ID,
-								Type:   toolCall.Type,
-								Name:   tool.Name,
-								Args:   toolCall.Args,
-								Result: "",
-							}
-							a.Session.Trace.LLMToolResponse(a.Name, aiToolCall, content)
-						}
-					}
-				}
-			}
-
-			// Add tool response to message history
-			toolMessage := ai.ToolMessage{
-				Role:       ai.ToolRole,
-				Content:    content,
-				ToolCallID: toolCall.ID,
-			}
-			a.run.msgHistory = append(a.run.msgHistory, toolMessage)
-			n++
-			break
-		}
-	}
-	return n
 }
 
 func (a *Agent) createSystemMessage(think string) string {
@@ -323,22 +515,8 @@ func (a *Agent) createSystemMessage(think string) string {
 	return sysMsg
 }
 
-func (a *Agent) createUserMsg(message string) string {
-	// TODO: make this work with multiple parts in the same message
-	// Including attachments in the user message for now
-	if len(a.Attachments) > 0 {
-		message += "\n <attachments>\n"
-		for _, attachment := range a.Attachments {
-			message += fmt.Sprintf("<file>- Name %s: MimeType:%s\n", attachment.Name, attachment.MimeType)
-			message += fmt.Sprintf("- %s\n</file>\n", attachment.Content)
-		}
-		message += "\n</attachments>\n"
-	}
-	return message
-}
-
-// createUserMsg2 returns a list of Messages, with each attachment as a separate Resource message
-func (a *Agent) createUserMsg2(message string) []ai.Message {
+// createUserMsg returns a list of Messages, with each attachment as a separate Resource message
+func (a *Agent) createUserMsg(message string) []ai.Message {
 	var messages []ai.Message
 
 	// Add the main user message if there's content

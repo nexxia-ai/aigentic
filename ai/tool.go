@@ -6,10 +6,11 @@ import (
 )
 
 type Tool struct {
-	Name        string                                                 `json:"name"`
-	Description string                                                 `json:"description"`
-	InputSchema map[string]interface{}                                 `json:"inputSchema,omitempty"`
-	Execute     func(args map[string]interface{}) (*ToolResult, error) `json:"-"`
+	Name            string                                                 `json:"name"`
+	Description     string                                                 `json:"description"`
+	InputSchema     map[string]interface{}                                 `json:"inputSchema,omitempty"`
+	Execute         func(args map[string]interface{}) (*ToolResult, error) `json:"-"`
+	RequireApproval bool
 }
 
 // Call executes the tool with the given arguments

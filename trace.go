@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
@@ -18,6 +17,10 @@ const (
 	defaultTraceDirectory    = "traces"
 	defaultRetentionDuration = 7 * 24 * time.Hour
 	defaultMaxTraceFiles     = 10
+)
+
+var (
+	traceSync = sync.Mutex{} // keep all trace lines in sync
 )
 
 type TraceConfig struct {
@@ -29,7 +32,6 @@ type TraceConfig struct {
 
 // Trace stores the execution trace of an LLM.
 type Trace struct {
-	sync.Mutex
 	SessionID         string        // Unique session ID for the entire interaction
 	StartTime         time.Time     // Start time of the trace
 	EndTime           time.Time     // End time of the trace
@@ -40,13 +42,18 @@ type Trace struct {
 	MaxTraceFiles     int           // Maximum number of files to keep
 }
 
+func newTraceID() string {
+	now := time.Now()
+	return now.Format("20060102150405") + fmt.Sprintf("%09d", now.Nanosecond())
+}
+
 // NewTrace creates a new Trace instance with default cleanup settings.
 func NewTrace(config ...TraceConfig) *Trace {
 	cfg := TraceConfig{
 		Directory:         defaultTraceDirectory,
 		RetentionDuration: defaultRetentionDuration,
 		MaxTraceFiles:     defaultMaxTraceFiles,
-		SessionID:         uuid.New().String(),
+		SessionID:         newTraceID(),
 	}
 
 	if len(config) > 0 {
@@ -165,8 +172,8 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 		return nil
 	}
 
-	t.Lock()
-	defer t.Unlock()
+	traceSync.Lock()
+	defer traceSync.Unlock()
 
 	fmt.Fprintf(t.file, "\n====> [%s] Start %s (%s) sessionID: %s\n", time.Now().Format("15:04:05"), agentName, modelName, t.SessionID)
 
@@ -264,8 +271,8 @@ func (t *Trace) FinishLLMInteraction(modelName, agentName string) {
 		return
 	}
 
-	t.Lock()
-	defer t.Unlock()
+	traceSync.Lock()
+	defer traceSync.Unlock()
 
 	fmt.Fprintf(t.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), agentName)
 }
@@ -276,19 +283,20 @@ func (t *Trace) LLMAIResponse(agentName, response string, toolCalls []ai.ToolCal
 		return nil
 	}
 
-	t.Lock()
-	defer t.Unlock()
+	traceSync.Lock()
+	defer traceSync.Unlock()
 
+	fmt.Fprintf(t.file, "⬇️  assistant:\n")
 	if thinkPart != "" {
-		fmt.Fprintf(t.file, "⬇️  %s thinking:\n%s\n\n", agentName, thinkPart)
+		fmt.Fprintf(t.file, "  %s thinking:\n%s\n\n", agentName, thinkPart)
 	}
 
 	if response != "" {
-		fmt.Fprintf(t.file, "⬇️  %s response:\n%s\n", agentName, response)
+		fmt.Fprintf(t.file, "  %s response:\n%s\n", agentName, response)
 	}
 
 	if len(toolCalls) > 0 {
-		fmt.Fprintf(t.file, "⬇️ ️  %s tool request:\n", agentName)
+		fmt.Fprintf(t.file, "️  %s tool request:\n", agentName)
 		for _, toolCall := range toolCalls {
 			fmt.Fprintf(t.file, "   • %s(%s)\n",
 				toolCall.Name,
@@ -305,8 +313,8 @@ func (t *Trace) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content
 		return nil
 	}
 
-	t.Lock()
-	defer t.Unlock()
+	traceSync.Lock()
+	defer traceSync.Unlock()
 
 	fmt.Fprintf(t.file, "🛠️️  %s tool response:\n", agentName)
 	fmt.Fprintf(t.file, "   • %s(%s)\n",
@@ -329,8 +337,8 @@ func (t *Trace) RecordError(err error) error {
 		return nil
 	}
 
-	t.Lock()
-	defer t.Unlock()
+	traceSync.Lock()
+	defer traceSync.Unlock()
 
 	fmt.Fprintf(t.file, "❌ Error: %v\n", err)
 	return nil
@@ -341,8 +349,10 @@ func (t *Trace) Close() error {
 	if t == nil {
 		return nil
 	}
-	t.Lock()
-	defer t.Unlock()
+
+	traceSync.Lock()
+	defer traceSync.Unlock()
+
 	t.EndTime = time.Now()
 
 	_, err := fmt.Fprintf(t.file, "End Time: %s\n", t.EndTime.Format(time.RFC3339))

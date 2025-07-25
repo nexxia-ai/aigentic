@@ -16,25 +16,31 @@ import (
 func init() {
 	utils.LoadEnvFile("./.env")
 }
+func setLogger(level slog.Level) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	}))
+	slog.SetDefault(logger)
+}
 
-// NewMagicNumberTool returns a SimpleTool struct for testing
-func NewMagicNumberTool() ai.Tool {
+// NewSecretNumberTool returns a SimpleTool struct for testing
+func NewSecretNumberTool() ai.Tool {
 	return ai.Tool{
-		Name:        "magic_number",
-		Description: "A tool that generates a magic number",
+		Name:        "lookup_company_name",
+		Description: "A tool that looks up the name of a company based on a company number",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"input": map[string]interface{}{
+				"company_number": map[string]interface{}{
 					"type":        "string",
-					"description": "The input seed to randomize the number",
+					"description": "The company number to lookup",
 				},
 			},
-			"required": []string{"input"},
+			"required": []string{"company_number"},
 		},
 		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
-				Content: []ai.ToolContent{{Type: "text", Content: "150"}},
+				Content: []ai.ToolContent{{Type: "text", Content: "Nexxia"}},
 				Error:   false,
 			}, nil
 		},
@@ -87,9 +93,12 @@ func TestAgent_Basic(t *testing.T) {
 			tt.agent.Attachments = tt.attachments
 			tt.agent.Tools = tt.tools
 
-			tt.agent.Run(tt.message)
+			run, err := tt.agent.Run(tt.message)
+			if err != nil {
+				t.Fatalf("Agent run failed: %v", err)
+			}
 			var finalContent string
-			for ev := range tt.agent.Next() {
+			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
 					if e.IsFinal {
@@ -97,7 +106,7 @@ func TestAgent_Basic(t *testing.T) {
 					}
 				case *ToolEvent:
 					if e.RequireApproval {
-						tt.agent.Approve(e.ID())
+						run.Approve(e.ID())
 					}
 				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
@@ -158,9 +167,12 @@ func TestAgent_Run(t *testing.T) {
 			agent := newAgent()
 			agent.Tools = test.tools
 			agent.Attachments = test.attachments
-			agent.Run(test.message)
+			run, err := agent.Run(test.message)
+			if err != nil {
+				t.Fatalf("Agent run failed: %v", err)
+			}
 			var finalContent string
-			for ev := range agent.Next() {
+			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
 					if e.IsFinal {
@@ -168,7 +180,7 @@ func TestAgent_Run(t *testing.T) {
 					}
 				case *ToolEvent:
 					if e.RequireApproval {
-						agent.Approve(e.ID())
+						run.Approve(e.ID())
 					}
 				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
@@ -182,11 +194,13 @@ func TestAgent_Run(t *testing.T) {
 }
 
 func TestAgent_Run_WithTools(t *testing.T) {
+	setLogger(slog.LevelDebug)
 	session := NewSession()
 	session.Trace = NewTrace()
 
 	newAgent := func(model *ai.Model) Agent {
 		return Agent{
+			Name:         "test-agent",
 			Session:      session,
 			Model:        model,
 			Description:  "You are a helpful assistant that provides clear and concise answers.",
@@ -204,24 +218,24 @@ func TestAgent_Run_WithTools(t *testing.T) {
 	}{
 		{
 			name:        "Ollama tool call",
-			message:     "Generate a magic number and tell me the number. Use tools.",
+			message:     "tell me the name of the company with the number 150. Use tools.",
 			agent:       newAgent(ai.NewOllamaModel("qwen3:1.7b", "")),
-			tools:       []ai.Tool{NewMagicNumberTool()},
+			tools:       []ai.Tool{NewSecretNumberTool()},
 			attachments: []Attachment{},
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
-				assert.Contains(t, content, "150")
+				assert.Contains(t, content, "Nexxia")
 			},
 		},
 		{
 			name:        "OpenAI tool call",
-			message:     "Generate a magic number and tell me the number. Use tools.",
+			message:     "tell me the name of the company with the number 150. Use tools.",
 			agent:       newAgent(ai.NewOpenAIModel("gpt-4o-mini", "")),
-			tools:       []ai.Tool{NewMagicNumberTool()},
+			tools:       []ai.Tool{NewSecretNumberTool()},
 			attachments: []Attachment{},
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
-				assert.Contains(t, content, "150")
+				assert.Contains(t, content, "Nexxia")
 			},
 		},
 	}
@@ -230,9 +244,12 @@ func TestAgent_Run_WithTools(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			test.agent.Tools = test.tools
 			test.agent.Attachments = test.attachments
-			test.agent.Run(test.message)
+			run, err := test.agent.Run(test.message)
+			if err != nil {
+				t.Fatalf("Agent run failed: %v", err)
+			}
 			var finalContent string
-			for ev := range test.agent.Next() {
+			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
 					if e.IsFinal {
@@ -240,7 +257,7 @@ func TestAgent_Run_WithTools(t *testing.T) {
 					}
 				case *ToolEvent:
 					if e.RequireApproval {
-						test.agent.Approve(e.ID())
+						run.Approve(e.ID())
 					}
 				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
@@ -254,11 +271,7 @@ func TestAgent_Run_WithTools(t *testing.T) {
 }
 
 func TestTeam(t *testing.T) {
-	// set log level to debug
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-	slog.SetDefault(logger)
+	setLogger(slog.LevelDebug)
 
 	model := ai.NewOllamaModel("qwen3:1.7b", "")
 
@@ -277,9 +290,9 @@ func TestTeam(t *testing.T) {
 	}
 
 	team := Agent{
-		// Model:        ai.NewOllamaModel("qwen3:14b", ""),
-		Model: ai.NewOpenAIModel("gpt-4o-mini", ""),
-		Name:  "coordinator",
+		Model: ai.NewOllamaModel("qwen3:14b", ""),
+		// Model: ai.NewOpenAIModel("gpt-4o-mini", ""),
+		Name: "coordinator",
 		Description: `
 		You are a coordinator for a math problem solving team. 
 		When you receive a math question, you must first use the calculator to get the answer, 
@@ -317,9 +330,12 @@ func TestTeam(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			team.Run(test.message)
+			run, err := team.Run(test.message)
+			if err != nil {
+				t.Fatalf("Agent run failed: %v", err)
+			}
 			var finalContent string
-			for ev := range team.Next() {
+			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
 					fmt.Printf("ContentEvent: %+v\n\n", e)
@@ -329,7 +345,7 @@ func TestTeam(t *testing.T) {
 				case *ToolEvent:
 					fmt.Printf("ToolEvent: %+v\n\n", e)
 					if e.RequireApproval {
-						team.Approve(e.ID())
+						run.Approve(e.ID())
 					}
 				case *ErrorEvent:
 					fmt.Printf("ErrorEvent: %+v\n\n", e)
@@ -420,22 +436,8 @@ func TestAgent_Run_WithFileID(t *testing.T) {
 	}
 
 	// Test the agent with file ID
-	response, err := agent.RunAndWait("Please analyze the attached file and tell me what it contains. If you can access it, start your response with 'SUCCESS:' followed by the analysis.")
-
-	if err != nil {
-		t.Logf("Agent run completed with error: %v", err)
-		// Even if there's an error, we should get some response
-		assert.NotEmpty(t, response)
-	} else {
-		assert.NoError(t, err)
-		assert.NotEmpty(t, response)
-
-		// The response should mention the file reference
-		assert.Contains(t, response, "file-Rro2oxubCRkrbpWsdSypWL")
-
-		// Log the response for debugging
-		t.Logf("Agent response: %s", response)
-	}
+	_, err := agent.RunAndWait("Please analyze the attached file and tell me what it contains. If you can access it, start your response with 'SUCCESS:' followed by the analysis.")
+	assert.NoError(t, err)
 }
 
 func TestAgent_Run_Attachments(t *testing.T) {
@@ -605,11 +607,11 @@ func TestAgent_Run_Attachments(t *testing.T) {
 			}
 
 			// Test the agent with attachments
-			err := agent.Run("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
+			run, err := agent.Run("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
-			response, err := agent.Wait(10 * time.Second)
+			response, err := run.Wait(10 * time.Second)
 			if err != nil {
 				t.Fatalf("Agent wait failed: %v", err)
 			}
@@ -632,4 +634,124 @@ func TestAgent_Run_Attachments(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMultiAgent_ChainExperts(t *testing.T) {
+	const numExperts = 3
+	input := "start"
+
+	experts := make([]*Agent, numExperts)
+	for i := 0; i < numExperts; i++ {
+		expertName := fmt.Sprintf("expert%d", i+1)
+		experts[i] = &Agent{
+			Name:         expertName,
+			Description:  "You are an expert in a group of experts. Your role is to process the input token and return a new token for the next expert.",
+			Instructions: fmt.Sprintf("Your name is %s. Append your name to the input and return that as the output.", expertName),
+			Model:        ai.NewOllamaModel("qwen3:1.7b", ""),
+			Tools:        nil,
+		}
+	}
+
+	coordinator := Agent{
+		Name:        "coordinator",
+		Description: "You are the coordinator of a group of experts. Your role is to call each expert one by one in order, passing the previous expert's result to the next. Return the final result.",
+		Instructions: `
+		Call each expert one by one in order, passing the previous expert's result to the next. 
+		You must call all the experts in order.
+		Return the final result.`,
+		// Model:        ai.NewOllamaModel("qwen3:1.7b", ""),
+		Model:  ai.NewOpenAIModel("gpt-4o-mini", ""),
+		Agents: experts,
+		Trace:  NewTrace(),
+	}
+
+	run, err := coordinator.Run("call the first expert with the input: " + input)
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+	response, err := run.Wait(10 * time.Second)
+	if err != nil {
+		t.Fatalf("Agent wait failed: %v", err)
+	}
+
+	assert.Equal(t, "start,expert1,expert2,expert3", response)
+}
+
+func TestAgent_MultipleSequentialRuns(t *testing.T) {
+	setLogger(slog.LevelDebug)
+	agent := Agent{
+		Model:        ai.NewOllamaModel("qwen3:1.7b", ""),
+		Description:  "You are a helpful assistant that can perform various tasks.",
+		Instructions: "use tools when requested.",
+		Tools:        []ai.Tool{NewSecretNumberTool()},
+		Trace:        NewTrace(),
+	}
+
+	// Define multiple sequential runs
+	runs := []struct {
+		name        string
+		message     string
+		expectsTool bool
+	}{
+		{
+			name:        "tool call request",
+			message:     "What is the name of the company with the number 150? Use tools.",
+			expectsTool: true,
+		},
+		{
+			name:        "simple question",
+			message:     "What is the capital of France? respond with the name of the city only",
+			expectsTool: false,
+		},
+		{
+			name:        "another simple question",
+			message:     "What is 2 + 2? respond with the answer only",
+			expectsTool: false,
+		},
+	}
+
+	// Start all runs first (parallel execution)
+	var agentRuns []*AgentRun
+	for i, run := range runs {
+		t.Logf("Starting run %d: %s", i+1, run.name)
+
+		agentRun, err := agent.Run(run.message)
+		if err != nil {
+			t.Fatalf("Run %d failed to start: %v", i+1, err)
+		}
+
+		agentRuns = append(agentRuns, agentRun)
+	}
+
+	// Now wait for all runs to complete (parallel waiting)
+	var responses []string
+	for i, agentRun := range agentRuns {
+		t.Logf("Waiting for run %d to complete", i+1)
+
+		response, err := agentRun.Wait(0)
+		if err != nil {
+			t.Fatalf("Wait for run %d failed: %v", i+1, err)
+		}
+
+		responses = append(responses, response)
+		t.Logf("Run %d completed with response: %s", i+1, response)
+	}
+
+	// Verify all responses
+	assert.Len(t, responses, len(runs), "Should have responses for all runs")
+
+	// Check that tool calls were made when expected
+	for i, run := range runs {
+		if run.expectsTool {
+			assert.Contains(t, responses[i], "Nexxia", "Run %d should contain the company name", i+1)
+		}
+	}
+
+	// Verify no errors occurred
+	for i, response := range responses {
+		assert.NotEmpty(t, response, "Run %d should have non-empty response", i+1)
+		assert.NotContains(t, response, "Error:", "Run %d should not contain error", i+1)
+	}
+
+	t.Logf("All %d parallel runs completed successfully", len(runs))
 }

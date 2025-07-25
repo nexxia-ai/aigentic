@@ -28,7 +28,7 @@ type Session struct {
 	Context  context.Context
 	Trace    *Trace
 
-	RunHistory []RunResponse
+	RunHistory []AgentRun
 }
 
 // NewSession creates a new session with default settings

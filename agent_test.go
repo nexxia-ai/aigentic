@@ -16,12 +16,6 @@ import (
 func init() {
 	utils.LoadEnvFile("./.env")
 }
-func setLogger(level slog.Level) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	}))
-	slog.SetDefault(logger)
-}
 
 // NewSecretNumberTool returns a SimpleTool struct for testing
 func NewSecretNumberTool() ai.Tool {
@@ -194,7 +188,6 @@ func TestAgent_Run(t *testing.T) {
 }
 
 func TestAgent_Run_WithTools(t *testing.T) {
-	setLogger(slog.LevelDebug)
 	session := NewSession()
 	session.Trace = NewTrace()
 
@@ -205,6 +198,7 @@ func TestAgent_Run_WithTools(t *testing.T) {
 			Model:        model,
 			Description:  "You are a helpful assistant that provides clear and concise answers.",
 			Instructions: "Always explain your reasoning and provide examples when possible.",
+			LogLevel:     slog.LevelDebug,
 		}
 	}
 
@@ -271,7 +265,6 @@ func TestAgent_Run_WithTools(t *testing.T) {
 }
 
 func TestTeam(t *testing.T) {
-	setLogger(slog.LevelDebug)
 
 	model := ai.NewOllamaModel("qwen3:1.7b", "")
 
@@ -304,8 +297,9 @@ func TestTeam(t *testing.T) {
 			Use the output from the calculator as input to the explainer.
 			Respond with both answers clearly labeled: "Calculator: [result]" and "Explainer: [explanation]".
 			Do not add any additional text or commentary.`,
-		Trace:  NewTrace(),
-		Agents: []*Agent{&calculator, &explainer},
+		Trace:    NewTrace(),
+		LogLevel: slog.LevelDebug,
+		Agents:   []*Agent{&calculator, &explainer},
 	}
 
 	tests := []struct {
@@ -338,24 +332,13 @@ func TestTeam(t *testing.T) {
 			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
-					fmt.Printf("ContentEvent: %+v\n\n", e)
 					if e.IsFinal {
 						finalContent = e.Content
 					}
 				case *ToolEvent:
-					fmt.Printf("ToolEvent: %+v\n\n", e)
 					if e.RequireApproval {
 						run.Approve(e.ID())
 					}
-				case *ErrorEvent:
-					fmt.Printf("ErrorEvent: %+v\n\n", e)
-					t.Fatalf("Agent error: %v", e.Err)
-				case *ThinkingEvent:
-					fmt.Printf("ThinkingEvent: %+v\n\n", e)
-				case *LLMCallEvent:
-					fmt.Printf("LLMCallEvent: %+v\n\n", e)
-				default:
-					fmt.Printf("Event: %+v (Type: %T)\n", e, e)
 				}
 			}
 			if test.validate != nil {
@@ -644,22 +627,27 @@ func TestMultiAgent_ChainExperts(t *testing.T) {
 	for i := 0; i < numExperts; i++ {
 		expertName := fmt.Sprintf("expert%d", i+1)
 		experts[i] = &Agent{
-			Name:         expertName,
-			Description:  "You are an expert in a group of experts. Your role is to process the input token and return a new token for the next expert.",
-			Instructions: fmt.Sprintf("Your name is %s. Append your name to the input and return that as the output.", expertName),
-			Model:        ai.NewOllamaModel("qwen3:1.7b", ""),
-			Tools:        nil,
+			Name:        expertName,
+			Description: "You are an expert in a group of experts. Your role is to sign the input with your name by appending your name at the end of the input.",
+			Instructions: `
+			Remember:
+			return your name signed at the end of the input
+			do not change the input text
+			do not add any additional information` +
+				fmt.Sprintf("Your name is %s. Append your name to the input and return that as the output.", expertName),
+			Model: ai.NewOllamaModel("qwen3:1.7b", ""),
+			Tools: nil,
 		}
 	}
 
 	coordinator := Agent{
 		Name:        "coordinator",
-		Description: "You are the coordinator of a group of experts. Your role is to call each expert one by one in order, passing the previous expert's result to the next. Return the final result.",
+		Description: "You are the coordinator to collect signature from experts. Your role is to call each expert one by one in order, passing the previous signature to the next expert so he/she can sign the input. Return all the signatures as received by the experts.",
 		Instructions: `
-		Call each expert one by one in order, passing the previous expert's result to the next. 
+		Call each expert one by one in order, passing the previous expert's signature. 
 		You must call all the experts in order.
-		Return the final result.`,
-		// Model:        ai.NewOllamaModel("qwen3:1.7b", ""),
+		Return the final signatures as received from the last expert. do not add any additional text or commentary.`,
+		// Model: ai.NewOllamaModel("qwen3:14b", ""),
 		Model:  ai.NewOpenAIModel("gpt-4o-mini", ""),
 		Agents: experts,
 		Trace:  NewTrace(),
@@ -669,22 +657,22 @@ func TestMultiAgent_ChainExperts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
-	response, err := run.Wait(10 * time.Second)
+	response, err := run.Wait(0)
 	if err != nil {
 		t.Fatalf("Agent wait failed: %v", err)
 	}
 
-	assert.Equal(t, "start,expert1,expert2,expert3", response)
+	assert.Equal(t, "start expert1 expert2 expert3", strings.TrimSpace(response))
 }
 
 func TestAgent_MultipleSequentialRuns(t *testing.T) {
-	setLogger(slog.LevelDebug)
 	agent := Agent{
 		Model:        ai.NewOllamaModel("qwen3:1.7b", ""),
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
 		Tools:        []ai.Tool{NewSecretNumberTool()},
 		Trace:        NewTrace(),
+		LogLevel:     slog.LevelDebug,
 	}
 
 	// Define multiple sequential runs

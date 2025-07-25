@@ -2,6 +2,7 @@ package aigentic
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,7 @@ type Agent struct {
 	Attachments         []Attachment
 	parentAgent         *Agent
 	Trace               *Trace
+	LogLevel            slog.Level
 }
 
 // Attachment represents a file attachment for LLM requests

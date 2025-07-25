@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -23,6 +24,7 @@ type AgentRun struct {
 	trace            *Trace
 	userMessage      string
 	parentRun        *AgentRun // pointer toparent if this is a sub-agent
+	logger           *slog.Logger
 }
 
 func newAgentRun(a *Agent, message string) *AgentRun {
@@ -47,6 +49,7 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		eventQueue:       make(chan Event, 100),
 		actionQueue:      make(chan Action, 100),
 		pendingApprovals: make(map[string]*pendingApproval),
+		logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 	run.tools = run.addSystemTools()
 	return run
@@ -80,8 +83,9 @@ func (r *AgentRun) addSystemTools() []ai.Tool {
 				run := newAgentRun(aa, args["input"].(string))
 				run.session = r.session
 				run.trace = r.trace
+				run.logger = r.logger.With("sub-agent", aa.Name)
 				run.parentRun = r
-				slog.Debug("starting sub-agent", "agent", aa.Name, "parent", r.agent.Name, "eventQueue", len(run.eventQueue), "actionQueue", len(run.actionQueue))
+				r.logger.Debug("calling sub-agent", "sub-agent", aa.Name)
 				run.start()
 				content, err := run.Wait(0)
 				if err != nil {
@@ -143,7 +147,6 @@ func (r *AgentRun) Next() <-chan Event {
 }
 
 func (r *AgentRun) stop() {
-	slog.Debug("stopping agent run", "agent", r.agent.Name)
 	close(r.eventQueue)
 	close(r.actionQueue)
 }
@@ -152,12 +155,10 @@ func (r *AgentRun) processLoop() {
 	for action := range r.actionQueue {
 		switch act := action.(type) {
 		case *stopAction:
-			slog.Debug("received stop action", "agent", r.agent.Name, "len", len(r.actionQueue))
 			r.stop() // close the channels
 			return
 
 		case *llmCallAction:
-			slog.Debug("running agent", "agent", r.agent.Name)
 			r.runLLMCallAction(act.Message, r.tools)
 
 		case *approvalAction:
@@ -167,7 +168,6 @@ func (r *AgentRun) processLoop() {
 			}
 
 		case *toolCallAction:
-			slog.Debug("running tool", "tool", act.ToolName)
 			r.runToolCallAction(act)
 
 		default:
@@ -191,6 +191,7 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 
 	var respMsg ai.AIMessage
 	var err error
+	r.logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
 	respMsg, err = r.model.Call(r.session.Context, msgs, tools)
 	if err != nil {
 		if r.trace != nil {
@@ -241,6 +242,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		r.fireToolResponseAction(act, fmt.Sprintf("tool not found: %s", act.ToolName))
 		return
 	}
+	r.logger.Debug("calling tool", "tool", act.ToolName, "args", act.ToolArgs)
 	result, err := tool.Call(act.ToolArgs)
 	if err != nil {
 		if r.trace != nil {
@@ -257,11 +259,13 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	}
 
 	if r.trace != nil {
+		// Convert tool args to JSON string for tracing
+		argsJSON, _ := json.Marshal(act.ToolArgs)
 		r.trace.LLMToolResponse(r.agent.Name, &ai.ToolCall{
 			ID:   act.ToolCallID,
 			Type: "function",
 			Name: act.ToolName,
-			Args: "",
+			Args: string(argsJSON),
 		}, content)
 	}
 
@@ -275,23 +279,21 @@ func (r *AgentRun) queueEvent(event Event) {
 		r.parentRun.queueEvent(event)
 		return
 	}
-	slog.Debug("queueing event", "eventType", fmt.Sprintf("%T", event), "agent", r.agent.Name, "len", len(r.eventQueue))
 	select {
 	case r.eventQueue <- event:
 		// queued
 	default:
 		// queue full, drop or handle overflow
-		slog.Error("event queue is full. dropping event", "event", event)
+		r.logger.Error("event queue is full. dropping event", "event", event)
 	}
 }
 
 func (r *AgentRun) queueAction(action Action) {
-	slog.Debug("queueing action", "actionType", fmt.Sprintf("%T", action), "agent", r.agent.Name, "len", len(r.actionQueue))
 	select {
 	case r.actionQueue <- action:
 		// queued
 	default:
 		// queue full, drop or handle overflow
-		slog.Error("action queue is full. dropping action", "action", action)
+		r.logger.Error("action queue is full. dropping action", "action", action)
 	}
 }

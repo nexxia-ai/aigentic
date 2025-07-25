@@ -139,16 +139,20 @@ func (r *AgentRun) fireErrorAction(err error) {
 }
 
 func (r *AgentRun) fireContentAction(content string, isFinal bool) {
-	event := &ContentEvent{
-		EventID:   uuid.New().String(),
-		AgentName: r.agent.Name,
-		SessionID: r.session.ID,
-		Content:   content,
-		IsFinal:   isFinal,
+	// a sub-agent should not fire content events
+	// the sub-agent content must be sent to the parent agent only
+	if r.parentRun == nil {
+		event := &ContentEvent{
+			EventID:   uuid.New().String(),
+			AgentName: r.agent.Name,
+			SessionID: r.session.ID,
+			Content:   content,
+			IsFinal:   isFinal,
+		}
+		r.queueEvent(event)
 	}
-	r.queueEvent(event)
 	if isFinal {
-		r.queueAction(&stopAction{EventID: event.EventID})
+		r.queueAction(&stopAction{EventID: uuid.New().String()})
 	}
 }
 

@@ -32,6 +32,7 @@ type Model struct {
 	StopSequences    *[]string
 	Stream           *bool
 	ContextSize      *int
+	Parameters       map[string]interface{} // additional non-standard parameters for the model
 }
 
 // Call makes a single call to the model. It does not execute any tool calls, but return the requested ToolCalls.
@@ -161,6 +162,11 @@ func (m *Model) WithStream(stream bool) *Model {
 	return m
 }
 
+func (m *Model) WithParameter(name string, value interface{}) *Model {
+	m.Parameters[name] = value
+	return m
+}
+
 // SetGenerateFunc sets the generate function for the model. This is used to override the default generate function to use a non standard provider.
 // Not required most of the time unless you are using a non standard provider.
 func (m *Model) SetGenerateFunc(generateFunc func(ctx context.Context, model *Model, messages []Message, tools []Tool) (AIMessage, error)) error {
@@ -168,8 +174,8 @@ func (m *Model) SetGenerateFunc(generateFunc func(ctx context.Context, model *Mo
 	return nil
 }
 
-// extractThinkTags extracts <think>...</think> tags from the content and returns both the cleaned content and the think part
-func extractThinkTags(content string) (cleanedContent string, thinkPart string) {
+// ExtractThinkTags extracts <think>...</think> tags from the content and returns both the cleaned content and the think part
+func ExtractThinkTags(content string) (cleanedContent string, thinkPart string) {
 	// Find the start and end positions of think tags
 	startTag := "<think>"
 	endTag := "</think>"

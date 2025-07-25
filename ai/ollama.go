@@ -284,7 +284,7 @@ func ollamaGenerate(ctx context.Context, model *Model, messages []Message, tools
 	}
 
 	// Convert Ollama response to AIMessage
-	content, thinkPart := extractThinkTags(apiRespMsg.Content)
+	content, thinkPart := ExtractThinkTags(apiRespMsg.Content)
 	finalMessage := AIMessage{Role: AssistantRole, Content: content, Think: thinkPart, OriginalContent: apiRespMsg.Content}
 
 	// Convert tool calls if any

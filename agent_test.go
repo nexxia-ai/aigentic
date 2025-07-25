@@ -42,7 +42,12 @@ func NewSecretNumberTool() ai.Tool {
 }
 
 func TestAgent_Basic(t *testing.T) {
-	model := ai.NewOllamaModel("qwen3:1.7b", "")
+	model := ai.NewDummyModel(func(messages []ai.Message, tools []ai.Tool) ai.AIMessage {
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "sydney",
+		}
+	})
 	session := NewSession()
 	session.Trace = NewTrace()
 
@@ -56,14 +61,14 @@ func TestAgent_Basic(t *testing.T) {
 		tools         []ai.Tool
 	}{
 		{
-			agent:         Agent{}, // there won't be any tracing in this case
+			agent:         Agent{Model: model}, // there won't be any tracing in this case
 			name:          "empty agent",
-			message:       "What is the capital of Australia?",
+			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, content, "Canberra")
+				assert.Contains(t, content, "sydney")
 			},
 			tools: []ai.Tool{},
 		},
@@ -75,7 +80,7 @@ func TestAgent_Basic(t *testing.T) {
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, content, "Sydney")
+				assert.Contains(t, content, "sydney")
 			},
 			tools: []ai.Tool{},
 		},

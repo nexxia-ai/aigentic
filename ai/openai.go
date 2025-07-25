@@ -407,7 +407,7 @@ func openaiREST(ctx context.Context, model *Model, messages []OpenAIMessage, too
 	}
 
 	choice := openaiResp.Choices[0]
-	content, thinkPart := extractThinkTags(choice.Message.Content)
+	content, thinkPart := ExtractThinkTags(choice.Message.Content)
 
 	msg := AIMessage{
 		Role:    MessageRole(choice.Message.Role),

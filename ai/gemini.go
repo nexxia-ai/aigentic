@@ -487,7 +487,7 @@ func geminiREST(ctx context.Context, model *Model, contents []GeminiContent, too
 		}
 	}
 
-	content, thinkPart := extractThinkTags(content)
+	content, thinkPart := ExtractThinkTags(content)
 
 	msg := AIMessage{
 		Role:    MessageRole(candidate.Content.Role),

@@ -1,17 +1,37 @@
 package ai
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 )
 
 var (
 	ErrToolExceeded = errors.New("tool loop limit exceeded")
 )
+
+// RecordedResponse represents a recorded AI response with error information
+type RecordedResponse struct {
+	AIMessage AIMessage `json:"ai_message"`
+	Error     string    `json:"error,omitempty"` // Empty string if no error
+	Timestamp string    `json:"timestamp"`
+}
+
+type StatusError struct {
+	StatusCode   int
+	Status       string
+	ErrorMessage string
+}
+
+func (e StatusError) Error() string {
+	return fmt.Sprintf("status: %s, code: %d, error: %s", e.Status, e.StatusCode, e.ErrorMessage)
+}
 
 // Model represents a generic model container that uses function variables for provider-specific logic
 type Model struct {
@@ -33,12 +53,23 @@ type Model struct {
 	Stream           *bool
 	ContextSize      *int
 	Parameters       map[string]interface{} // additional non-standard parameters for the model
+
+	// Recording functionality
+	RecordFilename string // If set, record responses to this file
 }
 
 // Call makes a single call to the model. It does not execute any tool calls, but return the requested ToolCalls.
 // This is useful to implemnent your own tool execution loop.
 func (m *Model) Call(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error) {
-	return m.callFunc(ctx, m, messages, tools)
+	// Make the actual provider call
+	response, err := m.callFunc(ctx, m, messages, tools)
+
+	// If recording is enabled, record the response
+	if m.RecordFilename != "" {
+		m.recordAIMessage(response, err)
+	}
+
+	return response, err
 }
 
 // Generate executes a complete conversation with tool execution loop
@@ -198,4 +229,67 @@ func ExtractThinkTags(content string) (cleanedContent string, thinkPart string) 
 	cleanedContent = content[:start] + content[end:]
 
 	return strings.TrimSpace(cleanedContent), strings.TrimSpace(thinkPart)
+}
+
+// recordAIMessage records an AI response to the specified file
+func (m *Model) recordAIMessage(response AIMessage, err error) {
+	// Create the recorded response structure
+	recorded := RecordedResponse{
+		AIMessage: response,
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+
+	// Set error message if there was an error
+	if err != nil {
+		recorded.Error = err.Error()
+	}
+
+	// Marshal to JSON (compact format for JSONL)
+	jsonData, marshalErr := json.Marshal(recorded)
+	if marshalErr != nil {
+		return // Silently fail if we can't marshal
+	}
+
+	// Open file for appending (create if doesn't exist)
+	file, openErr := os.OpenFile(m.RecordFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if openErr != nil {
+		return // Silently fail if we can't open file
+	}
+	defer file.Close()
+
+	// Write the JSON record followed by a newline
+	file.Write(jsonData)
+	file.WriteString("\n")
+}
+
+// LoadDummyRecords loads recorded responses from a file for use in dummy models
+func LoadDummyRecords(filename string) ([]RecordedResponse, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open recorded responses file: %w", err)
+	}
+	defer file.Close()
+
+	var records []RecordedResponse
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		var record RecordedResponse
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal recorded response: %w", err)
+		}
+
+		records = append(records, record)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading recorded responses file: %w", err)
+	}
+
+	return records, nil
 }

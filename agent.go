@@ -72,61 +72,6 @@ func (a *Agent) RunAndWait(message string) (string, error) {
 	return run.Wait(0)
 }
 
-func (a *Agent) init() error {
-	if a.ID == "" {
-		a.ID = uuid.New().String()
-	}
-	if a.Model == nil {
-		a.Model = ai.NewOpenAIModel("gpt-4o-mini", "")
-	}
-	if a.Session == nil {
-		a.Session = NewSession()
-	}
-	for _, aa := range a.Agents {
-		aa.Session = a.Session
-		aa.parentAgent = a
-		aa.Trace = a.Trace
-		// Create SimpleTool adapter for sub-agent
-		agentTool := ai.Tool{
-			Name:            aa.Name,
-			Description:     aa.Description,
-			RequireApproval: false,
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"input": map[string]interface{}{
-						"type":        "string",
-						"description": "The input to send to the agent",
-					},
-				},
-				"required": []string{"input"},
-			},
-			Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
-				input := args["input"].(string)
-				content, err := aa.RunAndWait(input)
-				if err != nil {
-					return &ai.ToolResult{
-						Content: []ai.ToolContent{{
-							Type:    "text",
-							Content: fmt.Sprintf("Error: %v", err),
-						}},
-						Error: true,
-					}, nil
-				}
-				return &ai.ToolResult{
-					Content: []ai.ToolContent{{
-						Type:    "text",
-						Content: content,
-					}},
-					Error: false,
-				}, nil
-			},
-		}
-		a.Tools = append(a.Tools, agentTool)
-	}
-	return nil
-}
-
 func (a *Agent) createSystemMessage(think string) string {
 	sysMsg := a.Description
 	if a.Instructions != "" {

@@ -1,6 +1,7 @@
 package aigentic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -34,7 +35,9 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 	}
 	model := a.Model
 	if model == nil {
-		model = ai.NewOpenAIModel("gpt-4o-mini", "")
+		model = ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+			return ai.AIMessage{}, fmt.Errorf("agent model is not set")
+		})
 	}
 	trace := session.Trace
 	if a.Trace != nil {

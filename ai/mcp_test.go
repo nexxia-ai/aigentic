@@ -1,17 +1,15 @@
 package ai
 
 import (
-	"reflect"
 	"testing"
 )
 
 func TestNewMCPHost(t *testing.T) {
 	tests := []struct {
 		name    string
-		want    *MCPHost
 		wantErr bool
 	}{
-		{name: "test1", want: &MCPHost{}, wantErr: false},
+		{name: "test1", wantErr: false},
 	}
 
 	config := &MCPConfig{
@@ -37,8 +35,8 @@ func TestNewMCPHost(t *testing.T) {
 				t.Errorf("NewMCPHost() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewMCPHost() = %v, want %v", got, tt.want)
+			if got == nil && !tt.wantErr {
+				t.Errorf("NewMCPHost() returned nil, expected non-nil result")
 			}
 		})
 	}

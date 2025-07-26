@@ -1,28 +1,89 @@
-//go:build integration
+package integration
 
-// To run integration tests, run this:
-// go test -v -tags=integration ./tests/integration/
-
-package main
+// This file contains reusable integration tests to test various model providers.
+// see tests/integration for the actual tests.
 
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nexxia-ai/aigentic"
-	ollama "github.com/nexxia-ai/aigentic-ollama"
-	openai "github.com/nexxia-ai/aigentic-openai"
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/utils"
 	"github.com/stretchr/testify/assert"
 )
 
-func init() {
-	utils.LoadEnvFile("../../.env")
+// IntegrationTestSuite defines a test suite for integration testing with different providers
+type IntegrationTestSuite struct {
+	NewModel  func() *ai.Model
+	Name      string
+	SkipTests []string
+}
+
+// RunIntegrationTestSuite runs all standard integration tests against a model implementation
+func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
+	// Helper function to check if a test should be skipped
+	shouldSkipTest := func(testName string) bool {
+		for _, skipTest := range suite.SkipTests {
+			if skipTest == testName {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run(suite.Name, func(t *testing.T) {
+		t.Run("BasicAgent", func(t *testing.T) {
+			if shouldSkipTest("BasicAgent") {
+				t.Skipf("Skipping BasicAgent test for %s", suite.Name)
+			}
+			TestBasicAgent(t, suite.NewModel())
+		})
+
+		t.Run("AgentRun", func(t *testing.T) {
+			if shouldSkipTest("AgentRun") {
+				t.Skipf("Skipping AgentRun test for %s", suite.Name)
+			}
+			TestAgentRun(t, suite.NewModel())
+		})
+
+		t.Run("ToolIntegration", func(t *testing.T) {
+			if shouldSkipTest("ToolIntegration") {
+				t.Skipf("Skipping ToolIntegration test for %s", suite.Name)
+			}
+			TestToolIntegration(t, suite.NewModel())
+		})
+
+		t.Run("TeamCoordination", func(t *testing.T) {
+			if shouldSkipTest("TeamCoordination") {
+				t.Skipf("Skipping TeamCoordination test for %s", suite.Name)
+			}
+			TestTeamCoordination(t, suite.NewModel())
+		})
+
+		t.Run("FileAttachments", func(t *testing.T) {
+			if shouldSkipTest("FileAttachments") {
+				t.Skipf("Skipping FileAttachments test for %s", suite.Name)
+			}
+			TestFileAttachments(t, suite.NewModel())
+		})
+
+		t.Run("MultiAgentChain", func(t *testing.T) {
+			if shouldSkipTest("MultiAgentChain") {
+				t.Skipf("Skipping MultiAgentChain test for %s", suite.Name)
+			}
+			TestMultiAgentChain(t, suite.NewModel())
+		})
+
+		t.Run("ConcurrentRuns", func(t *testing.T) {
+			if shouldSkipTest("ConcurrentRuns") {
+				t.Skipf("Skipping ConcurrentRuns test for %s", suite.Name)
+			}
+			TestConcurrentRuns(t, suite.NewModel())
+		})
+	})
 }
 
 // NewSecretNumberTool returns a SimpleTool struct for testing
@@ -49,8 +110,8 @@ func NewSecretNumberTool() ai.Tool {
 	}
 }
 
-func TestAgent_Basic(t *testing.T) {
-	model := ollama.NewModel("qwen3:1.7b", "")
+// Individual test functions that can be reused
+func TestBasicAgent(t *testing.T, model *ai.Model) {
 	session := aigentic.NewSession()
 	session.Trace = aigentic.NewTrace()
 
@@ -64,14 +125,14 @@ func TestAgent_Basic(t *testing.T) {
 		tools         []ai.Tool
 	}{
 		{
-			agent:         aigentic.Agent{Model: model}, // there won't be any tracing in this case
+			agent:         aigentic.Agent{Model: model},
 			name:          "empty agent",
 			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
 			validate: func(t *testing.T, content string, agent aigentic.Agent) {
 				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, content, "sydney")
+				assert.Contains(t, strings.ToLower(content), "sydney")
 			},
 			tools: []ai.Tool{},
 		},
@@ -83,14 +144,13 @@ func TestAgent_Basic(t *testing.T) {
 			validate: func(t *testing.T, content string, agent aigentic.Agent) {
 				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, content, "sydney")
+				assert.Contains(t, strings.ToLower(content), "sydney")
 			},
 			tools: []ai.Tool{},
 		},
 	}
 
 	for _, tt := range tests {
-		fmt.Printf("Running test: %s\n", tt.name)
 		t.Run(tt.name, func(t *testing.T) {
 			tt.agent.Attachments = tt.attachments
 			tt.agent.Tools = tt.tools
@@ -121,9 +181,7 @@ func TestAgent_Basic(t *testing.T) {
 	}
 }
 
-func TestAgent_Run(t *testing.T) {
-	model := ollama.NewModel("qwen3:1.7b", "")
-
+func TestAgentRun(t *testing.T, model *ai.Model) {
 	session := aigentic.NewSession()
 	session.Trace = aigentic.NewTrace()
 
@@ -149,7 +207,7 @@ func TestAgent_Run(t *testing.T) {
 			validate: func(t *testing.T, content string, agent aigentic.Agent) {
 				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, content, "Canberra")
+				assert.Contains(t, strings.ToLower(content), "canberra")
 			},
 			tools: []ai.Tool{},
 		},
@@ -158,7 +216,7 @@ func TestAgent_Run(t *testing.T) {
 			message: "Explain the concept of recursion",
 			validate: func(t *testing.T, content string, agent aigentic.Agent) {
 				assert.NotEmpty(t, content)
-				assert.Contains(t, content, "recursion")
+				assert.Contains(t, strings.ToLower(content), "recursion")
 			},
 			tools: []ai.Tool{},
 		},
@@ -195,11 +253,11 @@ func TestAgent_Run(t *testing.T) {
 	}
 }
 
-func TestAgent_Run_WithTools(t *testing.T) {
+func TestToolIntegration(t *testing.T, model *ai.Model) {
 	session := aigentic.NewSession()
 	session.Trace = aigentic.NewTrace()
 
-	newAgent := func(model *ai.Model) aigentic.Agent {
+	newAgent := func() aigentic.Agent {
 		return aigentic.Agent{
 			Name:         "test-agent",
 			Session:      session,
@@ -219,20 +277,9 @@ func TestAgent_Run_WithTools(t *testing.T) {
 		tools       []ai.Tool
 	}{
 		{
-			name:        "Ollama tool call",
+			name:        "tool call",
 			message:     "tell me the name of the company with the number 150. Use tools.",
-			agent:       newAgent(ollama.NewModel("qwen3:1.7b", "")),
-			tools:       []ai.Tool{NewSecretNumberTool()},
-			attachments: []aigentic.Attachment{},
-			validate: func(t *testing.T, content string, agent aigentic.Agent) {
-				assert.NotEmpty(t, content)
-				assert.Contains(t, content, "Nexxia")
-			},
-		},
-		{
-			name:        "OpenAI tool call",
-			message:     "tell me the name of the company with the number 150. Use tools.",
-			agent:       newAgent(openai.NewModel("gpt-4o-mini", "")),
+			agent:       newAgent(),
 			tools:       []ai.Tool{NewSecretNumberTool()},
 			attachments: []aigentic.Attachment{},
 			validate: func(t *testing.T, content string, agent aigentic.Agent) {
@@ -272,10 +319,7 @@ func TestAgent_Run_WithTools(t *testing.T) {
 	}
 }
 
-func TestTeam(t *testing.T) {
-
-	model := ollama.NewModel("qwen3:1.7b", "")
-
+func TestTeamCoordination(t *testing.T, model *ai.Model) {
 	// Add agents with different roles
 	calculator := aigentic.Agent{
 		Model:        model,
@@ -291,9 +335,8 @@ func TestTeam(t *testing.T) {
 	}
 
 	team := aigentic.Agent{
-		Model: ollama.NewModel("qwen3:14b", ""),
-		// Model: ai.ollama("gpt-4o-mini", ""),
-		Name: "coordinator",
+		Model: model,
+		Name:  "coordinator",
 		Description: `
 		You are a coordinator for a math problem solving team. 
 		When you receive a math question, you must first use the calculator to get the answer, 
@@ -356,52 +399,15 @@ func TestTeam(t *testing.T) {
 	}
 }
 
-// TestAgent_Run_WithFileID tests the agent with OpenAI Files API integration
-func TestAgent_Run_WithFileID(t *testing.T) {
-	// Skip if no OpenAI API key is available
-	if os.Getenv("OPENAI_API_KEY") == "" {
-		t.Fatal("Skipping OpenAI integration test: OPENAI_API_KEY not set")
-	}
-
-	// model := openai.NewOpenAIModel("gpt-4o", "")
-	model := openai.NewModel("o4-mini", "")
-	// model := openai.NewOpenAIModel("gpt-4.1", "")
-
-	agent := aigentic.Agent{
-		Model:        model,
-		Description:  "You are a helpful assistant that analyzes files and provides insights.",
-		Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
-		Trace:        aigentic.NewTrace(),
-		Attachments: []aigentic.Attachment{
-			{
-				Type: "file",
-				// Content:  []byte("This is test content for the file."),
-				MimeType: "application/pdf",
-				Name:     "file-WjBr55R67mVmhXCsvKZ6Zs",
-			},
-		},
-	}
-
-	// Test the agent with file ID
-	_, err := agent.RunAndWait("Please analyze the attached file and tell me what it contains. If you can access it, start your response with 'SUCCESS:' followed by the analysis.")
-	assert.NoError(t, err)
-}
-
-func TestAgent_Run_Attachments(t *testing.T) {
-	if os.Getenv("OPENAI_API_KEY") == "" {
-		t.Fatal("Skipping OpenAI integration test: OPENAI_API_KEY not set")
-	}
-
+func TestFileAttachments(t *testing.T, model *ai.Model) {
 	// Define test cases
 	testCases := []struct {
 		name        string
-		model       *ai.Model
 		attachments []aigentic.Attachment
 		description string
 	}{
 		{
-			name:  "GPT-4o-mini with text file",
-			model: openai.NewModel("gpt-4o-mini", ""),
+			name: "text file",
 			attachments: []aigentic.Attachment{
 				{
 					Type:     "text",
@@ -413,8 +419,7 @@ func TestAgent_Run_Attachments(t *testing.T) {
 			description: "You are a helpful assistant that analyzes text files and provides insights.",
 		},
 		{
-			name:  "GPT-4o-mini with PDF file",
-			model: openai.NewModel("gpt-4o-mini", ""),
+			name: "PDF file",
 			attachments: []aigentic.Attachment{
 				{
 					Type:     "pdf",
@@ -426,110 +431,7 @@ func TestAgent_Run_Attachments(t *testing.T) {
 			description: "You are a helpful assistant that analyzes PDF files and provides insights.",
 		},
 		{
-			name:  "GPT-4o-mini with image file",
-			model: openai.NewModel("gpt-4o-mini-2024-07-18", ""),
-			attachments: []aigentic.Attachment{
-				{
-					Type:     "image",
-					Content:  []byte("fake-image-data-for-testing"),
-					MimeType: "image/png",
-					Name:     "sample.png",
-				},
-			},
-			description: "You are a helpful assistant that analyzes images and provides insights.",
-		},
-		{
-			name:  "GPT-4o-mini with file ID",
-			model: openai.NewModel("gpt-4o-mini", ""),
-			attachments: []aigentic.Attachment{
-				{
-					Type: "file",
-					Name: "file-Rro2oxubCRkrbpWsdSypWL",
-				},
-			},
-			description: "You are a helpful assistant that analyzes files using file IDs and provides insights.",
-		},
-		{
-			name:  "GPT-4o with text file",
-			model: openai.NewModel("gpt-4o", ""),
-			attachments: []aigentic.Attachment{
-				{
-					Type:     "text",
-					Content:  []byte("This is a test text file with some sample content for analysis."),
-					MimeType: "text/plain",
-					Name:     "sample.txt",
-				},
-			},
-			description: "You are a helpful assistant that analyzes text files and provides insights.",
-		},
-		{
-			name:  "GPT-4o with PDF file",
-			model: openai.NewModel("gpt-4o", ""),
-			attachments: []aigentic.Attachment{
-				{
-					Type:     "pdf",
-					Content:  []byte("%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Test PDF Content) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000204 00000 n \ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n297\n%%EOF"),
-					MimeType: "application/pdf",
-					Name:     "sample.pdf",
-				},
-			},
-			description: "You are a helpful assistant that analyzes PDF files and provides insights.",
-		},
-		{
-			name:  "GPT-4o with image file",
-			model: openai.NewModel("gpt-4o", ""),
-			attachments: []aigentic.Attachment{
-				{
-					Type:     "image",
-					Content:  []byte("fake-image-data-for-testing"),
-					MimeType: "image/png",
-					Name:     "sample.png",
-				},
-			},
-			description: "You are a helpful assistant that analyzes images and provides insights.",
-		},
-		{
-			name:  "GPT-4o with file ID",
-			model: openai.NewModel("gpt-4o", ""),
-			attachments: []aigentic.Attachment{
-				{
-					Type:     "file",
-					Content:  []byte("This is test content for the file."),
-					MimeType: "text/plain",
-					Name:     "file-Rro2oxubCRkrbpWsdSypWL",
-				},
-			},
-			description: "You are a helpful assistant that analyzes files using file IDs and provides insights.",
-		},
-		{
-			name:  "Qwen with text file",
-			model: ollama.NewModel("qwen2.5:7b", ""),
-			attachments: []aigentic.Attachment{
-				{
-					Type:     "text",
-					Content:  []byte("This is a test text file with some sample content for analysis."),
-					MimeType: "text/plain",
-					Name:     "sample.txt",
-				},
-			},
-			description: "You are a helpful assistant that analyzes text files and provides insights.",
-		},
-		{
-			name:  "Qwen with PDF file",
-			model: ollama.NewModel("qwen3:1.7b", ""),
-			attachments: []aigentic.Attachment{
-				{
-					Type:     "pdf",
-					Content:  []byte("%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Test PDF Content) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000204 00000 n \ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n297\n%%EOF"),
-					MimeType: "application/pdf",
-					Name:     "sample.pdf",
-				},
-			},
-			description: "You are a helpful assistant that analyzes PDF files and provides insights.",
-		},
-		{
-			name:  "Qwen with image file",
-			model: ollama.NewModel("qwen3:1.7b", ""),
+			name: "image file",
 			attachments: []aigentic.Attachment{
 				{
 					Type:     "image",
@@ -546,14 +448,13 @@ func TestAgent_Run_Attachments(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := aigentic.Agent{
-				Model:        tc.model,
+				Model:        model,
 				Description:  tc.description,
 				Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
 				Trace:        tracer,
 				Attachments:  tc.attachments,
 			}
 
-			// Test the agent with attachments
 			run, err := agent.Run("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
@@ -563,27 +464,14 @@ func TestAgent_Run_Attachments(t *testing.T) {
 				t.Fatalf("Agent wait failed: %v", err)
 			}
 
-			if err != nil {
-				t.Logf("Agent run completed with error: %v", err)
-				// Even if there's an error, we should get some response
-				assert.NotEmpty(t, response)
-			} else {
-				assert.NoError(t, err)
-				assert.NotEmpty(t, response)
-
-				// Log the response for debugging
-				t.Logf("Agent response: %s", response)
-
-				// For file ID tests, check if the response mentions the file ID (only for OpenAI models)
-				if len(tc.attachments) > 0 && tc.attachments[0].Type == "file" && strings.Contains(tc.model.ModelName, "gpt") {
-					assert.Contains(t, response, tc.attachments[0].Name)
-				}
-			}
+			assert.NoError(t, err)
+			assert.NotEmpty(t, response)
+			t.Logf("Agent response: %s", response)
 		})
 	}
 }
 
-func TestMultiAgent_ChainExperts(t *testing.T) {
+func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 	const numExperts = 3
 	input := "start"
 
@@ -599,7 +487,7 @@ func TestMultiAgent_ChainExperts(t *testing.T) {
 			do not change the input text
 			do not add any additional information` +
 				fmt.Sprintf("Your name is %s. Append your name to the input and return that as the output.", expertName),
-			Model: ollama.NewModel("qwen3:1.7b", ""),
+			Model: model,
 			Tools: nil,
 		}
 	}
@@ -611,7 +499,7 @@ func TestMultiAgent_ChainExperts(t *testing.T) {
 		Call each expert one by one in order, passing the previous expert's signature. 
 		You must call all the experts in order.
 		Return the final signatures as received from the last expert. do not add any additional text or commentary.`,
-		Model:  openai.NewModel("gpt-4o-mini", ""),
+		Model:  model,
 		Agents: experts,
 		Trace:  aigentic.NewTrace(),
 	}
@@ -628,9 +516,9 @@ func TestMultiAgent_ChainExperts(t *testing.T) {
 	assert.Equal(t, "start expert1 expert2 expert3", strings.TrimSpace(response))
 }
 
-func TestAgent_MultipleSequentialRuns(t *testing.T) {
+func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 	agent := aigentic.Agent{
-		Model:        ollama.NewModel("qwen3:1.7b", ""),
+		Model:        model,
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
 		Tools:        []ai.Tool{NewSecretNumberTool()},

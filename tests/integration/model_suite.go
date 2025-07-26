@@ -1,4 +1,4 @@
-package ai
+package integration
 
 // This file contains the test suite for the ai package.
 // It is used by packages that implement the ai models to test the ai models and its implementations.
@@ -10,13 +10,15 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nexxia-ai/aigentic/ai"
 )
 
 //go:embed testdata/*
 var testData embed.FS
 
 // Common echo tool for testing
-var echoTool = Tool{
+var echoTool = ai.Tool{
 	Name:        "echo",
 	Description: "Echoes back the input text",
 	InputSchema: map[string]interface{}{
@@ -29,10 +31,10 @@ var echoTool = Tool{
 		},
 		"required": []string{"text"},
 	},
-	Execute: func(args map[string]interface{}) (*ToolResult, error) {
+	Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
 		text := args["text"].(string)
-		return &ToolResult{
-			Content: []ToolContent{{
+		return &ai.ToolResult{
+			Content: []ai.ToolContent{{
 				Type:    "text",
 				Content: text,
 			}},
@@ -43,13 +45,13 @@ var echoTool = Tool{
 
 type testArgs struct {
 	ctx      context.Context
-	messages []Message
-	tools    []Tool
+	messages []ai.Message
+	tools    []ai.Tool
 }
 
 // ModelTestSuite defines a test suite for a model implementation
 type ModelTestSuite struct {
-	NewModel  func() *Model
+	NewModel  func() *ai.Model
 	Name      string
 	SkipTests []string // List of test names to skip
 }
@@ -141,11 +143,11 @@ func RunModelTestSuite(t *testing.T, suite ModelTestSuite) {
 }
 
 // Individual test functions that can be reused
-func TestGenerateSimple(t *testing.T, model *Model) {
+func TestGenerateSimple(t *testing.T, model *ai.Model) {
 	args := testArgs{
 		ctx:      context.Background(),
-		messages: []Message{UserMessage{Role: UserRole, Content: "What is the capital of Australia?"}},
-		tools:    []Tool{},
+		messages: []ai.Message{ai.UserMessage{Role: ai.UserRole, Content: "What is the capital of Australia?"}},
+		tools:    []ai.Tool{},
 	}
 
 	got, err := model.Call(args.ctx, args.messages, args.tools)
@@ -169,17 +171,17 @@ func TestGenerateSimple(t *testing.T, model *Model) {
 	}
 }
 
-func TestProcessImage(t *testing.T, model *Model) {
+func TestProcessImage(t *testing.T, model *ai.Model) {
 	testArgs := testArgs{
 		ctx: context.Background(),
-		messages: []Message{
-			UserMessage{Role: UserRole, Content: "Extract the text from this image and return the word SUCCESS if it worked followed by the text"},
-			ResourceMessage{Role: UserRole, Name: "test.png", MIMEType: "image/png", Body: func() []byte {
+		messages: []ai.Message{
+			ai.UserMessage{Role: ai.UserRole, Content: "Extract the text from this image and return the word SUCCESS if it worked followed by the text"},
+			ai.ResourceMessage{Role: ai.UserRole, Name: "test.png", MIMEType: "image/png", Body: func() []byte {
 				data, _ := testData.ReadFile("testdata/test.png")
 				return data
 			}()},
 		},
-		tools: []Tool{},
+		tools: []ai.Tool{},
 	}
 
 	got, err := model.Call(testArgs.ctx, testArgs.messages, testArgs.tools)
@@ -194,17 +196,17 @@ func TestProcessImage(t *testing.T, model *Model) {
 	}
 }
 
-func TestProcessAttachments(t *testing.T, model *Model) {
+func TestProcessAttachments(t *testing.T, model *ai.Model) {
 	testArgs := testArgs{
 		ctx: context.Background(),
-		messages: []Message{
-			UserMessage{Role: UserRole, Content: "Read the content of this text file and return the content of the file verbatim. do not add any other text"},
-			ResourceMessage{Role: UserRole, Name: "sample.txt", MIMEType: "text/plain", Type: "text", Body: func() []byte {
+		messages: []ai.Message{
+			ai.UserMessage{Role: ai.UserRole, Content: "Read the content of this text file and return the content of the file verbatim. do not add any other text"},
+			ai.ResourceMessage{Role: ai.UserRole, Name: "sample.txt", MIMEType: "text/plain", Type: "text", Body: func() []byte {
 				data, _ := testData.ReadFile("testdata/sample.txt")
 				return data
 			}()},
 		},
-		tools: []Tool{},
+		tools: []ai.Tool{},
 	}
 
 	got, err := model.Call(testArgs.ctx, testArgs.messages, testArgs.tools)
@@ -213,19 +215,18 @@ func TestProcessAttachments(t *testing.T, model *Model) {
 		return
 	}
 	_, content := got.Value()
-	t.Logf("Model returned: %s", content)
 	if !strings.Contains(strings.ToLower(content), strings.ToLower("ATTACHMENT_SUCCESS")) {
 		t.Errorf("Model.Generate() did not find required word 'ATTACHMENT_SUCCESS' in response: %s", content)
 	}
 }
 
-func TestGenerateContentWithTools(t *testing.T, model *Model) {
+func TestGenerateContentWithTools(t *testing.T, model *ai.Model) {
 	args := testArgs{
 		ctx: context.Background(),
-		messages: []Message{
-			UserMessage{Role: UserRole, Content: "Please use the echo tool to echo back the text 'Hello, World!'"},
+		messages: []ai.Message{
+			ai.UserMessage{Role: ai.UserRole, Content: "Please use the echo tool to echo back the text 'Hello, World!'"},
 		},
-		tools: []Tool{
+		tools: []ai.Tool{
 			echoTool,
 		},
 	}
@@ -254,7 +255,7 @@ func TestGenerateContentWithTools(t *testing.T, model *Model) {
 	}
 }
 
-func TestSetContextSize(t *testing.T, model *Model) {
+func TestSetContextSize(t *testing.T, model *ai.Model) {
 	result := model.WithContextSize(8192).WithTemperature(0.7).WithMaxTokens(1000)
 
 	if result != model {
@@ -274,7 +275,7 @@ func TestSetContextSize(t *testing.T, model *Model) {
 	}
 }
 
-func TestAllZeroValues(t *testing.T, model *Model) {
+func TestAllZeroValues(t *testing.T, model *ai.Model) {
 	// Test all available With methods with zero values
 	result := model.
 		WithTemperature(0.0).
@@ -318,7 +319,7 @@ func TestAllZeroValues(t *testing.T, model *Model) {
 	}
 }
 
-func TestChainingAndOverwriting(t *testing.T, model *Model) {
+func TestChainingAndOverwriting(t *testing.T, model *ai.Model) {
 	// Test chaining with multiple method calls and overwriting
 	result := model.
 		WithTemperature(0.5).
@@ -345,7 +346,7 @@ func TestChainingAndOverwriting(t *testing.T, model *Model) {
 	}
 }
 
-func TestContextTimeout(t *testing.T, model *Model) {
+func TestContextTimeout(t *testing.T, model *ai.Model) {
 	testCases := []struct {
 		name        string
 		timeout     time.Duration
@@ -372,20 +373,17 @@ func TestContextTimeout(t *testing.T, model *Model) {
 			defer cancel()
 
 			// Create a simple message
-			messages := []Message{
-				UserMessage{
-					Role:    UserRole,
+			messages := []ai.Message{
+				ai.UserMessage{
+					Role:    ai.UserRole,
 					Content: "What is the capital of France?",
 				},
 			}
 
 			// Make the call
 			start := time.Now()
-			response, err := model.Call(ctx, messages, []Tool{})
+			response, err := model.Call(ctx, messages, []ai.Tool{})
 			duration := time.Since(start)
-
-			// Log the duration for debugging
-			t.Logf("Call duration: %v", duration)
 
 			if tc.expectError {
 				// Should have an error
@@ -425,7 +423,7 @@ func TestContextTimeout(t *testing.T, model *Model) {
 	}
 }
 
-func TestContextCancellation(t *testing.T, model *Model) {
+func TestContextCancellation(t *testing.T, model *ai.Model) {
 	testCases := []struct {
 		name        string
 		cancelDelay time.Duration
@@ -446,22 +444,22 @@ func TestContextCancellation(t *testing.T, model *Model) {
 			ctx, cancel := context.WithCancel(context.Background())
 
 			// Create a simple message
-			messages := []Message{
-				UserMessage{
-					Role:    UserRole,
+			messages := []ai.Message{
+				ai.UserMessage{
+					Role:    ai.UserRole,
 					Content: "What is the capital of France?",
 				},
 			}
 
 			// Start the call in a goroutine
-			var response AIMessage
+			var response ai.AIMessage
 			var err error
 			var wg sync.WaitGroup
 			wg.Add(1)
 
 			go func() {
 				defer wg.Done()
-				response, err = model.Call(ctx, messages, []Tool{})
+				response, err = model.Call(ctx, messages, []ai.Tool{})
 			}()
 
 			// Cancel the context after the specified delay
@@ -484,8 +482,6 @@ func TestContextCancellation(t *testing.T, model *Model) {
 					t.Errorf("Expected error containing '%s', got: %s", tc.errorType, errStr)
 				}
 
-				// Log that we got an error as expected
-				t.Logf("Got expected error: %v", err)
 			} else {
 				// Should not have an error
 				if err != nil {
@@ -505,7 +501,7 @@ func TestContextCancellation(t *testing.T, model *Model) {
 	}
 }
 
-func TestGenerateWithTimeout(t *testing.T, model *Model) {
+func TestGenerateWithTimeout(t *testing.T, model *ai.Model) {
 	testCases := []struct {
 		name        string
 		timeout     time.Duration
@@ -527,20 +523,17 @@ func TestGenerateWithTimeout(t *testing.T, model *Model) {
 			defer cancel()
 
 			// Create a simple message
-			messages := []Message{
-				UserMessage{
-					Role:    UserRole,
+			messages := []ai.Message{
+				ai.UserMessage{
+					Role:    ai.UserRole,
 					Content: "What is the capital of France?",
 				},
 			}
 
 			// Make the Generate call
 			start := time.Now()
-			response, err := model.Generate(ctx, messages, []Tool{})
+			response, err := model.Generate(ctx, messages, []ai.Tool{})
 			duration := time.Since(start)
-
-			// Log the duration for debugging
-			t.Logf("Generate call duration: %v", duration)
 
 			if tc.expectError {
 				// Should have an error

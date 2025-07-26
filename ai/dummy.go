@@ -24,21 +24,15 @@ var (
 	replayInitialized bool
 )
 
-// ReplayFunction creates a function that loads recorded responses from a file and replays them sequentially
-func ReplayFunction(filename string) (func(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error), error) {
+// ReplayFunctionFromData creates a function that replays recorded responses from provided data sequentially
+func ReplayFunctionFromData(responses []RecordedResponse) (func(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error), error) {
 	replayMutex.Lock()
 	defer replayMutex.Unlock()
 
-	// Load the recorded responses only once
-	if !replayInitialized {
-		records, err := LoadDummyRecords(filename)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load recorded responses: %w", err)
-		}
-		replayRecords = records
-		replayIndex = 0
-		replayInitialized = true
-	}
+	// Reset the replay state
+	replayRecords = responses
+	replayIndex = 0
+	replayInitialized = true
 
 	// Return a function that replays the next recorded response
 	return func(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error) {
@@ -71,4 +65,16 @@ func ReplayFunction(filename string) (func(ctx context.Context, messages []Messa
 		}
 		return record.AIMessage, nil
 	}, nil
+}
+
+// ReplayFunction creates a function that loads recorded responses from a file and replays them sequentially
+func ReplayFunction(filename string) (func(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error), error) {
+	// Load the recorded responses from file
+	records, err := LoadDummyRecords(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load recorded responses: %w", err)
+	}
+
+	// Use the ReplayFunctionFromData to create the replay function
+	return ReplayFunctionFromData(records)
 }

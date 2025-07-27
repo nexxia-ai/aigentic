@@ -88,7 +88,6 @@ func (r *AgentRun) addSystemTools() []ai.Tool {
 				run.trace = r.trace
 				run.logger = r.logger.With("sub-agent", aa.Name)
 				run.parentRun = r
-				r.logger.Debug("calling sub-agent", "sub-agent", aa.Name)
 				run.start()
 				content, err := run.Wait(0)
 				if err != nil {
@@ -194,7 +193,12 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 
 	var respMsg ai.AIMessage
 	var err error
-	r.logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
+	if r.parentRun == nil {
+		r.logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
+	} else {
+		r.logger.Debug("calling sub-agent LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
+
+	}
 	respMsg, err = r.model.Call(r.session.Context, msgs, tools)
 	if err != nil {
 		if r.trace != nil {

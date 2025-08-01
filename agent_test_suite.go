@@ -1,7 +1,6 @@
-package integration
+package aigentic
 
 // This file contains reusable integration tests to test various model providers.
-// see tests/integration for the actual tests.
 
 import (
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/stretchr/testify/assert"
 )
@@ -112,24 +110,24 @@ func NewSecretNumberTool() ai.Tool {
 
 // Individual test functions that can be reused
 func TestBasicAgent(t *testing.T, model *ai.Model) {
-	session := aigentic.NewSession()
-	session.Trace = aigentic.NewTrace()
+	session := NewSession()
+	session.Trace = NewTrace()
 
 	tests := []struct {
-		agent         aigentic.Agent
+		agent         Agent
 		name          string
 		message       string
 		expectedError bool
-		validate      func(t *testing.T, content string, agent aigentic.Agent)
-		attachments   []aigentic.Attachment
+		validate      func(t *testing.T, content string, agent Agent)
+		attachments   []Attachment
 		tools         []ai.Tool
 	}{
 		{
-			agent:         aigentic.Agent{Model: model},
+			agent:         Agent{Model: model},
 			name:          "empty agent",
 			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
-			validate: func(t *testing.T, content string, agent aigentic.Agent) {
+			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
 				assert.Contains(t, strings.ToLower(content), "sydney")
@@ -137,11 +135,11 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			tools: []ai.Tool{},
 		},
 		{
-			agent:         aigentic.Agent{Session: session, Model: model},
+			agent:         Agent{Session: session, Model: model},
 			name:          "basic conversation",
 			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
-			validate: func(t *testing.T, content string, agent aigentic.Agent) {
+			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
 				assert.Contains(t, strings.ToLower(content), "sydney")
@@ -162,15 +160,15 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			var finalContent string
 			for ev := range run.Next() {
 				switch e := ev.(type) {
-				case *aigentic.ContentEvent:
+				case *ContentEvent:
 					if e.IsFinal {
 						finalContent = e.Content
 					}
-				case *aigentic.ToolEvent:
+				case *ToolEvent:
 					if e.RequireApproval {
 						run.Approve(e.ID())
 					}
-				case *aigentic.ErrorEvent:
+				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
@@ -182,11 +180,11 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 }
 
 func TestAgentRun(t *testing.T, model *ai.Model) {
-	session := aigentic.NewSession()
-	session.Trace = aigentic.NewTrace()
+	session := NewSession()
+	session.Trace = NewTrace()
 
-	newAgent := func() aigentic.Agent {
-		return aigentic.Agent{
+	newAgent := func() Agent {
+		return Agent{
 			Session:      session,
 			Model:        model,
 			Description:  "You are a helpful assistant that provides clear and concise answers.",
@@ -197,14 +195,14 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 	tests := []struct {
 		name        string
 		message     string
-		validate    func(t *testing.T, content string, agent aigentic.Agent)
-		attachments []aigentic.Attachment
+		validate    func(t *testing.T, content string, agent Agent)
+		attachments []Attachment
 		tools       []ai.Tool
 	}{
 		{
 			name:    "basic conversation",
 			message: "What is the capital of Australia?",
-			validate: func(t *testing.T, content string, agent aigentic.Agent) {
+			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.NotEmpty(t, agent.ID)
 				assert.Contains(t, strings.ToLower(content), "canberra")
@@ -214,7 +212,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 		{
 			name:    "conversation with instructions",
 			message: "Explain the concept of recursion",
-			validate: func(t *testing.T, content string, agent aigentic.Agent) {
+			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.Contains(t, strings.ToLower(content), "recursion")
 			},
@@ -234,15 +232,15 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 			var finalContent string
 			for ev := range run.Next() {
 				switch e := ev.(type) {
-				case *aigentic.ContentEvent:
+				case *ContentEvent:
 					if e.IsFinal {
 						finalContent = e.Content
 					}
-				case *aigentic.ToolEvent:
+				case *ToolEvent:
 					if e.RequireApproval {
 						run.Approve(e.ID())
 					}
-				case *aigentic.ErrorEvent:
+				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
@@ -254,11 +252,11 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 }
 
 func TestToolIntegration(t *testing.T, model *ai.Model) {
-	session := aigentic.NewSession()
-	session.Trace = aigentic.NewTrace()
+	session := NewSession()
+	session.Trace = NewTrace()
 
-	newAgent := func() aigentic.Agent {
-		return aigentic.Agent{
+	newAgent := func() Agent {
+		return Agent{
 			Name:         "test-agent",
 			Session:      session,
 			Model:        model,
@@ -271,9 +269,9 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 	tests := []struct {
 		name        string
 		message     string
-		agent       aigentic.Agent
-		validate    func(t *testing.T, content string, agent aigentic.Agent)
-		attachments []aigentic.Attachment
+		agent       Agent
+		validate    func(t *testing.T, content string, agent Agent)
+		attachments []Attachment
 		tools       []ai.Tool
 	}{
 		{
@@ -281,8 +279,8 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			message:     "tell me the name of the company with the number 150. Use tools.",
 			agent:       newAgent(),
 			tools:       []ai.Tool{NewSecretNumberTool()},
-			attachments: []aigentic.Attachment{},
-			validate: func(t *testing.T, content string, agent aigentic.Agent) {
+			attachments: []Attachment{},
+			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.Contains(t, content, "Nexxia")
 			},
@@ -300,15 +298,15 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			var finalContent string
 			for ev := range run.Next() {
 				switch e := ev.(type) {
-				case *aigentic.ContentEvent:
+				case *ContentEvent:
 					if e.IsFinal {
 						finalContent = e.Content
 					}
-				case *aigentic.ToolEvent:
+				case *ToolEvent:
 					if e.RequireApproval {
 						run.Approve(e.ID())
 					}
-				case *aigentic.ErrorEvent:
+				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
@@ -321,20 +319,20 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 
 func TestTeamCoordination(t *testing.T, model *ai.Model) {
 	// Add agents with different roles
-	calculator := aigentic.Agent{
+	calculator := Agent{
 		Model:        model,
 		Name:         "calculator",
 		Description:  "You are a calculator. When given a math problem, solve it and return only the numerical result.",
 		Instructions: "Solve the math problem and return only the number. Do not add any explanation or text.",
 	}
-	explainer := aigentic.Agent{
+	explainer := Agent{
 		Model:        model,
 		Name:         "explainer",
 		Description:  "You are a math teacher. When given a calculation, explain what it means in simple terms in terms of the office oranges that you have.",
 		Instructions: "Explain the calculation in simple terms. Start your response with 'EXPLANATION: ' followed by your explanation.",
 	}
 
-	team := aigentic.Agent{
+	team := Agent{
 		Model: model,
 		Name:  "coordinator",
 		Description: `
@@ -348,9 +346,9 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			Use the output from the calculator as input to the explainer.
 			Respond with both answers clearly labeled: "Calculator: [result]" and "Explainer: [explanation]".
 			Do not add any additional text or commentary.`,
-		Trace:    aigentic.NewTrace(),
+		Trace:    NewTrace(),
 		LogLevel: slog.LevelDebug,
-		Agents:   []*aigentic.Agent{&calculator, &explainer},
+		Agents:   []*Agent{&calculator, &explainer},
 	}
 
 	tests := []struct {
@@ -382,11 +380,11 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			var finalContent string
 			for ev := range run.Next() {
 				switch e := ev.(type) {
-				case *aigentic.ContentEvent:
+				case *ContentEvent:
 					if e.IsFinal {
 						finalContent = e.Content
 					}
-				case *aigentic.ToolEvent:
+				case *ToolEvent:
 					if e.RequireApproval {
 						run.Approve(e.ID())
 					}
@@ -403,12 +401,12 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 	// Define test cases
 	testCases := []struct {
 		name        string
-		attachments []aigentic.Attachment
+		attachments []Attachment
 		description string
 	}{
 		{
 			name: "text file",
-			attachments: []aigentic.Attachment{
+			attachments: []Attachment{
 				{
 					Type:     "text",
 					Content:  []byte("This is a test text file with some sample content for analysis."),
@@ -420,7 +418,7 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 		},
 		{
 			name: "PDF file",
-			attachments: []aigentic.Attachment{
+			attachments: []Attachment{
 				{
 					Type:     "pdf",
 					Content:  []byte("%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Test PDF Content) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000204 00000 n \ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n297\n%%EOF"),
@@ -432,7 +430,7 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 		},
 		{
 			name: "image file",
-			attachments: []aigentic.Attachment{
+			attachments: []Attachment{
 				{
 					Type:     "image",
 					Content:  []byte("fake-image-data-for-testing"),
@@ -444,10 +442,10 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 		},
 	}
 
-	tracer := aigentic.NewTrace()
+	tracer := NewTrace()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			agent := aigentic.Agent{
+			agent := Agent{
 				Model:        model,
 				Description:  tc.description,
 				Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
@@ -475,10 +473,10 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 	const numExperts = 3
 	input := "start"
 
-	experts := make([]*aigentic.Agent, numExperts)
+	experts := make([]*Agent, numExperts)
 	for i := 0; i < numExperts; i++ {
 		expertName := fmt.Sprintf("expert%d", i+1)
-		experts[i] = &aigentic.Agent{
+		experts[i] = &Agent{
 			Name:        expertName,
 			Description: "You are an expert in a group of experts. Your role is to sign the input with your name by appending your name at the end of the input.",
 			Instructions: `
@@ -492,7 +490,7 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		}
 	}
 
-	coordinator := aigentic.Agent{
+	coordinator := Agent{
 		Name:        "coordinator",
 		Description: "You are the coordinator to collect signature from experts. Your role is to call each expert one by one in order, passing the previous signature to the next expert so he/she can sign the input. Return all the signatures as received by the experts.",
 		Instructions: `
@@ -501,7 +499,7 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		Return the final signatures as received from the last expert. do not add any additional text or commentary.`,
 		Model:  model,
 		Agents: experts,
-		Trace:  aigentic.NewTrace(),
+		Trace:  NewTrace(),
 	}
 
 	run, err := coordinator.Run("call the first expert with the input: " + input)
@@ -517,12 +515,12 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 }
 
 func TestConcurrentRuns(t *testing.T, model *ai.Model) {
-	agent := aigentic.Agent{
+	agent := Agent{
 		Model:        model,
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
 		Tools:        []ai.Tool{NewSecretNumberTool()},
-		Trace:        aigentic.NewTrace(),
+		Trace:        NewTrace(),
 		LogLevel:     slog.LevelDebug,
 	}
 
@@ -550,7 +548,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 	}
 
 	// Start all runs first (parallel execution)
-	var agentRuns []*aigentic.AgentRun
+	var agentRuns []*AgentRun
 	for i, run := range runs {
 		t.Logf("Starting run %d: %s", i+1, run.name)
 

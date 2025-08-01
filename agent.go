@@ -42,6 +42,7 @@ type Agent struct {
 	parentAgent         *Agent
 	Trace               *Trace
 	LogLevel            slog.Level
+	MaxLLMCalls         int // Maximum number of LLM calls (0 = unlimited)
 }
 
 // Attachment represents a file attachment for LLM requests

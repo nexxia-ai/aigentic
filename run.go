@@ -26,6 +26,8 @@ type AgentRun struct {
 	userMessage      string
 	parentRun        *AgentRun // pointer toparent if this is a sub-agent
 	logger           *slog.Logger
+	maxLLMCalls      int // maximum number of LLM calls
+	llmCallCount     int // number of LLM calls made
 }
 
 func newAgentRun(a *Agent, message string) *AgentRun {
@@ -43,12 +45,17 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 	if a.Trace != nil {
 		trace = a.Trace
 	}
+	maxLLMCalls := 20
+	if a.MaxLLMCalls != 0 {
+		maxLLMCalls = a.MaxLLMCalls
+	}
 	run := &AgentRun{
 		agent:            a,
 		model:            model,
 		session:          session,
 		userMessage:      message,
 		trace:            trace,
+		maxLLMCalls:      maxLLMCalls,
 		eventQueue:       make(chan Event, 100),
 		actionQueue:      make(chan Action, 100),
 		pendingApprovals: make(map[string]*pendingApproval),

@@ -47,6 +47,16 @@ type cancelAction struct {
 func (a *cancelAction) Target() string { return a.EventID }
 
 func (r *AgentRun) fireLLMCallAction(msg string, tools []ai.Tool) {
+	// Check limit before making any LLM call
+	if r.maxLLMCalls > 0 && r.llmCallCount >= r.maxLLMCalls {
+		err := fmt.Errorf("LLM call limit exceeded: %d calls (configured limit: %d)",
+			r.llmCallCount, r.maxLLMCalls)
+		r.fireErrorAction(err)
+		return
+	}
+
+	r.llmCallCount++ // Increment counter
+
 	event := &LLMCallEvent{
 		EventID:   uuid.New().String(),
 		AgentName: r.agent.Name,

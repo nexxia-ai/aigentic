@@ -41,7 +41,8 @@ type Model struct {
 	client    *http.Client
 
 	// callFunc is the implementation for each provider
-	callFunc func(ctx context.Context, model *Model, messages []Message, tools []Tool) (AIMessage, error)
+	callFunc          func(ctx context.Context, model *Model, messages []Message, tools []Tool) (AIMessage, error)
+	callStreamingFunc func(ctx context.Context, model *Model, messages []Message, tools []Tool, chunkFunction func(AIMessage) error) (AIMessage, error)
 
 	// Options pointer variables - use nil to represent option not set
 	Temperature      *float64
@@ -50,7 +51,6 @@ type Model struct {
 	FrequencyPenalty *float64
 	PresencePenalty  *float64
 	StopSequences    *[]string
-	Stream           *bool
 	ContextSize      *int
 	Parameters       map[string]interface{} // additional non-standard parameters for the model
 
@@ -69,6 +69,19 @@ func (m *Model) Call(ctx context.Context, messages []Message, tools []Tool) (AIM
 		m.recordAIMessage(response, err)
 	}
 
+	return response, err
+}
+
+// Stream makes a streaming call to the model. It calls the chunkFunction for each chunk received.
+// This is useful for real-time processing of model responses.
+func (m *Model) Stream(ctx context.Context, messages []Message, tools []Tool, chunkFunction func(AIMessage) error) (AIMessage, error) {
+	// Check if streaming is supported
+	if m.callStreamingFunc == nil {
+		return AIMessage{}, fmt.Errorf("streaming not supported for this model")
+	}
+
+	// Call the provider's streaming function
+	response, err := m.callStreamingFunc(ctx, m, messages, tools, chunkFunction)
 	return response, err
 }
 
@@ -107,6 +120,7 @@ func (model *Model) Generate(ctx context.Context, messages []Message, tools []To
 						Role:       ToolRole,
 						Content:    fmt.Sprintf("error: invalid JSON args: %v", err),
 						ToolCallID: toolCall.ID,
+						ToolName:   tool.Name,
 					}
 					messages = append(messages, toolMessage)
 					continue
@@ -187,12 +201,6 @@ func (m *Model) WithStopSequences(sequences []string) *Model {
 	return m
 }
 
-// WithStream sets the stream option for the model and returns the model for chaining
-func (m *Model) WithStream(stream bool) *Model {
-	m.Stream = &stream
-	return m
-}
-
 func (m *Model) WithParameter(name string, value interface{}) *Model {
 	m.Parameters[name] = value
 	return m
@@ -202,6 +210,11 @@ func (m *Model) WithParameter(name string, value interface{}) *Model {
 // Not required most of the time unless you are using a non standard provider.
 func (m *Model) SetGenerateFunc(generateFunc func(ctx context.Context, model *Model, messages []Message, tools []Tool) (AIMessage, error)) error {
 	m.callFunc = generateFunc
+	return nil
+}
+
+func (m *Model) SetStreamingFunc(streamingFunc func(ctx context.Context, model *Model, messages []Message, tools []Tool, chunkFunction func(AIMessage) error) (AIMessage, error)) error {
+	m.callStreamingFunc = streamingFunc
 	return nil
 }
 

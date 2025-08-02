@@ -137,6 +137,20 @@ func RunModelTestSuite(t *testing.T, suite ModelTestSuite) {
 			}
 			TestGenerateWithTimeout(t, suite.NewModel())
 		})
+
+		t.Run("StreamingBasic", func(t *testing.T) {
+			if shouldSkipTest("StreamingBasic") {
+				t.Skipf("Skipping StreamingBasic test for %s", suite.Name)
+			}
+			TestStreamingBasic(t, suite.NewModel())
+		})
+
+		t.Run("StreamingWithTools", func(t *testing.T) {
+			if shouldSkipTest("StreamingWithTools") {
+				t.Skipf("Skipping StreamingWithTools test for %s", suite.Name)
+			}
+			TestStreamingWithTools(t, suite.NewModel())
+		})
 	})
 }
 
@@ -282,8 +296,7 @@ func TestAllZeroValues(t *testing.T, model *Model) {
 		WithTopP(0.0).
 		WithFrequencyPenalty(0.0).
 		WithPresencePenalty(0.0).
-		WithStopSequences([]string{}).
-		WithStream(false)
+		WithStopSequences([]string{})
 
 	// Verify the model was returned for chaining
 	if result != model {
@@ -311,9 +324,6 @@ func TestAllZeroValues(t *testing.T, model *Model) {
 	}
 	if model.StopSequences == nil || len(*model.StopSequences) != 0 {
 		t.Errorf("Expected empty stop sequences, got %v", model.StopSequences)
-	}
-	if model.Stream == nil || *model.Stream != false {
-		t.Errorf("Expected stream false, got %v", model.Stream)
 	}
 }
 
@@ -564,4 +574,121 @@ func TestGenerateWithTimeout(t *testing.T, model *Model) {
 			}
 		})
 	}
+}
+
+func TestStreamingBasic(t *testing.T, model *Model) {
+	args := testArgs{
+		ctx:      context.Background(),
+		messages: []Message{UserMessage{Role: UserRole, Content: "Please explain the process of photosynthesis"}},
+		tools:    []Tool{},
+	}
+
+	// Track streaming chunks
+	var chunks []string
+	var finalMessage AIMessage
+
+	// Test streaming
+	finalMessage, err := model.Stream(args.ctx, args.messages, args.tools, func(chunk AIMessage) error {
+		// Extract only the new content from this chunk
+		if len(chunks) == 0 {
+			chunks = append(chunks, chunk.Content)
+		} else {
+			// Get only the new part
+			newContent := chunk.Content[len(chunks[len(chunks)-1]):]
+			chunks = append(chunks, chunk.Content)
+			t.Logf("Chunk: %s", newContent)
+		}
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("Streaming failed: %v", err)
+	}
+
+	// Verify we got a final message
+	if finalMessage.Content == "" {
+		t.Error("Final message content is empty")
+	}
+
+	// Verify we received multiple chunks
+	if len(chunks) < 2 {
+		t.Errorf("Expected multiple chunks, got %d", len(chunks))
+	}
+
+	// Verify the final content matches the last chunk
+	if finalMessage.Content != chunks[len(chunks)-1] {
+		t.Error("Final message content doesn't match last chunk")
+	}
+
+	t.Logf("Final message: %s", finalMessage.Content)
+}
+
+func TestStreamingWithTools(t *testing.T, model *Model) {
+	args := testArgs{
+		ctx: context.Background(),
+		messages: []Message{
+			UserMessage{Role: UserRole, Content: "Please provide a detailed explanation of how greenhouse gases contribute to global warming. Also, use the echo tool to echo back the text 'Analysis Complete' when you're done with your explanation."},
+		},
+		tools: []Tool{echoTool},
+	}
+
+	// Track streaming chunks
+	var chunks []AIMessage
+
+	// Test streaming
+	finalMessage, err := model.Stream(args.ctx, args.messages, args.tools, func(chunk AIMessage) error {
+		chunks = append(chunks, chunk)
+		t.Logf("Chunk content: '%s'", chunk.Content)
+		if len(chunk.ToolCalls) > 0 {
+			t.Logf("Tool calls: %+v", chunk.ToolCalls)
+		}
+		t.Logf("Chunk role: %s", chunk.Role)
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("Streaming failed: %v", err)
+	}
+
+	// Verify we got a final message
+	if finalMessage.Content == "" && len(finalMessage.ToolCalls) == 0 {
+		t.Error("Final message has no content and no tool calls")
+	}
+
+	// Verify we received at least one chunk
+	if len(chunks) < 2 {
+		t.Errorf("Expected at least one chunk, got %d", len(chunks))
+	}
+
+	// Check that we received tool calls in any chunk or final message
+	foundEchoTool := false
+
+	// Check all chunks
+	for _, chunk := range chunks {
+		for _, toolCall := range chunk.ToolCalls {
+			if toolCall.Name == "echo" {
+				foundEchoTool = true
+				break
+			}
+		}
+		if foundEchoTool {
+			break
+		}
+	}
+
+	// Also check final message
+	if !foundEchoTool {
+		for _, toolCall := range finalMessage.ToolCalls {
+			if toolCall.Name == "echo" {
+				foundEchoTool = true
+				break
+			}
+		}
+	}
+
+	if !foundEchoTool {
+		t.Errorf("Expected echo tool call in chunks or final message, but found none in %d chunks", len(chunks))
+	}
+
+	t.Logf("Final message: %s", finalMessage.Content)
 }

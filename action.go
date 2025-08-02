@@ -96,40 +96,37 @@ func (r *AgentRun) fireToolCallAction(tcName string, tcArgs map[string]interface
 }
 
 func (r *AgentRun) fireToolResponseAction(action *toolCallAction, content string) {
-	event := &ToolResponseEvent{
-		EventID:    uuid.New().String(),
-		AgentName:  r.agent.Name,
-		SessionID:  r.session.ID,
-		ToolCallID: action.ToolCallID,
-		ToolName:   action.ToolName,
-		Content:    content,
-	}
-
-	r.queueEvent(event)
-
 	// Add response to the group
 	toolMsg := ai.ToolMessage{
 		Role:       ai.ToolRole,
 		Content:    content,
 		ToolCallID: action.ToolCallID,
+		ToolName:   action.ToolName,
 	}
 	action.Group.responses[action.ToolCallID] = toolMsg
 
 	// Check if all tool calls in this group are completed
 	if len(action.Group.responses) == len(action.Group.aiMessage.ToolCalls) {
-		// Then add the AI message to history
-		r.msgHistory = append(r.msgHistory, *action.Group.aiMessage)
 
-		// Add all tool responses last
+		// add all tool responses and queue their events
 		for _, tc := range action.Group.aiMessage.ToolCalls {
 			if response, exists := action.Group.responses[tc.ID]; exists {
 				r.msgHistory = append(r.msgHistory, response)
+				event := &ToolResponseEvent{
+					EventID:    uuid.New().String(),
+					AgentName:  r.agent.Name,
+					SessionID:  r.session.ID,
+					ToolCallID: response.ToolCallID,
+					ToolName:   action.ToolName,
+					Content:    response.Content,
+				}
+				r.queueEvent(event)
 			}
 		}
 
 		// Send any content from the AI message
 		if action.Group.aiMessage.Content != "" {
-			r.fireContentAction(action.Group.aiMessage.Content, false)
+			r.fireContentAction(action.Group.aiMessage.Content, true)
 		}
 
 		// Trigger the next LLM call
@@ -148,20 +145,17 @@ func (r *AgentRun) fireErrorAction(err error) {
 	r.queueAction(&stopAction{EventID: event.EventID})
 }
 
-func (r *AgentRun) fireContentAction(content string, isFinal bool) {
-	// a sub-agent should not fire content events
-	// the sub-agent content must be sent to the parent agent only
-	if r.parentRun == nil {
-		event := &ContentEvent{
-			EventID:   uuid.New().String(),
-			AgentName: r.agent.Name,
-			SessionID: r.session.ID,
-			Content:   content,
-			IsFinal:   isFinal,
-		}
-		r.queueEvent(event)
+func (r *AgentRun) fireContentAction(content string, isChunk bool) {
+	event := &ContentEvent{
+		EventID:   uuid.New().String(),
+		AgentName: r.agent.Name,
+		SessionID: r.session.ID,
+		Content:   content,
+		IsChunk:   isChunk,
 	}
-	if isFinal {
+	r.queueEvent(event)
+
+	if !isChunk {
 		r.queueAction(&stopAction{EventID: uuid.New().String()})
 	}
 }

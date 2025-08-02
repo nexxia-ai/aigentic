@@ -119,6 +119,7 @@ func TestAgentToolCalling(t *testing.T) {
 	agent := Agent{
 		Name:        "test-tool-agent",
 		Description: "A test agent that uses tools",
+		Trace:       NewTrace(),
 		Tools:       []ai.Tool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++

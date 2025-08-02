@@ -274,3 +274,45 @@ func TestDummyLLMCallLimit(t *testing.T) {
 	assert.Contains(t, errorMessage, "3 calls", "Error should mention the limit of 3 calls")
 	assert.Contains(t, errorMessage, "configured limit: 3", "Error should mention the configured limit")
 }
+
+func TestDummyStreaming(t *testing.T) {
+	// Test data specific to Streaming
+	testData := []ai.RecordedResponse{
+		{
+			AIMessage: ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "The capital of France is Paris.",
+			},
+			Error: "",
+		},
+		{
+			AIMessage: ai.AIMessage{
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{
+						Name: "lookup_company_name",
+						Args: `{"company_number": "150"}`,
+					},
+				},
+			},
+			Error: "",
+		},
+		{
+			AIMessage: ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "The company with number 150 is Nexxia.",
+			},
+			Error: "",
+		},
+	}
+
+	replayFunc, err := ai.ReplayFunctionFromData(testData)
+	if err != nil {
+		t.Fatalf("Failed to create replay function: %v", err)
+	}
+
+	model := ai.NewDummyModel(replayFunc)
+
+	// Use the integration suite
+	TestStreaming(t, model)
+}

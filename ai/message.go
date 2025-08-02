@@ -56,6 +56,7 @@ type ToolMessage struct {
 	Role       MessageRole
 	Content    string
 	ToolCallID string
+	ToolName   string
 }
 
 func (m ToolMessage) Value() (MessageRole, string) {

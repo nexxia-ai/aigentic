@@ -21,7 +21,7 @@ type ContentEvent struct {
 	AgentName string
 	SessionID string
 	Content   string
-	IsFinal   bool
+	IsChunk   bool
 }
 
 func (e *ContentEvent) ID() string { return e.EventID }

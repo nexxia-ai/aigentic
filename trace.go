@@ -179,23 +179,24 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 
 	for _, message := range messages {
 		role, _ := message.Value()
-		fmt.Fprintf(t.file, "⬆️  %s:\n", role)
 
 		// Handle each message type specifically
 		switch msg := message.(type) {
 		case ai.UserMessage:
+			fmt.Fprintf(t.file, "⬆️  %s:\n", role)
 			t.logMessageContent("content", msg.Content)
 		case ai.SystemMessage:
+			fmt.Fprintf(t.file, "⬆️  %s:\n", role)
 			t.logMessageContent("content", msg.Content)
 		case ai.AIMessage:
-			t.logMessageContent("content", msg.Content)
-			if msg.Think != "" {
-				t.logMessageContent("thinking", msg.Think)
-			}
+			fmt.Fprintf(t.file, "⬆️  assistant: role=%s\n", msg.Role) // Role might vary by provider
+			t.logAIMessage(msg)
 		case ai.ToolMessage:
-			t.logMessageContent("content", msg.Content)
+			fmt.Fprintf(t.file, "⬆️  %s:\n", role)
 			fmt.Fprintf(t.file, " tool_call_id: %s\n", msg.ToolCallID)
+			t.logMessageContent("content", msg.Content)
 		case ai.ResourceMessage:
+			fmt.Fprintf(t.file, "⬆️  %s:\n", role)
 			// Determine if this is a file ID reference or has content
 			var isFileID bool
 			var contentLen int
@@ -250,9 +251,19 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 	return nil
 }
 
+// LLMAIResponse records the LLM's response, any tool calls made during the response, and any thinking process.
+func (t *Trace) LLMAIResponse(agentName string, msg ai.AIMessage) {
+	traceSync.Lock()
+	defer traceSync.Unlock()
+
+	fmt.Fprintf(t.file, "⬇️  assistant: role=%s\n", msg.Role) // Role might vary by provider
+	t.logAIMessage(msg)
+}
+
 // logMessageContent is a helper method to format and log message content
 func (t *Trace) logMessageContent(contentType, content string) {
 	if content == "" {
+		fmt.Fprintf(t.file, " %s: (empty)\n", contentType)
 		return
 	}
 
@@ -276,35 +287,19 @@ func (t *Trace) FinishLLMInteraction(modelName, agentName string) {
 
 	fmt.Fprintf(t.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), agentName)
 }
-
-// LLMAIResponse records the LLM's response, any tool calls made during the response, and any thinking process.
-func (t *Trace) LLMAIResponse(agentName, response string, toolCalls []ai.ToolCall, thinkPart string) error {
-	if t == nil {
-		return nil
+func (t *Trace) logAIMessage(msg ai.AIMessage) {
+	t.logMessageContent("content", msg.Content)
+	if msg.Think != "" {
+		t.logMessageContent("thinking", msg.Think)
 	}
-
-	traceSync.Lock()
-	defer traceSync.Unlock()
-
-	fmt.Fprintf(t.file, "⬇️  assistant:\n")
-	if thinkPart != "" {
-		fmt.Fprintf(t.file, "  %s thinking:\n%s\n\n", agentName, thinkPart)
-	}
-
-	if response != "" {
-		fmt.Fprintf(t.file, "  %s response:\n%s\n", agentName, response)
-	}
-
-	if len(toolCalls) > 0 {
-		fmt.Fprintf(t.file, "️  %s tool request:\n", agentName)
-		for _, toolCall := range toolCalls {
-			fmt.Fprintf(t.file, "   • %s(%s)\n",
-				toolCall.Name,
-				toolCall.Args)
+	if len(msg.ToolCalls) > 0 {
+		for _, tc := range msg.ToolCalls {
+			fmt.Fprintf(t.file, " tool request:\n")
+			fmt.Fprintf(t.file, "   tool_call_id: %s\n", tc.ID)
+			fmt.Fprintf(t.file, "   tool_name: %s\n", tc.Name)
+			fmt.Fprintf(t.file, "   tool_args: %s\n", tc.Args)
 		}
 	}
-
-	return nil
 }
 
 // LLMToolResponse records a single tool call response.

@@ -13,6 +13,46 @@ func NewDummyModel(responseFunc func(ctx context.Context, messages []Message, to
 		callFunc: func(ctx context.Context, model *Model, messages []Message, tools []Tool) (AIMessage, error) {
 			return responseFunc(ctx, messages, tools)
 		},
+		callStreamingFunc: func(ctx context.Context, model *Model, messages []Message, tools []Tool, chunkFunction func(AIMessage) error) (AIMessage, error) {
+			// Get the final response
+			finalResponse, err := responseFunc(ctx, messages, tools)
+			if err != nil {
+				return finalResponse, err
+			}
+
+			// Simulate streaming by breaking the content into chunks
+			content := finalResponse.Content
+			if content == "" {
+				// If no content, just return the final response
+				return finalResponse, nil
+			}
+
+			// Split content into chunks (simulate streaming)
+			chunkSize := len(content) / 3
+			if chunkSize == 0 {
+				chunkSize = 1
+			}
+
+			for i := 0; i < len(content); i += chunkSize {
+				end := i + chunkSize
+				if end > len(content) {
+					end = len(content)
+				}
+
+				chunk := AIMessage{
+					Role:    finalResponse.Role,
+					Content: content[i:end],
+				}
+
+				// Call the chunk function
+				if err := chunkFunction(chunk); err != nil {
+					return AIMessage{}, err
+				}
+			}
+
+			// Return the final complete response
+			return finalResponse, nil
+		},
 	}
 }
 

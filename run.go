@@ -90,7 +90,11 @@ func (r *AgentRun) addSystemTools() []ai.Tool {
 				"required": []string{"input"},
 			},
 			Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
-				run := newAgentRun(aa, args["input"].(string))
+				input := ""
+				if v, ok := args["input"].(string); ok {
+					input = v
+				}
+				run := newAgentRun(aa, input)
 				run.session = r.session
 				run.trace = r.trace
 				run.logger = r.logger.With("sub-agent", aa.Name)
@@ -135,7 +139,10 @@ func (r *AgentRun) Wait(d time.Duration) (string, error) {
 	for evt := range r.eventQueue {
 		switch event := evt.(type) {
 		case *ContentEvent:
-			content += event.Content
+			// only append content that is for the same agent. so you don't append sub-agent content to the parent agent
+			if r.agent.Name == event.AgentName {
+				content += event.Content
+			}
 		case *ErrorEvent:
 			err = event.Err
 		}
@@ -198,15 +205,27 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 		r.trace.LLMCall(r.model.ModelName, r.agent.Name, msgs)
 	}
 
-	var respMsg ai.AIMessage
-	var err error
 	if r.parentRun == nil {
 		r.logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
 	} else {
 		r.logger.Debug("calling sub-agent LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
-
 	}
-	respMsg, err = r.model.Call(r.session.Context, msgs, tools)
+
+	var respMsg ai.AIMessage
+	var err error
+
+	if r.agent.Stream {
+		// Streaming mode - the final chunk is returned as respMsg
+		respMsg, err = r.model.Stream(r.session.Context, msgs, tools, func(chunk ai.AIMessage) error {
+			// Handle each chunk as a non-final message
+			r.handleAIMessage(chunk, true)
+			return nil
+		})
+	} else {
+		// Non-streaming mode
+		respMsg, err = r.model.Call(r.session.Context, msgs, tools)
+	}
+
 	if err != nil {
 		if r.trace != nil {
 			r.trace.RecordError(err)
@@ -214,40 +233,9 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 		r.fireErrorAction(err)
 		return
 	}
-	if r.trace != nil {
-		r.trace.LLMAIResponse(r.agent.Name, respMsg.Content, respMsg.ToolCalls, respMsg.Think)
-	}
-	if respMsg.Think != "" {
-		r.fireThinkingAction(respMsg.Think)
-	}
-	if len(respMsg.ToolCalls) == 0 {
-		// No tool calls, safe to add AI message to history immediately
-		r.msgHistory = append(r.msgHistory, respMsg)
-		r.fireContentAction(respMsg.Content, true)
-		return
-	}
 
-	// Create a tool call group to coordinate all tool calls
-	// Process each tool call individually, passing the group
-	group := &toolCallGroup{
-		aiMessage: &respMsg,
-		responses: make(map[string]ai.ToolMessage),
-	}
-
-	for _, tc := range respMsg.ToolCalls {
-		var args map[string]interface{}
-		if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
-			if r.trace != nil {
-				r.trace.RecordError(err)
-			}
-			// respond with an error to the LLM
-			r.fireToolResponseAction(&toolCallAction{
-				EventID: "invalid-tool", ToolName: tc.Name, ToolArgs: args, Group: group},
-				fmt.Sprintf("invalid tool parameters: %v", err))
-			continue
-		}
-		r.fireToolCallAction(tc.Name, args, tc.ID, group)
-	}
+	// Handle the final message
+	r.handleAIMessage(respMsg, false)
 }
 
 func (r *AgentRun) runToolCallAction(act *toolCallAction) {
@@ -286,12 +274,63 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	r.fireToolResponseAction(act, content)
 }
 
+// handleAIMessage handles the response from the LLM, whether it's a complete message or a chunk
+func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
+
+	// fire thinking content notification
+	if msg.Think != "" {
+		r.fireThinkingAction(msg.Think)
+	}
+
+	// fire content notification if chunk
+	if msg.Content != "" && (isChunk || len(msg.ToolCalls) > 0) {
+		r.fireContentAction(msg.Content, true)
+	}
+
+	// return if this is a chunk (streaming)
+	if isChunk {
+		return
+	}
+
+	// this not a chunk
+	// add to history and fire tool calls
+
+	if r.trace != nil {
+		r.trace.LLMAIResponse(r.agent.Name, msg)
+	}
+	r.msgHistory = append(r.msgHistory, msg)
+
+	if len(msg.ToolCalls) == 0 {
+		r.fireContentAction(msg.Content, false)
+		return
+	}
+
+	// Handle tool calls
+	group := &toolCallGroup{
+		aiMessage: &msg,
+		responses: make(map[string]ai.ToolMessage),
+	}
+
+	for _, tc := range msg.ToolCalls {
+		var args map[string]interface{}
+		if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
+			if r.trace != nil {
+				r.trace.RecordError(err)
+			}
+			r.fireToolResponseAction(&toolCallAction{
+				EventID: "invalid-tool", ToolName: tc.Name, ToolArgs: args, Group: group},
+				fmt.Sprintf("invalid tool parameters: %v", err))
+			continue
+		}
+		r.fireToolCallAction(tc.Name, args, tc.ID, group)
+	}
+}
+
 // Add queueEvent and queueAction methods to AgentRun
 func (r *AgentRun) queueEvent(event Event) {
 	// if this is a sub-agent, queue the event to the parent agent
 	if r.parentRun != nil {
 		r.parentRun.queueEvent(event)
-		return
 	}
 	select {
 	case r.eventQueue <- event:

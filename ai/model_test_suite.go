@@ -363,7 +363,7 @@ func TestContextTimeout(t *testing.T, model *Model) {
 	}{
 		{
 			name:        "short timeout",
-			timeout:     1 * time.Millisecond, // Very short timeout
+			timeout:     100 * time.Millisecond, // Very short timeout
 			expectError: true,
 			errorType:   "context deadline exceeded",
 		},
@@ -585,19 +585,15 @@ func TestStreamingBasic(t *testing.T, model *Model) {
 
 	// Track streaming chunks
 	var chunks []string
+	var thinkChunks []string
 	var finalMessage AIMessage
 
 	// Test streaming
 	finalMessage, err := model.Stream(args.ctx, args.messages, args.tools, func(chunk AIMessage) error {
-		// Extract only the new content from this chunk
-		if len(chunks) == 0 {
-			chunks = append(chunks, chunk.Content)
-		} else {
-			// Get only the new part
-			newContent := chunk.Content[len(chunks[len(chunks)-1]):]
-			chunks = append(chunks, chunk.Content)
-			t.Logf("Chunk: %s", newContent)
-		}
+		// Simply append each chunk's content
+		chunks = append(chunks, chunk.Content)
+		thinkChunks = append(thinkChunks, chunk.Think)
+		t.Logf("Chunk: %s", chunk.Content)
 		return nil
 	})
 
@@ -615,12 +611,19 @@ func TestStreamingBasic(t *testing.T, model *Model) {
 		t.Errorf("Expected multiple chunks, got %d", len(chunks))
 	}
 
-	// Verify the final content matches the last chunk
-	if finalMessage.Content != chunks[len(chunks)-1] {
-		t.Error("Final message content doesn't match last chunk")
+	// Verify the final content matches the accumulated chunks
+	accumulatedChunks := strings.Join(chunks, "")
+	if finalMessage.Content != accumulatedChunks {
+		t.Error("Final message content doesn't match accumulated chunks")
 	}
 
-	t.Logf("Final message: %s", finalMessage.Content)
+	// Verify the final think matches the accumulated think
+	accumulatedThink := strings.Join(thinkChunks, "")
+	if finalMessage.Think != accumulatedThink {
+		t.Error("Final message think doesn't match accumulated think")
+	}
+
+	// t.Logf("Final message: %s", finalMessage.Content)
 }
 
 func TestStreamingWithTools(t *testing.T, model *Model) {
@@ -690,5 +693,5 @@ func TestStreamingWithTools(t *testing.T, model *Model) {
 		t.Errorf("Expected echo tool call in chunks or final message, but found none in %d chunks", len(chunks))
 	}
 
-	t.Logf("Final message: %s", finalMessage.Content)
+	// t.Logf("Final message: %s", finalMessage.Content)
 }

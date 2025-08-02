@@ -276,8 +276,8 @@ func TestDummyLLMCallLimit(t *testing.T) {
 }
 
 func TestDummyStreaming(t *testing.T) {
-	// Test data specific to Streaming
-	testData := []ai.RecordedResponse{
+	// Test data for basic streaming (capital of France)
+	basicTestData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
 				Role:    ai.AssistantRole,
@@ -285,6 +285,32 @@ func TestDummyStreaming(t *testing.T) {
 			},
 			Error: "",
 		},
+	}
+
+	// Test data for content only streaming
+	contentOnlyTestData := []ai.RecordedResponse{
+		{
+			AIMessage: ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "The capital of France is Paris, a beautiful city known for its culture and history.",
+			},
+			Error: "",
+		},
+	}
+
+	// Test data for city summary streaming
+	citySummaryTestData := []ai.RecordedResponse{
+		{
+			AIMessage: ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Paris is the capital and largest city of France, known for its art, fashion, gastronomy and culture.",
+			},
+			Error: "",
+		},
+	}
+
+	// Test data for streaming with tools
+	toolsTestData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
 				Role: ai.AssistantRole,
@@ -306,13 +332,72 @@ func TestDummyStreaming(t *testing.T) {
 		},
 	}
 
-	replayFunc, err := ai.ReplayFunctionFromData(testData)
-	if err != nil {
-		t.Fatalf("Failed to create replay function: %v", err)
+	// Test data for tool lookup streaming
+	toolLookupTestData := []ai.RecordedResponse{
+		{
+			AIMessage: ai.AIMessage{
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{
+						Name: "lookup_company_name",
+						Args: `{"company_number": "150"}`,
+					},
+				},
+			},
+			Error: "",
+		},
+		{
+			AIMessage: ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Based on the lookup, the company with number 150 is Nexxia.",
+			},
+			Error: "",
+		},
 	}
 
-	model := ai.NewDummyModel(replayFunc)
+	// Run the specific streaming tests with their own test data
+	t.Run("BasicStreaming", func(t *testing.T) {
+		replayFunc, err := ai.ReplayFunctionFromData(basicTestData)
+		if err != nil {
+			t.Fatalf("Failed to create replay function: %v", err)
+		}
+		model := ai.NewDummyModel(replayFunc)
+		TestBasicStreaming(t, model)
+	})
 
-	// Use the integration suite
-	TestStreaming(t, model)
+	t.Run("StreamingContentOnly", func(t *testing.T) {
+		replayFunc, err := ai.ReplayFunctionFromData(contentOnlyTestData)
+		if err != nil {
+			t.Fatalf("Failed to create replay function: %v", err)
+		}
+		model := ai.NewDummyModel(replayFunc)
+		TestStreamingContentOnly(t, model)
+	})
+
+	t.Run("StreamingWithCitySummary", func(t *testing.T) {
+		replayFunc, err := ai.ReplayFunctionFromData(citySummaryTestData)
+		if err != nil {
+			t.Fatalf("Failed to create replay function: %v", err)
+		}
+		model := ai.NewDummyModel(replayFunc)
+		TestStreamingWithCitySummary(t, model)
+	})
+
+	t.Run("StreamingWithTools", func(t *testing.T) {
+		replayFunc, err := ai.ReplayFunctionFromData(toolsTestData)
+		if err != nil {
+			t.Fatalf("Failed to create replay function: %v", err)
+		}
+		model := ai.NewDummyModel(replayFunc)
+		TestStreamingWithTools(t, model)
+	})
+
+	t.Run("StreamingToolLookup", func(t *testing.T) {
+		replayFunc, err := ai.ReplayFunctionFromData(toolLookupTestData)
+		if err != nil {
+			t.Fatalf("Failed to create replay function: %v", err)
+		}
+		model := ai.NewDummyModel(replayFunc)
+		TestStreamingToolLookup(t, model)
+	})
 }

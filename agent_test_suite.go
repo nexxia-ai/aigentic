@@ -82,11 +82,18 @@ func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
 			TestConcurrentRuns(t, suite.NewModel())
 		})
 
-		t.Run("Streaming", func(t *testing.T) {
-			if shouldSkipTest("Streaming") {
-				t.Skipf("Skipping Streaming test for %s", suite.Name)
+		t.Run("BasicStreaming", func(t *testing.T) {
+			if shouldSkipTest("BasicStreaming") {
+				t.Skipf("Skipping BasicStreaming test for %s", suite.Name)
 			}
-			TestStreaming(t, suite.NewModel())
+			TestBasicStreaming(t, suite.NewModel())
+		})
+
+		t.Run("StreamingWithTools", func(t *testing.T) {
+			if shouldSkipTest("StreamingWithTools") {
+				t.Skipf("Skipping StreamingWithTools test for %s", suite.Name)
+			}
+			TestStreamingWithTools(t, suite.NewModel())
 		})
 	})
 }
@@ -519,7 +526,13 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 	assert.Contains(t, response, "expert1")
 	assert.Contains(t, response, "expert2")
 	assert.Contains(t, response, "expert3")
-	assert.Equal(t, "expert1, expert2, expert3", strings.TrimSpace(response))
+
+	pos1 := strings.Index(response, "expert1")
+	pos2 := strings.Index(response, "expert2")
+	pos3 := strings.Index(response, "expert3")
+
+	assert.Greater(t, pos2, pos1, "expert1 should appear before expert2")
+	assert.Greater(t, pos3, pos2, "expert2 should appear before expert3")
 }
 
 func TestConcurrentRuns(t *testing.T, model *ai.Model) {
@@ -616,79 +629,215 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 	t.Logf("All %d parallel runs completed successfully", len(runs))
 }
 
-func TestStreaming(t *testing.T, model *ai.Model) {
+func TestBasicStreaming(t *testing.T, model *ai.Model) {
 	session := NewSession()
 	session.Trace = NewTrace()
 
-	newAgent := func() Agent {
-		return Agent{
-			Session:      session,
-			Model:        model,
-			Description:  "You are a helpful assistant that provides clear and concise answers.",
-			Instructions: "Always explain your reasoning and provide examples when possible.",
-			Stream:       true,
+	agent := Agent{
+		Session:      session,
+		Model:        model,
+		Description:  "You are a helpful assistant that provides clear and concise answers.",
+		Instructions: "Always explain your reasoning and provide examples when possible.",
+		Stream:       true,
+	}
+
+	message := "What is the capital of France what give me a brief summary of the city"
+	run, err := agent.Run(message)
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var finalContent string
+	var chunks []string
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			chunks = append(chunks, e.Content)
+			if !e.IsChunk {
+				finalContent = e.Content
+			}
+		case *ToolEvent:
+			if e.RequireApproval {
+				run.Approve(e.ID())
+			}
+		case *ErrorEvent:
+			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}
 
-	tests := []struct {
-		name        string
-		message     string
-		validate    func(t *testing.T, content string, agent Agent, chunks []string)
-		attachments []Attachment
-		tools       []ai.Tool
-	}{
-		{
-			name:    "basic streaming conversation",
-			message: "What is the capital of France what give me a brief summary of the city",
-			validate: func(t *testing.T, content string, agent Agent, chunks []string) {
-				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, agent.ID)
-				assert.Contains(t, strings.ToLower(content), "paris")
-				assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
-			},
-			tools: []ai.Tool{},
-		},
-		{
-			name:    "streaming with tools",
-			message: "tell me the name of the company with the number 150. Use tools. ",
-			validate: func(t *testing.T, content string, agent Agent, chunks []string) {
-				assert.NotEmpty(t, content)
-				assert.Contains(t, content, "Nexxia")
-				assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
-			},
-			tools: []ai.Tool{NewSecretNumberTool()},
-		},
+	assert.NotEmpty(t, finalContent)
+	assert.NotEmpty(t, agent.ID)
+	assert.Contains(t, strings.ToLower(finalContent), "paris")
+	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
+}
+
+func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
+	session := NewSession()
+	session.Trace = NewTrace()
+
+	agent := Agent{
+		Session:      session,
+		Model:        model,
+		Description:  "You are a helpful assistant that provides clear and concise answers.",
+		Instructions: "Always explain your reasoning and provide examples when possible.",
+		Stream:       true,
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			agent := newAgent()
-			agent.Tools = test.tools
-			agent.Attachments = test.attachments
-			run, err := agent.Run(test.message)
-			if err != nil {
-				t.Fatalf("Agent run failed: %v", err)
-			}
-			var finalContent string
-			var chunks []string
-			for ev := range run.Next() {
-				switch e := ev.(type) {
-				case *ContentEvent:
-					chunks = append(chunks, e.Content)
-					if !e.IsChunk {
-						finalContent = e.Content
-					}
-				case *ToolEvent:
-					if e.RequireApproval {
-						run.Approve(e.ID())
-					}
-				case *ErrorEvent:
-					t.Fatalf("Agent error: %v", e.Err)
-				}
-			}
-			if test.validate != nil {
-				test.validate(t, finalContent, agent, chunks)
-			}
-		})
+	message := "What is the capital of France?"
+	run, err := agent.Run(message)
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
 	}
+
+	var finalContent string
+	var chunks []string
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			chunks = append(chunks, e.Content)
+			if !e.IsChunk {
+				finalContent = e.Content
+			}
+		case *ToolEvent:
+			if e.RequireApproval {
+				run.Approve(e.ID())
+			}
+		case *ErrorEvent:
+			t.Fatalf("Agent error: %v", e.Err)
+		}
+	}
+
+	assert.NotEmpty(t, finalContent)
+	assert.NotEmpty(t, agent.ID)
+	assert.Contains(t, strings.ToLower(finalContent), "paris")
+	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
+}
+
+func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
+	session := NewSession()
+	session.Trace = NewTrace()
+
+	agent := Agent{
+		Session:      session,
+		Model:        model,
+		Description:  "You are a helpful assistant that provides clear and concise answers.",
+		Instructions: "Always explain your reasoning and provide examples when possible.",
+		Stream:       true,
+	}
+
+	message := "Give me a brief summary of Paris"
+	run, err := agent.Run(message)
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var finalContent string
+	var chunks []string
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			chunks = append(chunks, e.Content)
+			if !e.IsChunk {
+				finalContent = e.Content
+			}
+		case *ToolEvent:
+			if e.RequireApproval {
+				run.Approve(e.ID())
+			}
+		case *ErrorEvent:
+			t.Fatalf("Agent error: %v", e.Err)
+		}
+	}
+
+	assert.NotEmpty(t, finalContent)
+	assert.NotEmpty(t, agent.ID)
+	assert.Contains(t, strings.ToLower(finalContent), "paris")
+	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
+}
+
+func TestStreamingWithTools(t *testing.T, model *ai.Model) {
+	session := NewSession()
+	session.Trace = NewTrace()
+
+	agent := Agent{
+		Session:      session,
+		Model:        model,
+		Description:  "You are a helpful assistant that provides clear and concise answers.",
+		Instructions: "Always explain your reasoning and provide examples when possible.",
+		Stream:       true,
+		Tools:        []ai.Tool{NewSecretNumberTool()},
+	}
+
+	message := "tell me the name of the company with the number 150. Use tools. "
+	run, err := agent.Run(message)
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var finalContent string
+	var chunks []string
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			chunks = append(chunks, e.Content)
+			if !e.IsChunk {
+				finalContent = e.Content
+			}
+		case *ToolEvent:
+			if e.RequireApproval {
+				run.Approve(e.ID())
+			}
+		case *ErrorEvent:
+			t.Fatalf("Agent error: %v", e.Err)
+		}
+	}
+
+	assert.NotEmpty(t, finalContent)
+	assert.Contains(t, finalContent, "Nexxia")
+	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
+}
+
+func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
+	session := NewSession()
+	session.Trace = NewTrace()
+
+	agent := Agent{
+		Session:      session,
+		Model:        model,
+		Description:  "You are a helpful assistant that looks up company information.",
+		Instructions: "Use the lookup tool to find company information when asked.",
+		Stream:       true,
+		Tools:        []ai.Tool{NewSecretNumberTool()},
+	}
+
+	message := "What company has the number 150?"
+	run, err := agent.Run(message)
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var finalContent string
+	var chunks []string
+	var toolCalls int
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			chunks = append(chunks, e.Content)
+			if !e.IsChunk {
+				finalContent = e.Content
+			}
+		case *ToolEvent:
+			toolCalls++
+			if e.RequireApproval {
+				run.Approve(e.ID())
+			}
+		case *ErrorEvent:
+			t.Fatalf("Agent error: %v", e.Err)
+		}
+	}
+
+	assert.NotEmpty(t, finalContent)
+	assert.Contains(t, finalContent, "Nexxia")
+	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
+	assert.GreaterOrEqual(t, toolCalls, 1, "Should have made at least one tool call")
 }

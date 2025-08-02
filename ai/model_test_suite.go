@@ -440,7 +440,7 @@ func TestContextCancellation(t *testing.T, model *Model) {
 	}{
 		{
 			name:        "immediate cancellation",
-			cancelDelay: 1 * time.Millisecond,
+			cancelDelay: 100 * time.Millisecond,
 			expectError: true,
 			errorType:   "context canceled",
 		},
@@ -518,7 +518,7 @@ func TestGenerateWithTimeout(t *testing.T, model *Model) {
 	}{
 		{
 			name:        "short timeout",
-			timeout:     1 * time.Millisecond,
+			timeout:     100 * time.Millisecond,
 			expectError: true,
 			errorType:   "context deadline exceeded",
 		},

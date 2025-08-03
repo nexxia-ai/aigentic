@@ -2,6 +2,7 @@ package aigentic
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
@@ -18,11 +19,11 @@ type llmCallAction struct {
 func (a *llmCallAction) Target() string { return "" }
 
 type approvalAction struct {
-	EventID  string
-	Approved bool
+	ApprovalID string
+	Approved   bool
 }
 
-func (a *approvalAction) Target() string { return a.EventID }
+func (a *approvalAction) Target() string { return a.ApprovalID }
 
 type toolCallAction struct {
 	EventID    string
@@ -47,24 +48,6 @@ type cancelAction struct {
 func (a *cancelAction) Target() string { return a.EventID }
 
 func (r *AgentRun) fireLLMCallAction(msg string, tools []ai.Tool) {
-	// Check limit before making any LLM call
-	if r.maxLLMCalls > 0 && r.llmCallCount >= r.maxLLMCalls {
-		err := fmt.Errorf("LLM call limit exceeded: %d calls (configured limit: %d)",
-			r.llmCallCount, r.maxLLMCalls)
-		r.fireErrorAction(err)
-		return
-	}
-
-	r.llmCallCount++ // Increment counter
-
-	event := &LLMCallEvent{
-		EventID:   uuid.New().String(),
-		AgentName: r.agent.Name,
-		SessionID: r.session.ID,
-		Message:   msg,
-		Tools:     tools,
-	}
-	r.queueEvent(event)
 	r.queueAction(&llmCallAction{Message: msg})
 }
 
@@ -76,23 +59,27 @@ func (r *AgentRun) fireToolCallAction(tcName string, tcArgs map[string]interface
 			fmt.Sprintf("tool not found: %s", tcName))
 		return
 	}
-	eventID := uuid.New().String()
-	toolEvent := &ToolEvent{
-		EventID:         eventID,
-		AgentName:       r.agent.Name,
-		SessionID:       r.session.ID,
-		ToolName:        tcName,
-		ToolArgs:        tcArgs,
-		RequireApproval: tool.RequireApproval,
-		ToolGroup:       group,
-	}
+
 	if tool.RequireApproval {
-		r.pendingApprovals[eventID] = &pendingApproval{event: toolEvent}
+		approvalID := uuid.New().String()
+		r.pendingApprovals[approvalID] = pendingApproval{
+			ApprovalID: approvalID,
+			Tool:       tool,
+			ToolCallID: toolCallID,
+			ToolArgs:   tcArgs,
+			Group:      group,
+			deadline:   time.Now().Add(r.approvalTimeout),
+		}
+		approvalEvent := &ApprovalEvent{
+			RunID:      r.id,
+			ApprovalID: approvalID,
+			Content:    fmt.Sprintf("Approval required for tool: %s", tcName),
+		}
+		r.queueEvent(approvalEvent)
+		return
 	}
-	r.queueEvent(toolEvent) // send after adding to the map
-	if !tool.RequireApproval {
-		r.queueAction(&toolCallAction{EventID: eventID, ToolCallID: toolCallID, ToolName: tcName, ToolArgs: tcArgs, Group: group})
-	}
+
+	r.queueAction(&toolCallAction{ToolCallID: toolCallID, ToolName: tcName, ToolArgs: tcArgs, Group: group})
 }
 
 func (r *AgentRun) fireToolResponseAction(action *toolCallAction, content string) {
@@ -113,7 +100,7 @@ func (r *AgentRun) fireToolResponseAction(action *toolCallAction, content string
 			if response, exists := action.Group.responses[tc.ID]; exists {
 				r.msgHistory = append(r.msgHistory, response)
 				event := &ToolResponseEvent{
-					EventID:    uuid.New().String(),
+					RunID:      r.id,
 					AgentName:  r.agent.Name,
 					SessionID:  r.session.ID,
 					ToolCallID: response.ToolCallID,
@@ -136,18 +123,18 @@ func (r *AgentRun) fireToolResponseAction(action *toolCallAction, content string
 
 func (r *AgentRun) fireErrorAction(err error) {
 	event := &ErrorEvent{
-		EventID:   uuid.New().String(),
+		RunID:     r.id,
 		AgentName: r.agent.Name,
 		SessionID: r.session.ID,
 		Err:       err,
 	}
 	r.queueEvent(event)
-	r.queueAction(&stopAction{EventID: event.EventID})
+	r.queueAction(&stopAction{EventID: event.RunID})
 }
 
 func (r *AgentRun) fireContentAction(content string, isChunk bool) {
 	event := &ContentEvent{
-		EventID:   uuid.New().String(),
+		RunID:     r.id,
 		AgentName: r.agent.Name,
 		SessionID: r.session.ID,
 		Content:   content,
@@ -162,7 +149,7 @@ func (r *AgentRun) fireContentAction(content string, isChunk bool) {
 
 func (r *AgentRun) fireThinkingAction(thought string) {
 	event := &ThinkingEvent{
-		EventID:   uuid.New().String(),
+		RunID:     r.id,
 		AgentName: r.agent.Name,
 		SessionID: r.session.ID,
 		Thought:   thought,

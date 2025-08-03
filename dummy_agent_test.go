@@ -3,6 +3,7 @@ package aigentic
 import (
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/stretchr/testify/assert"
@@ -259,9 +260,8 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		case *ContentEvent:
 			// Content received
 		case *ToolEvent:
-			if e.RequireApproval {
-				run.Approve(e.ID())
-			}
+		case *ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
 		case *ErrorEvent:
 			errorOccurred = true
 			errorMessage = e.Err.Error()
@@ -400,4 +400,229 @@ func TestDummyStreaming(t *testing.T) {
 		model := ai.NewDummyModel(replayFunc)
 		TestStreamingToolLookup(t, model)
 	})
+}
+
+func getApprovalTool() ai.Tool {
+	return ai.Tool{
+		Name:            "test_approval_tool",
+		Description:     "A test tool that requires approval",
+		RequireApproval: true,
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"action": map[string]interface{}{
+					"type":        "string",
+					"description": "The action to perform",
+				},
+			},
+			"required": []string{"action"},
+		},
+		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+			action, _ := args["action"].(string)
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{{Type: "text", Content: "Tool executed: " + action}},
+				Error:   false,
+			}, nil
+		},
+	}
+}
+
+func getApprovalTestData() []ai.RecordedResponse {
+	return []ai.RecordedResponse{
+		{
+			AIMessage: ai.AIMessage{
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_1",
+						Name: "test_approval_tool",
+						Args: `{"action": "test_action"}`,
+					},
+				},
+			},
+			Error: "",
+		},
+		{
+			AIMessage: ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Tool execution completed successfully.",
+			},
+			Error: "",
+		},
+	}
+}
+
+func TestToolApprovalGiven(t *testing.T) {
+	approvalTool := getApprovalTool()
+	testData := getApprovalTestData()
+
+	replayFunc, err := ai.ReplayFunctionFromData(testData)
+	if err != nil {
+		t.Fatalf("Failed to create replay function: %v", err)
+	}
+	model := ai.NewDummyModel(replayFunc)
+
+	agent := Agent{
+		Model:        model,
+		Name:         "approval_test_agent",
+		Description:  "Test agent for approval functionality",
+		Instructions: "Use the test_approval_tool when requested.",
+		Tools:        []ai.Tool{approvalTool},
+		Trace:        NewTrace(),
+		LogLevel:     slog.LevelDebug,
+	}
+
+	run, err := agent.Run("Please execute the test tool with action 'test_action'")
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var finalContent string
+	var approvalEvent *ApprovalEvent
+	var toolEvent *ToolEvent
+
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			if !e.IsChunk {
+				finalContent = e.Content
+			}
+		case *ApprovalEvent:
+			approvalEvent = e
+			run.Approve(e.ApprovalID, true)
+		case *ToolEvent:
+			toolEvent = e
+		case *ErrorEvent:
+			t.Fatalf("Unexpected error: %v", e.Err)
+		}
+	}
+
+	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
+	assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
+	assert.Contains(t, approvalEvent.Content, "Approval required for tool: test_approval_tool", "Content should mention the tool")
+	assert.NotNil(t, toolEvent, "Should have received a ToolEvent")
+	assert.Contains(t, finalContent, "Tool execution completed successfully", "Should have final content")
+	assert.Equal(t, 0, len(run.pendingApprovals), "Should have no pending approvals")
+}
+
+func TestToolApprovalRejected(t *testing.T) {
+	approvalTool := getApprovalTool()
+	testData := getApprovalTestData()
+
+	replayFunc, err := ai.ReplayFunctionFromData(testData)
+	if err != nil {
+		t.Fatalf("Failed to create replay function: %v", err)
+	}
+	model := ai.NewDummyModel(replayFunc)
+
+	agent := Agent{
+		Model:        model,
+		Name:         "approval_test_agent",
+		Description:  "Test agent for approval functionality",
+		Instructions: "Use the test_approval_tool when requested.",
+		Tools:        []ai.Tool{approvalTool},
+		Trace:        NewTrace(),
+		LogLevel:     slog.LevelDebug,
+	}
+
+	run, err := agent.Run("Please execute the test tool with action 'test_action'")
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var approvalEvent *ApprovalEvent
+	var toolRequested bool
+	var toolResponseReceived bool
+
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ApprovalEvent:
+			approvalEvent = e
+			toolRequested = true
+			run.Approve(e.ApprovalID, false)
+		case *ToolResponseEvent:
+			toolResponseReceived = true
+			assert.Contains(t, e.Content, "approval denied", "Tool response should indicate approval was denied")
+		case *ErrorEvent:
+			// Error might occur if the approval system times out
+			t.Logf("Error occurred: %v", e.Err)
+		}
+	}
+
+	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
+	if approvalEvent != nil {
+		assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
+		assert.Contains(t, approvalEvent.Content, "Approval required for tool: test_approval_tool", "Content should mention the tool")
+	}
+	assert.True(t, toolRequested, "Tool should have been requested")
+	assert.True(t, toolResponseReceived, "Should have received a tool response indicating denial")
+	assert.Equal(t, 0, len(run.pendingApprovals), "Should have no pending approvals")
+}
+
+func TestToolApprovalTimeout(t *testing.T) {
+	approvalTool := getApprovalTool()
+	testData := getApprovalTestData()
+
+	replayFunc, err := ai.ReplayFunctionFromData(testData)
+	if err != nil {
+		t.Fatalf("Failed to create replay function: %v", err)
+	}
+	model := ai.NewDummyModel(replayFunc)
+
+	agent := Agent{
+		Model:        model,
+		Name:         "timeout_test_agent",
+		Description:  "Test agent for approval timeout functionality",
+		Instructions: "Use the test_approval_tool when requested.",
+		Tools:        []ai.Tool{approvalTool},
+		Trace:        NewTrace(),
+		LogLevel:     slog.LevelDebug,
+	}
+
+	approvalTimeout = time.Millisecond * 300
+	tickerInterval = time.Millisecond * 100
+
+	run, err := agent.Run("Please execute the test tool with action 'test_action'")
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var approvalEvent *ApprovalEvent
+	var toolRequested bool
+	var toolResponseReceived bool
+
+	timeout := time.After(500 * time.Millisecond)
+	done := make(chan bool)
+
+	go func() {
+		defer func() { done <- true }()
+		for ev := range run.Next() {
+			switch e := ev.(type) {
+			case *ApprovalEvent:
+				approvalEvent = e
+				toolRequested = true
+				// Don't approve, let it timeout
+			case *ToolResponseEvent:
+				toolResponseReceived = true
+			case *ErrorEvent:
+				t.Logf("Error occurred: %v", e.Err)
+			}
+		}
+	}()
+
+	select {
+	case <-timeout:
+		// Force timeout to occur
+	case <-done:
+		// Test completed normally
+	}
+
+	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
+	if approvalEvent != nil {
+		assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
+		assert.Contains(t, approvalEvent.Content, "Approval required for tool: test_approval_tool", "Content should mention the tool")
+	}
+	assert.True(t, toolRequested, "Tool should have been requested")
+	assert.Equal(t, 0, len(run.pendingApprovals), "Should have no pending approvals")
+	t.Logf("Tool response received: %v", toolResponseReceived)
 }

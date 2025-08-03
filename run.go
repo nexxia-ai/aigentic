@@ -8,10 +8,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
+var approvalTimeout = time.Minute * 60
+
 type AgentRun struct {
+	id      string
 	agent   *Agent
 	session *Session
 	model   *ai.Model
@@ -21,13 +25,18 @@ type AgentRun struct {
 
 	eventQueue       chan Event
 	actionQueue      chan Action
-	pendingApprovals map[string]*pendingApproval
+	pendingApprovals map[string]pendingApproval
 	trace            *Trace
 	userMessage      string
 	parentRun        *AgentRun // pointer toparent if this is a sub-agent
 	logger           *slog.Logger
 	maxLLMCalls      int // maximum number of LLM calls
 	llmCallCount     int // number of LLM calls made
+	approvalTimeout  time.Duration
+}
+
+func (r *AgentRun) ID() string {
+	return r.id
 }
 
 func newAgentRun(a *Agent, message string) *AgentRun {
@@ -50,6 +59,7 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		maxLLMCalls = a.MaxLLMCalls
 	}
 	run := &AgentRun{
+		id:               uuid.New().String(),
 		agent:            a,
 		model:            model,
 		session:          session,
@@ -58,7 +68,8 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		maxLLMCalls:      maxLLMCalls,
 		eventQueue:       make(chan Event, 100),
 		actionQueue:      make(chan Action, 100),
-		pendingApprovals: make(map[string]*pendingApproval),
+		pendingApprovals: make(map[string]pendingApproval),
+		approvalTimeout:  approvalTimeout,
 		logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 	run.tools = run.addSystemTools()
@@ -139,8 +150,8 @@ func (r *AgentRun) Wait(d time.Duration) (string, error) {
 	for evt := range r.eventQueue {
 		switch event := evt.(type) {
 		case *ContentEvent:
-			// only append content that is for the same agent. so you don't append sub-agent content to the parent agent
-			if r.agent.Name == event.AgentName {
+			// only append content that is for the same run ID so you don't append sub-agent content to the parent agent
+			if r.ID() == event.RunID {
 				content += event.Content
 			}
 		case *ErrorEvent:
@@ -154,8 +165,8 @@ func (r *AgentRun) RunAndWait() (string, error) {
 	return r.Wait(0)
 }
 
-func (r *AgentRun) Approve(eventID string) {
-	r.queueAction(&approvalAction{EventID: eventID, Approved: true})
+func (r *AgentRun) Approve(approvalID string, approved bool) {
+	r.queueAction(&approvalAction{ApprovalID: approvalID, Approved: approved})
 }
 
 func (r *AgentRun) Next() <-chan Event {
@@ -167,32 +178,94 @@ func (r *AgentRun) stop() {
 	close(r.actionQueue)
 }
 
+// keep it a variable to make it easier to test
+var tickerInterval = time.Second * 30
+
 func (r *AgentRun) processLoop() {
-	for action := range r.actionQueue {
-		switch act := action.(type) {
-		case *stopAction:
-			r.stop() // close the channels
-			return
+	ticker := time.NewTicker(tickerInterval)
+	defer ticker.Stop()
 
-		case *llmCallAction:
-			r.runLLMCallAction(act.Message, r.tools)
-
-		case *approvalAction:
-			if pending, ok := r.pendingApprovals[act.EventID]; ok {
-				delete(r.pendingApprovals, act.EventID)
-				r.queueAction(&toolCallAction{EventID: act.EventID, ToolName: pending.event.ToolName, ToolArgs: pending.event.ToolArgs, Group: pending.event.ToolGroup})
+	for {
+		select {
+		case action, ok := <-r.actionQueue:
+			if !ok {
+				return
 			}
+			switch act := action.(type) {
+			case *stopAction:
+				r.stop() // close the channels
+				return
 
-		case *toolCallAction:
-			r.runToolCallAction(act)
+			case *llmCallAction:
+				r.runLLMCallAction(act.Message, r.tools)
 
-		default:
-			panic(fmt.Sprintf("unknown action: %T", act))
+			case *approvalAction:
+				r.runApprovalAction(act)
+
+			case *toolCallAction:
+				r.runToolCallAction(act)
+
+			default:
+				panic(fmt.Sprintf("unknown action: %T", act))
+			}
+		case <-ticker.C:
+			r.checkApprovalTimeouts()
+
+		case <-r.session.Context.Done():
+			return
 		}
 	}
 }
 
+func (r *AgentRun) checkApprovalTimeouts() {
+	now := time.Now()
+	for approvalID, approval := range r.pendingApprovals {
+		if now.After(approval.deadline) {
+			r.logger.Error("approval timed out", "approvalID", approvalID, "deadline", approval.deadline)
+			delete(r.pendingApprovals, approvalID)
+			r.fireToolResponseAction(&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group},
+				fmt.Sprintf("approval timed out for tool: %s", approval.Tool.Name))
+		}
+	}
+}
+
+func (r *AgentRun) runApprovalAction(act *approvalAction) {
+	approval, ok := r.pendingApprovals[act.ApprovalID]
+	if !ok {
+		r.logger.Error("invalid approval ID", "approvalID", act.ApprovalID)
+		return
+	}
+	delete(r.pendingApprovals, act.ApprovalID)
+
+	if act.Approved {
+		r.queueAction(&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group})
+		return
+	}
+	r.fireToolResponseAction(
+		&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group},
+		fmt.Sprintf("approval denied for tool: %s", approval.Tool.Name))
+}
+
 func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
+
+	// Check limit before making any LLM call
+	if r.maxLLMCalls > 0 && r.llmCallCount >= r.maxLLMCalls {
+		err := fmt.Errorf("LLM call limit exceeded: %d calls (configured limit: %d)",
+			r.llmCallCount, r.maxLLMCalls)
+		r.fireErrorAction(err)
+		return
+	}
+	r.llmCallCount++ // Increment counter
+
+	event := &LLMCallEvent{
+		RunID:     r.id,
+		AgentName: r.agent.Name,
+		SessionID: r.session.ID,
+		Message:   message,
+		Tools:     tools,
+	}
+	r.queueEvent(event)
+
 	userMsgs := r.agent.createUserMsg(message)
 	sysMsg := r.agent.createSystemMessage("")
 	msgs := []ai.Message{
@@ -244,6 +317,19 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		r.fireToolResponseAction(act, fmt.Sprintf("tool not found: %s", act.ToolName))
 		return
 	}
+
+	eventID := uuid.New().String()
+	toolEvent := &ToolEvent{
+		RunID:     r.id,
+		EventID:   eventID,
+		AgentName: r.agent.Name,
+		SessionID: r.session.ID,
+		ToolName:  act.ToolName,
+		ToolArgs:  act.ToolArgs,
+		ToolGroup: act.Group,
+	}
+	r.queueEvent(toolEvent) // send after adding to the map
+
 	r.logger.Debug("calling tool", "tool", act.ToolName, "args", act.ToolArgs)
 	result, err := tool.Call(act.ToolArgs)
 	if err != nil {

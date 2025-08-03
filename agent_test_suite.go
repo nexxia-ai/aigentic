@@ -179,9 +179,8 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 						finalContent = e.Content
 					}
 				case *ToolEvent:
-					if e.RequireApproval {
-						run.Approve(e.ID())
-					}
+				case *ApprovalEvent:
+					run.Approve(e.ApprovalID, true)
 				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
@@ -251,9 +250,8 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 						finalContent = e.Content
 					}
 				case *ToolEvent:
-					if e.RequireApproval {
-						run.Approve(e.ID())
-					}
+				case *ApprovalEvent:
+					run.Approve(e.ApprovalID, true)
 				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
@@ -317,9 +315,8 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 						finalContent = e.Content
 					}
 				case *ToolEvent:
-					if e.RequireApproval {
-						run.Approve(e.ID())
-					}
+				case *ApprovalEvent:
+					run.Approve(e.ApprovalID, true)
 				case *ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
@@ -399,9 +396,8 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 						finalContent = e.Content
 					}
 				case *ToolEvent:
-					if e.RequireApproval {
-						run.Approve(e.ID())
-					}
+				case *ApprovalEvent:
+					run.Approve(e.ApprovalID, true)
 				}
 			}
 			if test.validate != nil {
@@ -657,9 +653,8 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 				finalContent = e.Content
 			}
 		case *ToolEvent:
-			if e.RequireApproval {
-				run.Approve(e.ID())
-			}
+		case *ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
 		case *ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -699,9 +694,8 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 				finalContent = e.Content
 			}
 		case *ToolEvent:
-			if e.RequireApproval {
-				run.Approve(e.ID())
-			}
+		case *ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
 		case *ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -741,9 +735,8 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 				finalContent = e.Content
 			}
 		case *ToolEvent:
-			if e.RequireApproval {
-				run.Approve(e.ID())
-			}
+		case *ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
 		case *ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -784,9 +777,8 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 				finalContent = e.Content
 			}
 		case *ToolEvent:
-			if e.RequireApproval {
-				run.Approve(e.ID())
-			}
+		case *ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
 		case *ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -828,9 +820,8 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 			}
 		case *ToolEvent:
 			toolCalls++
-			if e.RequireApproval {
-				run.Approve(e.ID())
-			}
+		case *ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
 		case *ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}

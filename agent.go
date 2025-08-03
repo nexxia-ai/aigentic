@@ -10,8 +10,12 @@ import (
 )
 
 type pendingApproval struct {
-	event   *ToolEvent
-	created time.Time
+	ApprovalID string
+	Tool       *ai.Tool
+	ToolCallID string
+	ToolArgs   map[string]interface{}
+	Group      *toolCallGroup
+	deadline   time.Time
 }
 
 type toolCallGroup struct {

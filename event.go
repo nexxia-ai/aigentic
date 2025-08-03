@@ -7,27 +7,27 @@ type Event interface {
 }
 
 type LLMCallEvent struct {
-	EventID   string
+	RunID     string
 	AgentName string
 	SessionID string
 	Message   string
 	Tools     []ai.Tool
 }
 
-func (e *LLMCallEvent) ID() string { return e.EventID }
+func (e *LLMCallEvent) ID() string { return e.RunID }
 
 type ContentEvent struct {
-	EventID   string
+	RunID     string
 	AgentName string
 	SessionID string
 	Content   string
 	IsChunk   bool
 }
 
-func (e *ContentEvent) ID() string { return e.EventID }
+func (e *ContentEvent) ID() string { return e.RunID }
 
 type ToolResponseEvent struct {
-	EventID    string
+	RunID      string
 	AgentName  string
 	SessionID  string
 	ToolCallID string
@@ -35,37 +35,45 @@ type ToolResponseEvent struct {
 	Content    string
 }
 
-func (e *ToolResponseEvent) ID() string { return e.EventID }
+func (e *ToolResponseEvent) ID() string { return e.RunID }
 
 type ToolEvent struct {
-	EventID         string
-	AgentName       string
-	SessionID       string
-	ToolName        string
-	ToolArgs        map[string]interface{}
-	ToolGroup       *toolCallGroup
-	RequireApproval bool
-	Approved        bool
-	Result          interface{}
-	Error           error
+	RunID     string
+	EventID   string
+	AgentName string
+	SessionID string
+	ToolName  string
+	ToolArgs  map[string]interface{}
+	ToolGroup *toolCallGroup
+	Approved  bool
+	Result    interface{}
+	Error     error
 }
 
-func (e *ToolEvent) ID() string { return e.EventID }
+func (e *ToolEvent) ID() string { return e.RunID }
 
 type ThinkingEvent struct {
-	EventID   string
+	RunID     string
 	AgentName string
 	SessionID string
 	Thought   string
 }
 
-func (e *ThinkingEvent) ID() string { return e.EventID }
+func (e *ThinkingEvent) ID() string { return e.RunID }
 
 type ErrorEvent struct {
-	EventID   string
+	RunID     string
 	AgentName string
 	SessionID string
 	Err       error
 }
 
-func (e *ErrorEvent) ID() string { return e.EventID }
+func (e *ErrorEvent) ID() string { return e.RunID }
+
+type ApprovalEvent struct {
+	RunID      string
+	ApprovalID string
+	Content    string
+}
+
+func (e *ApprovalEvent) ID() string { return e.RunID }

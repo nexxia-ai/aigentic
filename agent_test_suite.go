@@ -133,7 +133,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 		message       string
 		expectedError bool
 		validate      func(t *testing.T, content string, agent Agent)
-		attachments   []Attachment
+		attachments   []Document
 		tools         []ai.Tool
 	}{
 		{
@@ -164,7 +164,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.agent.Attachments = tt.attachments
+			tt.agent.Documents = tt.attachments
 			tt.agent.Tools = tt.tools
 
 			run, err := tt.agent.Run(tt.message)
@@ -209,7 +209,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 		name        string
 		message     string
 		validate    func(t *testing.T, content string, agent Agent)
-		attachments []Attachment
+		attachments []Document
 		tools       []ai.Tool
 	}{
 		{
@@ -237,7 +237,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 		t.Run(test.name, func(t *testing.T) {
 			agent := newAgent()
 			agent.Tools = test.tools
-			agent.Attachments = test.attachments
+			agent.Documents = test.attachments
 			run, err := agent.Run(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
@@ -283,7 +283,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 		message     string
 		agent       Agent
 		validate    func(t *testing.T, content string, agent Agent)
-		attachments []Attachment
+		attachments []Document
 		tools       []ai.Tool
 	}{
 		{
@@ -291,7 +291,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			message:     "tell me the name of the company with the number 150. Use tools.",
 			agent:       newAgent(),
 			tools:       []ai.Tool{NewSecretNumberTool()},
-			attachments: []Attachment{},
+			attachments: []Document{},
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.Contains(t, content, "Nexxia")
@@ -302,7 +302,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			test.agent.Tools = test.tools
-			test.agent.Attachments = test.attachments
+			test.agent.Documents = test.attachments
 			run, err := test.agent.Run(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
@@ -411,42 +411,27 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 	// Define test cases
 	testCases := []struct {
 		name        string
-		attachments []Attachment
+		attachments []Document
 		description string
 	}{
 		{
 			name: "text file",
-			attachments: []Attachment{
-				{
-					Type:     "text",
-					Content:  []byte("This is a test text file with some sample content for analysis."),
-					MimeType: "text/plain",
-					Name:     "sample.txt",
-				},
+			attachments: []Document{
+				NewInMemoryDocument("", "sample.txt", []byte("This is a test text file with some sample content for analysis."), nil),
 			},
 			description: "You are a helpful assistant that analyzes text files and provides insights.",
 		},
 		{
 			name: "PDF file",
-			attachments: []Attachment{
-				{
-					Type:     "pdf",
-					Content:  []byte("%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Test PDF Content) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000204 00000 n \ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n297\n%%EOF"),
-					MimeType: "application/pdf",
-					Name:     "sample.pdf",
-				},
+			attachments: []Document{
+				NewInMemoryDocument("", "sample.pdf", []byte("%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Test PDF Content) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000204 00000 n \ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n297\n%%EOF"), nil),
 			},
 			description: "You are a helpful assistant that analyzes PDF files and provides insights.",
 		},
 		{
 			name: "image file",
-			attachments: []Attachment{
-				{
-					Type:     "image",
-					Content:  []byte("fake-image-data-for-testing"),
-					MimeType: "image/png",
-					Name:     "sample.png",
-				},
+			attachments: []Document{
+				NewInMemoryDocument("", "sample.png", []byte("fake-image-data-for-testing"), nil),
 			},
 			description: "You are a helpful assistant that analyzes images and provides insights.",
 		},
@@ -460,7 +445,7 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 				Description:  tc.description,
 				Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
 				Trace:        tracer,
-				Attachments:  tc.attachments,
+				Documents:    tc.attachments,
 			}
 
 			run, err := agent.Run("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")

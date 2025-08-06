@@ -3,6 +3,7 @@ package aigentic
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,19 +43,12 @@ type Agent struct {
 	DelayBetweenRetries int
 	ExponentialBackoff  bool
 	Stream              bool
-	Attachments         []Attachment
+	Documents           []Document
+	DocumentReferences  []Document
 	parentAgent         *Agent
 	Trace               *Trace
 	LogLevel            slog.Level
 	MaxLLMCalls         int // Maximum number of LLM calls (0 = unlimited)
-}
-
-// Attachment represents a file attachment for LLM requests
-type Attachment struct {
-	Type     string // "image", "audio", "video", "document", etc.
-	Content  []byte // Base64 encoded content
-	MimeType string // MIME type of the file
-	Name     string // Original filename
 }
 
 func (a *Agent) Run(message string) (*AgentRun, error) {
@@ -126,17 +120,55 @@ func (a *Agent) createUserMsg(message string) []ai.Message {
 		messages = append(messages, userMsg)
 	}
 
-	// Add each attachment as a separate message with the file content
-	for _, attachment := range a.Attachments {
+	// Add each attachment as a separate Resource message with actual content
+	for _, doc := range a.Documents {
+		content, err := doc.Bytes()
+		if err != nil {
+			continue // or handle error appropriately
+		}
+
 		attachmentMsg := ai.ResourceMessage{
 			Role: ai.UserRole,
 			URI:  "",
-			Name: attachment.Name,
-			Body: attachment.Content,
-			Type: attachment.Type,
+			Name: doc.Filename,
+			Body: content,
+			Type: deriveTypeFromMime(doc.MimeType),
 		}
 		messages = append(messages, attachmentMsg)
 	}
 
+	// Add attachment references as Resource messages with file:// URI
+	for _, docRef := range a.DocumentReferences {
+		// Use the document ID as the file reference
+		fileID := docRef.ID()
+
+		refMsg := ai.ResourceMessage{
+			Role: ai.UserRole,
+			URI:  fmt.Sprintf("file://%s", fileID),
+			Name: docRef.Filename,
+			Body: nil,                                 // No body for file references
+			Type: deriveTypeFromMime(docRef.MimeType), // Use actual MIME type
+		}
+		messages = append(messages, refMsg)
+	}
+
 	return messages
+}
+
+// deriveTypeFromMime derives the resource type from MIME type
+func deriveTypeFromMime(mimeType string) string {
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "image"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "video"
+	case strings.HasPrefix(mimeType, "text/"):
+		return "text"
+	case mimeType == "application/pdf":
+		return "document"
+	default:
+		return "document"
+	}
 }

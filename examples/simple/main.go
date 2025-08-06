@@ -34,7 +34,7 @@ func getAPIKey() string {
 
 // simpleAgent demonstrates a simple agent that takes an user input and returns a response
 var simpleAgent = aigentic.Agent{
-	Model:        model,
+	Model:        ollamaModel, // show use of ollama model
 	Name:         "SimpleAgent",
 	Description:  "A simple agent that responds to user messages",
 	Instructions: "You are a helpful assistant. Respond to user questions in a friendly and informative way.",

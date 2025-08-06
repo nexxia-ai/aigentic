@@ -1,7 +1,7 @@
 # Aigentic Agent Showcase
 
 # this is a private repo for now, you need this:
-$env:GOPRIVATE="github.com/nexxia-ai/aigentic,github.com/nexxia-ai/aigentic-openai,github.com/nexxia-ai/aigentic-ollama"
+$env:GOPRIVATE="github.com/nexxia-ai/**"
 
 This showcase demonstrates four different types of agents using the Aigentic framework with the OpenAI provider.
 

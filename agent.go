@@ -43,8 +43,8 @@ type Agent struct {
 	DelayBetweenRetries int
 	ExponentialBackoff  bool
 	Stream              bool
-	Documents           []Document
-	DocumentReferences  []Document
+	Documents           []*Document
+	DocumentReferences  []*Document
 	parentAgent         *Agent
 	Trace               *Trace
 	LogLevel            slog.Level

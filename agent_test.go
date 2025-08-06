@@ -10,10 +10,12 @@ import (
 )
 
 func TestCreateUserMsg(t *testing.T) {
+	doc1 := NewInMemoryDocument("", "file-abc123", []byte("test content"), nil)
+	doc2 := NewInMemoryDocument("", "test.png", []byte("image data"), nil)
 	agent := Agent{
-		Documents: []Document{
-			NewInMemoryDocument("", "file-abc123", []byte("test content"), nil),
-			NewInMemoryDocument("", "test.png", []byte("image data"), nil),
+		Documents: []*Document{
+			&doc1,
+			&doc2,
 		},
 	}
 
@@ -150,12 +152,14 @@ func TestAgentToolCalling(t *testing.T) {
 func TestAgentFileAttachment(t *testing.T) {
 	receivedMessages := []ai.Message{}
 
+	doc1 := NewInMemoryDocument("", "test.txt", []byte("This is a text file content"), nil)
+	doc2 := NewInMemoryDocument("", "test.png", []byte("fake image data"), nil)
 	agent := Agent{
 		Name:        "test-attachment-agent",
 		Description: "A test agent that handles file attachments",
-		Documents: []Document{
-			NewInMemoryDocument("", "test.txt", []byte("This is a text file content"), nil),
-			NewInMemoryDocument("", "test.png", []byte("fake image data"), nil),
+		Documents: []*Document{
+			&doc1,
+			&doc2,
 		},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			receivedMessages = messages

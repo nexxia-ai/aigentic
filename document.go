@@ -14,7 +14,7 @@ type DocumentStore interface {
 }
 
 type DocumentProcessor interface {
-	Extract(doc *Document) ([]Document, error)
+	Process(doc *Document) ([]*Document, error)
 }
 
 // Document is a common type to work with documents. You can load documents using the DocumentStore interface.

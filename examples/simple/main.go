@@ -46,7 +46,7 @@ var attachmentAgent = aigentic.Agent{
 	Name:         "AttachmentAgent",
 	Description:  "An agent that can analyze and work with file attachments",
 	Instructions: "You can analyze images and documents. Describe what you see and provide insights about the content.",
-	Documents: []aigentic.Document{
+	Documents: []*aigentic.Document{
 		aigentic.NewInMemoryDocument("", "sample.txt", []byte("This is a sample text file with some information about artificial intelligence."), nil),
 	},
 }

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -14,6 +16,15 @@ import (
 
 var (
 	ErrToolExceeded = errors.New("tool loop limit exceeded")
+	ErrTemporary    = errors.New("temporary error - retry recommended")
+)
+
+// Retry configuration constants
+const (
+	defaultMaxRetries   = 3
+	defaultBaseDelay    = 1 * time.Second
+	defaultMaxDelay     = 30 * time.Second
+	defaultJitterFactor = 0.1
 )
 
 // RecordedResponse represents a recorded AI response with error information
@@ -56,33 +67,146 @@ type Model struct {
 
 	// Recording functionality
 	RecordFilename string // If set, record responses to this file
+
+	// Retry configuration
+	MaxRetries *int // Maximum number of retry attempts (nil = use default, 0 = no retry, default = 3)
+}
+
+// calculateBackoffDelay calculates the delay for the next retry with exponential backoff and jitter
+func (m *Model) calculateBackoffDelay(attempt int) time.Duration {
+	// Exponential backoff: defaultBaseDelay * 2^attempt
+	delay := float64(defaultBaseDelay) * math.Pow(2, float64(attempt))
+
+	// Cap the delay at defaultMaxDelay
+	if delay > float64(defaultMaxDelay) {
+		delay = float64(defaultMaxDelay)
+	}
+
+	// Add jitter to prevent thundering herd
+	jitter := delay * defaultJitterFactor * rand.Float64()
+	delay += jitter
+
+	return time.Duration(delay)
+}
+
+// callWithRetry handles retry logic for non-streaming calls
+func (m *Model) callWithRetry(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error) {
+	var lastErr error
+
+	// Initialize MaxRetries with default value if not set
+	maxAttempts := defaultMaxRetries
+	if m.MaxRetries != nil {
+		maxAttempts = *m.MaxRetries
+	}
+
+	// Treat MaxRetries = 0 same as MaxRetries = 1 (one attempt)
+	if maxAttempts == 0 {
+		maxAttempts = 1
+	}
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		response, err := m.callFunc(ctx, m, messages, tools)
+		if err == nil {
+			// Success
+			if m.RecordFilename != "" {
+				m.recordAIMessage(response, err)
+			}
+			return response, nil
+		}
+
+		lastErr = err
+
+		// Check if this is a temporary error
+		if err != ErrTemporary {
+			// Non-retryable error - return immediately
+			if m.RecordFilename != "" {
+				m.recordAIMessage(response, err)
+			}
+			return response, err
+		}
+
+		// If this is the last attempt, don't retry
+		if attempt == maxAttempts-1 {
+			break
+		}
+
+		// Calculate delay and wait
+		delay := m.calculateBackoffDelay(attempt)
+		select {
+		case <-ctx.Done():
+			return AIMessage{}, ctx.Err()
+		case <-time.After(delay):
+			// Continue to next attempt
+		}
+	}
+
+	// All retries exhausted
+	return AIMessage{}, lastErr
 }
 
 // Call makes a single call to the model. It does not execute any tool calls, but return the requested ToolCalls.
 // This is useful to implemnent your own tool execution loop.
 func (m *Model) Call(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error) {
-	// Make the actual provider call
-	response, err := m.callFunc(ctx, m, messages, tools)
+	return m.callWithRetry(ctx, messages, tools)
+}
 
-	// If recording is enabled, record the response
-	if m.RecordFilename != "" {
-		m.recordAIMessage(response, err)
+// streamWithRetry handles retry logic for streaming calls
+func (m *Model) streamWithRetry(ctx context.Context, messages []Message, tools []Tool, chunkFunction func(AIMessage) error) (AIMessage, error) {
+	var lastErr error
+
+	// Initialize MaxRetries with default value if not set
+	maxAttempts := defaultMaxRetries
+	if m.MaxRetries != nil {
+		maxAttempts = *m.MaxRetries
 	}
 
-	return response, err
+	// Treat MaxRetries = 0 same as MaxRetries = 1 (one attempt)
+	if maxAttempts == 0 {
+		maxAttempts = 1
+	}
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		response, err := m.callStreamingFunc(ctx, m, messages, tools, chunkFunction)
+		if err == nil {
+			// Success
+			return response, nil
+		}
+
+		lastErr = err
+
+		// Check if this is a temporary error
+		if err != ErrTemporary {
+			// Non-retryable error - return immediately
+			return response, err
+		}
+
+		// If this is the last attempt, don't retry
+		if attempt == maxAttempts-1 {
+			break
+		}
+
+		// Calculate delay and wait
+		delay := m.calculateBackoffDelay(attempt)
+		select {
+		case <-ctx.Done():
+			return AIMessage{}, ctx.Err()
+		case <-time.After(delay):
+			// Continue to next attempt
+		}
+	}
+
+	// All retries exhausted
+	return AIMessage{}, lastErr
 }
 
 // Stream makes a streaming call to the model. It calls the chunkFunction for each chunk received.
 // This is useful for real-time processing of model responses.
 func (m *Model) Stream(ctx context.Context, messages []Message, tools []Tool, chunkFunction func(AIMessage) error) (AIMessage, error) {
-	// Check if streaming is supported
 	if m.callStreamingFunc == nil {
 		return AIMessage{}, fmt.Errorf("streaming not supported for this model")
 	}
 
-	// Call the provider's streaming function
-	response, err := m.callStreamingFunc(ctx, m, messages, tools, chunkFunction)
-	return response, err
+	return m.streamWithRetry(ctx, messages, tools, chunkFunction)
 }
 
 // Generate executes a complete conversation with tool execution loop

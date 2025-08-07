@@ -8,8 +8,10 @@ import (
 
 // NewDummyModel is useful for testing purposes. It allows you to mock the model's response.
 func NewDummyModel(responseFunc func(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error)) *Model {
+	maxRetries := defaultMaxRetries
 	return &Model{
-		ModelName: "dummy",
+		ModelName:  "dummy",
+		MaxRetries: &maxRetries,
 		callFunc: func(ctx context.Context, model *Model, messages []Message, tools []Tool) (AIMessage, error) {
 			return responseFunc(ctx, messages, tools)
 		},

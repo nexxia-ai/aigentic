@@ -23,6 +23,8 @@ type AgentRun struct {
 	tools      []ai.Tool
 	msgHistory []ai.Message
 
+	memory *Memory
+
 	eventQueue       chan Event
 	actionQueue      chan Action
 	pendingApprovals map[string]pendingApproval
@@ -40,6 +42,7 @@ func (r *AgentRun) ID() string {
 }
 
 func newAgentRun(a *Agent, message string) *AgentRun {
+	runID := uuid.New().String()
 	session := a.Session
 	if session == nil {
 		session = NewSession()
@@ -58,8 +61,10 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 	if a.MaxLLMCalls != 0 {
 		maxLLMCalls = a.MaxLLMCalls
 	}
+
+	memory := NewFileMemory("./traces/ContextMemory_" + runID + ".md")
 	run := &AgentRun{
-		id:               uuid.New().String(),
+		id:               runID,
 		agent:            a,
 		model:            model,
 		session:          session,
@@ -70,26 +75,36 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		actionQueue:      make(chan Action, 100),
 		pendingApprovals: make(map[string]pendingApproval),
 		approvalTimeout:  approvalTimeout,
+		memory:           memory,
 		logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
-	run.tools = run.addSystemTools()
+	run.tools = run.addTools()
 	return run
 }
 
 func (r *AgentRun) start() {
+
+	// goroutine to read the action queue and process actions.
+	// it will terminate when the action queue is closed and the agent is finished.
 	go r.processLoop()
-	r.fireLLMCallAction(r.userMessage, r.tools)
+	r.queueAction(&llmCallAction{Message: r.userMessage})
 }
 
-func (r *AgentRun) addSystemTools() []ai.Tool {
+func (r *AgentRun) stop() {
+	os.Remove(r.memory.filepath)
+
+	close(r.eventQueue)
+	close(r.actionQueue)
+}
+
+func (r *AgentRun) addTools() []ai.Tool {
 	tools := make([]ai.Tool, 0, len(r.agent.Tools)+len(r.agent.Agents))
 	tools = append(tools, r.agent.Tools...)
 	for _, aa := range r.agent.Agents {
-		// Create SimpleTool adapter for sub-agent
+		// tool adapter for sub-agent
 		agentTool := ai.Tool{
-			Name:            aa.Name,
-			Description:     aa.Description,
-			RequireApproval: false,
+			Name:        aa.Name,
+			Description: aa.Description,
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -132,7 +147,20 @@ func (r *AgentRun) addSystemTools() []ai.Tool {
 		}
 		tools = append(tools, agentTool)
 	}
+
+	tools = append(tools, r.memory.Tool.toTool(r))
 	return tools
+}
+
+func (r *AgentRun) createToolPrompt() string {
+	if len(r.tools) > 0 {
+		msg := "You have access to the following tools:\n"
+		for _, tool := range r.tools {
+			msg += fmt.Sprintf("<tool>\n%s\n%s\n</tool>\n", tool.Name, tool.Description)
+		}
+		return msg
+	}
+	return ""
 }
 
 func (r *AgentRun) findTool(tcName string) *ai.Tool {
@@ -173,11 +201,6 @@ func (r *AgentRun) Next() <-chan Event {
 	return r.eventQueue
 }
 
-func (r *AgentRun) stop() {
-	close(r.eventQueue)
-	close(r.actionQueue)
-}
-
 // keep it a variable to make it easier to test
 var tickerInterval = time.Second * 30
 
@@ -193,11 +216,14 @@ func (r *AgentRun) processLoop() {
 			}
 			switch act := action.(type) {
 			case *stopAction:
-				r.stop() // close the channels
+				r.runStopAction(act)
 				return
 
 			case *llmCallAction:
 				r.runLLMCallAction(act.Message, r.tools)
+
+			case *toolResponseAction:
+				r.runToolResponseAction(act.request, act.response)
 
 			case *approvalAction:
 				r.runApprovalAction(act)
@@ -217,14 +243,30 @@ func (r *AgentRun) processLoop() {
 	}
 }
 
+func (r *AgentRun) runStopAction(act *stopAction) {
+	if act.Error != nil {
+		event := &ErrorEvent{
+			RunID:     r.id,
+			AgentName: r.agent.Name,
+			SessionID: r.session.ID,
+			Err:       act.Error,
+		}
+		r.queueEvent(event)
+	}
+	r.stop()
+}
+
 func (r *AgentRun) checkApprovalTimeouts() {
 	now := time.Now()
 	for approvalID, approval := range r.pendingApprovals {
 		if now.After(approval.deadline) {
 			r.logger.Error("approval timed out", "approvalID", approvalID, "deadline", approval.deadline)
 			delete(r.pendingApprovals, approvalID)
-			r.fireToolResponseAction(&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group},
-				fmt.Sprintf("approval timed out for tool: %s", approval.Tool.Name))
+			r.queueAction(
+				&toolResponseAction{
+					request:  &toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group},
+					response: fmt.Sprintf("approval timed out for tool: %s", approval.Tool.Name),
+				})
 		}
 	}
 }
@@ -241,9 +283,10 @@ func (r *AgentRun) runApprovalAction(act *approvalAction) {
 		r.queueAction(&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group})
 		return
 	}
-	r.fireToolResponseAction(
-		&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group},
-		fmt.Sprintf("approval denied for tool: %s", approval.Tool.Name))
+	r.queueAction(&toolResponseAction{
+		request:  &toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group},
+		response: fmt.Sprintf("approval denied for tool: %s", approval.Tool.Name),
+	})
 }
 
 func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
@@ -252,7 +295,7 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 	if r.maxLLMCalls > 0 && r.llmCallCount >= r.maxLLMCalls {
 		err := fmt.Errorf("LLM call limit exceeded: %d calls (configured limit: %d)",
 			r.llmCallCount, r.maxLLMCalls)
-		r.fireErrorAction(err)
+		r.queueAction(&stopAction{Error: err})
 		return
 	}
 	r.llmCallCount++ // Increment counter
@@ -266,12 +309,28 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 	}
 	r.queueEvent(event)
 
-	userMsgs := r.agent.createUserMsg(message)
-	sysMsg := r.agent.createSystemMessage("")
 	msgs := []ai.Message{
-		ai.SystemMessage{Role: ai.SystemRole, Content: sysMsg},
+		ai.SystemMessage{Role: ai.SystemRole, Content: r.agent.createSystemPrompt()},
 	}
+	if s := r.memory.SystemPrompt(); s != "" {
+		msgs = append(msgs, ai.SystemMessage{Role: ai.SystemRole, Content: s})
+	}
+	if s := r.createToolPrompt(); s != "" {
+		msgs = append(msgs, ai.SystemMessage{Role: ai.SystemRole, Content: s})
+	}
+
+	userMsgs := r.agent.createUserMsg(message)
 	msgs = append(msgs, userMsgs...)
+
+	if s := r.memory.Content(); s != "" {
+		ss := "<ContextMemory.md>\n" + s + "\n</ContextMemory.md>\n"
+		msgs = append(msgs, ai.UserMessage{Role: ai.UserRole, Content: ss})
+	}
+
+	// always send msgHistory
+	// even when memory is not including history, the msgHistory only contains
+	// the last assistant and tool responses if this is a tool response action.
+	// the agent will only keep the last assistant and tool responses if the memory is not including history.
 	msgs = append(msgs, r.msgHistory...)
 
 	if r.trace != nil {
@@ -287,15 +346,14 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 	var respMsg ai.AIMessage
 	var err error
 
-	if r.agent.Stream {
-		// Streaming mode - the final chunk is returned as respMsg
+	switch r.agent.Stream {
+	case true:
 		respMsg, err = r.model.Stream(r.session.Context, msgs, tools, func(chunk ai.AIMessage) error {
 			// Handle each chunk as a non-final message
-			r.handleAIMessage(chunk, true)
+			r.handleAIMessage(chunk, true) // isChunk is true
 			return nil
 		})
-	} else {
-		// Non-streaming mode
+	default:
 		respMsg, err = r.model.Call(r.session.Context, msgs, tools)
 	}
 
@@ -303,18 +361,21 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 		if r.trace != nil {
 			r.trace.RecordError(err)
 		}
-		r.fireErrorAction(err)
+		r.queueAction(&stopAction{Error: err})
 		return
 	}
 
-	// Handle the final message
 	r.handleAIMessage(respMsg, false)
 }
 
 func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	tool := r.findTool(act.ToolName)
 	if tool == nil {
-		r.fireToolResponseAction(act, fmt.Sprintf("tool not found: %s", act.ToolName))
+		// r.fireToolResponseAction(act, fmt.Sprintf("tool not found: %s", act.ToolName))
+		r.queueAction(&toolResponseAction{
+			request:  act,
+			response: fmt.Sprintf("tool not found: %s", act.ToolName),
+		})
 		return
 	}
 
@@ -336,13 +397,18 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		if r.trace != nil {
 			r.trace.RecordError(err)
 		}
-		r.fireToolResponseAction(act, fmt.Sprintf("tool execution error: %v", err))
+		r.queueAction(&toolResponseAction{
+			request:  act,
+			response: fmt.Sprintf("tool execution error: %v", err),
+		})
 		return
 	}
 	content := ""
-	for _, c := range result.Content {
-		if s, ok := c.Content.(string); ok {
-			content += s
+	if result != nil {
+		for _, c := range result.Content {
+			if s, ok := c.Content.(string); ok {
+				content += s
+			}
 		}
 	}
 
@@ -357,20 +423,83 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		}, content)
 	}
 
-	r.fireToolResponseAction(act, content)
+	r.queueAction(&toolResponseAction{request: act, response: content})
+}
+
+func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string) {
+	toolMsg := ai.ToolMessage{
+		Role:       ai.ToolRole,
+		Content:    content,
+		ToolCallID: action.ToolCallID,
+		ToolName:   action.ToolName,
+	}
+	action.Group.responses[action.ToolCallID] = toolMsg
+
+	// Check if all tool calls in this group are completed
+	if len(action.Group.responses) == len(action.Group.aiMessage.ToolCalls) {
+
+		// add all tool responses and queue their events
+		for _, tc := range action.Group.aiMessage.ToolCalls {
+			if response, exists := action.Group.responses[tc.ID]; exists {
+				r.msgHistory = append(r.msgHistory, response)
+				event := &ToolResponseEvent{
+					RunID:      r.id,
+					AgentName:  r.agent.Name,
+					SessionID:  r.session.ID,
+					ToolCallID: response.ToolCallID,
+					ToolName:   action.ToolName,
+					Content:    response.Content,
+				}
+				r.queueEvent(event)
+			}
+		}
+
+		// Notify any content from the AI message
+		if action.Group.aiMessage.Content != "" {
+			event := &ContentEvent{
+				RunID:     r.id,
+				AgentName: r.agent.Name,
+				SessionID: r.session.ID,
+				Content:   action.Group.aiMessage.Content,
+				IsChunk:   true,
+			}
+			r.queueEvent(event)
+		}
+
+		r.queueAction(&llmCallAction{Message: r.userMessage})
+	}
 }
 
 // handleAIMessage handles the response from the LLM, whether it's a complete message or a chunk
 func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 
-	// fire thinking content notification
 	if msg.Think != "" {
-		r.fireThinkingAction(msg.Think)
+		event := &ThinkingEvent{
+			RunID:     r.id,
+			AgentName: r.agent.Name,
+			SessionID: r.session.ID,
+			Thought:   msg.Think,
+		}
+		r.queueEvent(event)
 	}
 
-	// fire content notification if chunk
-	if msg.Content != "" && (isChunk || len(msg.ToolCalls) > 0) {
-		r.fireContentAction(msg.Content, true)
+	// fire content notification
+	if msg.Content != "" {
+		chunk := isChunk
+
+		// Note: a chunk could be included in a tool call
+		//       in this case isChunk is false but we want to notify
+		if len(msg.ToolCalls) > 0 {
+			chunk = true
+		}
+		event := &ContentEvent{
+			RunID:     r.id,
+			AgentName: r.agent.Name,
+			SessionID: r.session.ID,
+			Content:   msg.Content,
+			IsChunk:   chunk,
+		}
+		r.queueEvent(event)
 	}
 
 	// return if this is a chunk (streaming)
@@ -378,16 +507,21 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		return
 	}
 
-	// this not a chunk
+	// this not a chunk, which means the model Call/Stream is complete
 	// add to history and fire tool calls
 
 	if r.trace != nil {
 		r.trace.LLMAIResponse(r.agent.Name, msg)
 	}
+
+	// reset history slice each time
+	if !r.memory.IncludeHistory {
+		r.msgHistory = []ai.Message{}
+	}
 	r.msgHistory = append(r.msgHistory, msg)
 
 	if len(msg.ToolCalls) == 0 {
-		r.fireContentAction(msg.Content, false)
+		r.queueAction(&stopAction{Error: nil})
 		return
 	}
 
@@ -403,12 +537,12 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			if r.trace != nil {
 				r.trace.RecordError(err)
 			}
-			r.fireToolResponseAction(&toolCallAction{
-				EventID: "invalid-tool", ToolName: tc.Name, ToolArgs: args, Group: group},
-				fmt.Sprintf("invalid tool parameters: %v", err))
+			r.queueAction(&toolResponseAction{request: &toolCallAction{
+				ToolName: tc.Name, ToolArgs: args, Group: group},
+				response: fmt.Sprintf("invalid tool parameters: %v", err)})
 			continue
 		}
-		r.fireToolCallAction(tc.Name, args, tc.ID, group)
+		r.queueToolCallAction(tc.Name, args, tc.ID, group)
 	}
 }
 

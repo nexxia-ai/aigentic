@@ -404,9 +404,8 @@ func TestDummyStreaming(t *testing.T) {
 
 func getApprovalTool() ai.Tool {
 	return ai.Tool{
-		Name:            "test_approval_tool",
-		Description:     "A test tool that requires approval",
-		RequireApproval: true,
+		Name:        "test_approval_tool",
+		Description: "A test tool that requires approval",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -424,6 +423,7 @@ func getApprovalTool() ai.Tool {
 				Error:   false,
 			}, nil
 		},
+		RequireApproval: true,
 	}
 }
 

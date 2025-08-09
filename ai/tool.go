@@ -1,10 +1,10 @@
 package ai
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
+// Tool mimics a "standard" mcp tool definition so you can easily use it with any mcp client
 type Tool struct {
 	Name            string                                                 `json:"name"`
 	Description     string                                                 `json:"description"`
@@ -20,20 +20,4 @@ func (t *Tool) Call(args map[string]interface{}) (*ToolResult, error) {
 	}
 
 	return t.Execute(args)
-}
-
-// CallWithJSON executes the tool with JSON input
-func (t *Tool) CallWithJSON(jsonInput []byte) (*ToolResult, error) {
-	var args map[string]interface{}
-	if err := json.Unmarshal(jsonInput, &args); err != nil {
-		return &ToolResult{
-			Content: []ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Invalid JSON input: %v", err),
-			}},
-			Error: true,
-		}, nil
-	}
-
-	return t.Call(args)
 }

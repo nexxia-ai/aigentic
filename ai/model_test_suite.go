@@ -2,7 +2,7 @@ package ai
 
 // This file contains the test suite for the ai package.
 // It is used by packages that implement the ai models to test the ai models and its implementations.
-// It is not used in the main package.
+// If a model implementation passes all these tests, it is considered to be working correctly.
 import (
 	"context"
 	"embed"
@@ -151,6 +151,13 @@ func RunModelTestSuite(t *testing.T, suite ModelTestSuite) {
 			}
 			TestStreamingWithTools(t, suite.NewModel())
 		})
+
+		t.Run("TextMultipleMessages", func(t *testing.T) {
+			if shouldSkipTest("TextMultipleMessages") {
+				t.Skipf("Skipping TextMultipleMessages test for %s", suite.Name)
+			}
+			TestTextMultipleMessages(t, suite.NewModel())
+		})
 	})
 }
 
@@ -187,7 +194,10 @@ func TestProcessImage(t *testing.T, model *Model) {
 	testArgs := testArgs{
 		ctx: context.Background(),
 		messages: []Message{
-			UserMessage{Role: UserRole, Content: "Extract the text from this image and return the word SUCCESS if it worked followed by the text"},
+			UserMessage{Role: UserRole,
+				Content: "Extract the text from this image and return the word SUCCESS if it worked followed by the text" +
+					"Return the word FAILED followed by your explanation if you could not extract the text" +
+					"Do not make up information. If you cannot read the image, return FAILED followed by your explanation."},
 			ResourceMessage{Role: UserRole, Name: "test.png", MIMEType: "image/png", Body: func() []byte {
 				data, _ := testData.ReadFile("testdata/test.png")
 				return data
@@ -593,7 +603,7 @@ func TestStreamingBasic(t *testing.T, model *Model) {
 		// Simply append each chunk's content
 		chunks = append(chunks, chunk.Content)
 		thinkChunks = append(thinkChunks, chunk.Think)
-		t.Logf("Chunk: %s", chunk.Content)
+		// t.Logf("Chunk: %s", chunk.Content)
 		return nil
 	})
 
@@ -610,6 +620,7 @@ func TestStreamingBasic(t *testing.T, model *Model) {
 	if len(chunks) < 2 {
 		t.Errorf("Expected multiple chunks, got %d", len(chunks))
 	}
+	t.Logf("Got %d chunks", len(chunks))
 
 	// Verify the final content matches the accumulated chunks
 	accumulatedChunks := strings.Join(chunks, "")
@@ -641,11 +652,9 @@ func TestStreamingWithTools(t *testing.T, model *Model) {
 	// Test streaming
 	finalMessage, err := model.Stream(args.ctx, args.messages, args.tools, func(chunk AIMessage) error {
 		chunks = append(chunks, chunk)
-		t.Logf("Chunk content: '%s'", chunk.Content)
 		if len(chunk.ToolCalls) > 0 {
 			t.Logf("Tool calls: %+v", chunk.ToolCalls)
 		}
-		t.Logf("Chunk role: %s", chunk.Role)
 		return nil
 	})
 
@@ -662,6 +671,7 @@ func TestStreamingWithTools(t *testing.T, model *Model) {
 	if len(chunks) < 2 {
 		t.Errorf("Expected at least one chunk, got %d", len(chunks))
 	}
+	t.Logf("Got %d chunks", len(chunks))
 
 	// Check that we received tool calls in any chunk or final message
 	foundEchoTool := false
@@ -694,4 +704,56 @@ func TestStreamingWithTools(t *testing.T, model *Model) {
 	}
 
 	// t.Logf("Final message: %s", finalMessage.Content)
+}
+
+func TestTextMultipleMessages(t *testing.T, model *Model) {
+	args := testArgs{
+		ctx: context.Background(),
+		messages: []Message{
+			SystemMessage{Role: SystemRole, Content: "You are a helpful AI assistant that provides accurate information."},
+			SystemMessage{Role: SystemRole, Content: "Always be polite and professional in your responses."},
+			SystemMessage{Role: SystemRole, Content: "When using tools, explain what you're doing clearly."},
+			UserMessage{Role: UserRole, Content: "Hello, I need help with some calculations."},
+			UserMessage{Role: UserRole, Content: "Can you use the echo tool to repeat 'Calculation started'?"},
+			AIMessage{
+				Role:    AssistantRole,
+				Content: "I'll help you with that calculation. Let me first use the echo tool as requested.",
+				ToolCalls: []ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Name: "echo",
+						Args: `{"text": "Calculation started"}`,
+					},
+				},
+			},
+			ToolMessage{
+				Role:       ToolRole,
+				Content:    "Calculation started",
+				ToolCallID: "call_123",
+				ToolName:   "echo",
+			},
+			UserMessage{Role: UserRole, Content: "Then tell me what 25 multiplied by 4 equals."},
+		},
+		tools: []Tool{echoTool},
+	}
+
+	got, err := model.Call(args.ctx, args.messages, args.tools)
+	if err != nil {
+		t.Errorf("Model.Call() error = %v", err)
+		return
+	}
+
+	if got.Content == "" {
+		t.Errorf("Expected non-empty response content")
+		return
+	}
+
+	// Verify the response acknowledges the calculation request
+	content := strings.ToLower(got.Content)
+	if !strings.Contains(content, "100") && !strings.Contains(content, "25") && !strings.Contains(content, "4") {
+		t.Errorf("Expected response to contain calculation result or reference to numbers, got: %s", got.Content)
+	}
+
+	t.Logf("Response: %s", got.Content)
 }

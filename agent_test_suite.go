@@ -4,7 +4,6 @@ package aigentic
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +94,13 @@ func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
 			}
 			TestStreamingWithTools(t, suite.NewModel())
 		})
+
+		t.Run("MemoryPersistence", func(t *testing.T) {
+			if shouldSkipTest("MemoryPersistence") {
+				t.Skipf("Skipping MemoryPersistence test for %s", suite.Name)
+			}
+			TestMemoryPersistence(t, suite.NewModel())
+		})
 	})
 }
 
@@ -118,6 +124,122 @@ func NewSecretNumberTool() ai.Tool {
 				Content: []ai.ToolContent{{Type: "text", Content: "Nexxia"}},
 				Error:   false,
 			}, nil
+		},
+	}
+}
+
+// NewSecretSupplierTool returns a SimpleTool struct for testing supplier lookup
+func NewSecretSupplierTool() ai.Tool {
+	return ai.Tool{
+		Name:        "lookup_supplier_name",
+		Description: "A tool that looks up the name of a supplier based on a supplier number",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"supplier_number": map[string]interface{}{
+					"type":        "string",
+					"description": "The supplier number to lookup",
+				},
+			},
+			"required": []string{"supplier_number"},
+		},
+		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{{Type: "text", Content: "Phoenix"}},
+				Error:   false,
+			}, nil
+		},
+	}
+}
+
+// NewLookupCompanyByNameTool simulates looking up a company by name and returning an ID or not found
+func NewLookupCompanyByNameTool() ai.Tool {
+	return ai.Tool{
+		Name:        "lookup_company_id",
+		Description: "Lookup a company ID by its name. Returns 'COMPANY_ID: <id>; NAME: <name>' if found, otherwise 'NOT_FOUND'",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The company name to lookup",
+				},
+			},
+			"required": []string{"name"},
+		},
+		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+			name, _ := args["name"].(string)
+			content := "NOT_FOUND"
+			if strings.EqualFold(strings.TrimSpace(name), "Nexxia") {
+				content = "COMPANY_ID: COMP-001; NAME: Nexxia"
+			}
+			return &ai.ToolResult{Content: []ai.ToolContent{{Type: "text", Content: content}}}, nil
+		},
+	}
+}
+
+// NewCreateCompanyTool simulates creating a company, returning a deterministic ID for testing
+func NewCreateCompanyTool() ai.Tool {
+	return ai.Tool{
+		Name:        "create_company",
+		Description: "Create a new company by name. Returns 'COMPANY_ID: <id>; NAME: <name>'",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The company name to create",
+				},
+			},
+			"required": []string{"name"},
+		},
+		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+			name, _ := args["name"].(string)
+			// Deterministic ID derived from name for test stability
+			id := "COMP-NEW-001"
+			if strings.EqualFold(strings.TrimSpace(name), "Contoso") {
+				id = "COMP-CONTOSO-001"
+			}
+			if strings.EqualFold(strings.TrimSpace(name), "Nexxia") {
+				id = "COMP-001"
+			}
+			content := fmt.Sprintf("COMPANY_ID: %s; NAME: %s", id, strings.TrimSpace(name))
+			return &ai.ToolResult{Content: []ai.ToolContent{{Type: "text", Content: content}}}, nil
+		},
+	}
+}
+
+// NewCreateInvoiceTool simulates creating an invoice for a company ID and amount
+func NewCreateInvoiceTool() ai.Tool {
+	return ai.Tool{
+		Name:        "create_invoice",
+		Description: "Create an invoice for a company. Returns 'INVOICE_ID: <id>; AMOUNT: <amount>'",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"company_id": map[string]interface{}{
+					"type":        "string",
+					"description": "The company ID to invoice",
+				},
+				"amount": map[string]interface{}{
+					"type":        "number",
+					"description": "The invoice amount",
+				},
+			},
+			"required": []string{"company_id", "amount"},
+		},
+		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+			amountStr := ""
+			switch v := args["amount"].(type) {
+			case float64:
+				amountStr = fmt.Sprintf("%.0f", v)
+			case string:
+				amountStr = v
+			default:
+				amountStr = "0"
+			}
+			content := fmt.Sprintf("INVOICE_ID: INV-1001; AMOUNT: %s", amountStr)
+			return &ai.ToolResult{Content: []ai.ToolContent{{Type: "text", Content: content}}}, nil
 		},
 	}
 }
@@ -274,7 +396,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			Model:        model,
 			Description:  "You are a helpful assistant that provides clear and concise answers.",
 			Instructions: "Always explain your reasoning and provide examples when possible.",
-			LogLevel:     slog.LevelDebug,
+			// LogLevel:     slog.LevelDebug,
 		}
 	}
 
@@ -329,66 +451,92 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 }
 
 func TestTeamCoordination(t *testing.T, model *ai.Model) {
-	// Add agents with different roles
-	calculator := Agent{
+	session := NewSession()
+	session.Trace = NewTrace()
+
+	// Subagents
+	lookup := Agent{
 		Model:        model,
-		Name:         "calculator",
-		Description:  "You are a calculator. When given a math problem, solve it and return only the numerical result.",
-		Instructions: "Solve the math problem and return only the number. Do not add any explanation or text.",
-	}
-	explainer := Agent{
-		Model:        model,
-		Name:         "explainer",
-		Description:  "You are a math teacher. When given a calculation, explain what it means in simple terms in terms of the office oranges that you have.",
-		Instructions: "Explain the calculation in simple terms. Start your response with 'EXPLANATION: ' followed by your explanation.",
+		Name:         "lookup",
+		Description:  "Lookup company details by name. Return either 'COMPANY_ID: <id>; NAME: <name>' or 'NOT_FOUND' only.",
+		Instructions: "Use tools to perform the lookup and return the canonical format only.",
+		Tools:        []ai.Tool{NewLookupCompanyByNameTool()},
 	}
 
-	team := Agent{
-		Model: model,
-		Name:  "coordinator",
-		Description: `
-		You are a coordinator for a math problem solving team. 
-		When you receive a math question, you must first use the calculator to get the answer, 
-		then use the explainer to explain what the calculation means in terms of the office oranges that you have. 
-		Always use both agents in this order.
-		`,
-		Instructions: `
-			You must call a single tool each time and wait for the answer before calling another tool.
-			Use the output from the calculator as input to the explainer.
-			Respond with both answers clearly labeled: "Calculator: [result]" and "Explainer: [explanation]".
-			Do not add any additional text or commentary.`,
-		Trace:    NewTrace(),
-		LogLevel: slog.LevelDebug,
-		Agents:   []*Agent{&calculator, &explainer},
+	companyCreator := Agent{
+		Model:        model,
+		Name:         "company_creator",
+		Description:  "Create a new company by name and return 'COMPANY_ID: <id>; NAME: <name>' only.",
+		Instructions: "Use tools to create the company and return the canonical format only.",
+		Tools:        []ai.Tool{NewCreateCompanyTool()},
 	}
 
-	tests := []struct {
-		name     string
-		message  string
-		validate func(t *testing.T, content string)
-	}{
+	invoiceCreator := Agent{
+		Model:        model,
+		Name:         "invoice_creator",
+		Description:  "Create an invoice for a given company_id and amount. Return 'INVOICE_ID: <id>; AMOUNT: <amount>' only.",
+		Instructions: "Use tools to create the invoice and return the canonical format only.",
+		Tools:        []ai.Tool{NewCreateInvoiceTool()},
+	}
+
+	coordinator := Agent{
+		Session: session,
+		Model:   model,
+		Name:    "coordinator",
+		Description: "Coordinate a workflow to ensure an invoice exists for the requested company name and amount. " +
+			"Steps: 1) Call 'lookup' subagent with the company name. 2) If NOT_FOUND, call 'company_creator' to create it. " +
+			"3) Call 'invoice_creator' with the resolved company_id and the requested amount. " +
+			"Finally, return exactly: 'COMPANY_ID: <id>; NAME: <name>; INVOICE_ID: <invoice>; AMOUNT: <amount>'.",
+		Instructions: "Call exactly one tool at a time and wait for the response before the next call. " +
+			"Use the save_memory tool to persist important context between tool calls, especially after getting company information. " +
+			"Do not add commentary.",
+		Agents: []*Agent{&lookup, &companyCreator, &invoiceCreator},
+		Trace:  NewTrace(),
+		// LogLevel: slog.LevelDebug,
+	}
+
+	type testCase struct {
+		name              string
+		companyName       string
+		amount            string
+		expectCompanyID   string
+		expectCompanyName string
+		expectInvoiceID   string
+		expectCallsCreate bool
+	}
+
+	tests := []testCase{
 		{
-			name:    "math problem solving",
-			message: "What is 15 + 27 and what does this calculation represent?",
-			validate: func(t *testing.T, content string) {
-				assert.NotEmpty(t, content)
-				assert.Contains(t, content, "Calculator:")
-				assert.Contains(t, content, "Explainer:")
-				assert.Contains(t, content, "42")
-				calculatorIndex := strings.Index(content, "Calculator:")
-				explainerIndex := strings.Index(content, "Explainer:")
-				assert.Greater(t, explainerIndex, calculatorIndex, "Explainer should come after calculator")
-			},
+			name:              "existing company",
+			companyName:       "Nexxia",
+			amount:            "100",
+			expectCompanyID:   "COMP-001",
+			expectCompanyName: "Nexxia",
+			expectInvoiceID:   "INV-1001",
+			expectCallsCreate: false,
+		},
+		{
+			name:              "non-existing company",
+			companyName:       "Contoso",
+			amount:            "250",
+			expectCompanyID:   "COMP-CONTOSO-001",
+			expectCompanyName: "Contoso",
+			expectInvoiceID:   "INV-1001",
+			expectCallsCreate: true,
 		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			run, err := team.Run(test.message)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			toolOrder := []string{}
+
+			msg := fmt.Sprintf("Create an invoice for company '%s' for the amount %s. Return the final canonical line only.", tc.companyName, tc.amount)
+			run, err := coordinator.Run(msg)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
-			var finalContent string
+
+			finalContent := ""
 			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
@@ -396,12 +544,62 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 						finalContent = e.Content
 					}
 				case *ToolEvent:
+					toolOrder = append(toolOrder, e.ToolName)
 				case *ApprovalEvent:
 					run.Approve(e.ApprovalID, true)
+				case *ErrorEvent:
+					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
-			if test.validate != nil {
-				test.validate(t, finalContent)
+
+			// Validate final content
+			assert.NotEmpty(t, finalContent)
+			assert.Contains(t, finalContent, "COMPANY_ID:")
+			assert.Contains(t, finalContent, "NAME:")
+			assert.Contains(t, finalContent, "INVOICE_ID:")
+			assert.Contains(t, finalContent, "AMOUNT:")
+			assert.Contains(t, finalContent, tc.expectCompanyID)
+			assert.Contains(t, finalContent, tc.expectCompanyName)
+			assert.Contains(t, finalContent, tc.expectInvoiceID)
+			assert.Contains(t, finalContent, tc.amount)
+
+			// Ensure orchestration used tools and subagents in expected order
+			indexOf := func(name string) int {
+				for i, n := range toolOrder {
+					if n == name {
+						return i
+					}
+				}
+				return -1
+			}
+
+			// Coordinator should call lookup subagent first
+			lookupIdx := indexOf("lookup")
+			assert.NotEqual(t, -1, lookupIdx, "lookup subagent should be called")
+
+			// It should create the company only in the non-existing path
+			createCompanyIdx := indexOf("company_creator")
+			if tc.expectCallsCreate {
+				assert.NotEqual(t, -1, createCompanyIdx, "company_creator should be called when company is not found")
+				assert.Greater(t, createCompanyIdx, lookupIdx, "company_creator should be called after lookup")
+			} else {
+				assert.Equal(t, -1, createCompanyIdx, "company_creator should not be called for existing company")
+			}
+
+			invoiceIdx := indexOf("invoice_creator")
+			assert.NotEqual(t, -1, invoiceIdx, "invoice_creator should be called")
+			if tc.expectCallsCreate {
+				assert.Greater(t, invoiceIdx, createCompanyIdx, "invoice should be created after company creation")
+			} else {
+				assert.Greater(t, invoiceIdx, lookupIdx, "invoice should be created after lookup result")
+			}
+
+			// Implicit memory usage: ensure the coordinator used save_memory at least once during the workflow
+			saveIdx := indexOf("save_memory")
+			if saveIdx == -1 {
+				t.Log("Warning: save_memory was not called during the workflow. This may indicate the coordinator is not persisting context between steps.")
+			} else {
+				t.Logf("save_memory was called at position %d in the tool call sequence", saveIdx)
 			}
 		})
 	}
@@ -532,7 +730,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		Instructions: "use tools when requested.",
 		Tools:        []ai.Tool{NewSecretNumberTool()},
 		Trace:        NewTrace(),
-		LogLevel:     slog.LevelDebug,
+		// LogLevel:     slog.LevelDebug,
 	}
 
 	// Define multiple sequential runs
@@ -825,4 +1023,111 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 	assert.GreaterOrEqual(t, toolCalls, 1, "Should have made at least one tool call")
+}
+
+func TestMemoryPersistence(t *testing.T, model *ai.Model) {
+	session := NewSession()
+	session.Trace = NewTrace()
+
+	// Sub-agents
+	lookupCompany := Agent{
+		Model:        model,
+		Name:         "lookup_company",
+		Description:  "Look up a company name by company number. Return 'COMPANY: <name>' only.",
+		Instructions: "Use tools to look up the company name. Return exactly 'COMPANY: <name>' and nothing else.",
+		Tools:        []ai.Tool{NewSecretNumberTool()},
+	}
+
+	lookupSupplier := Agent{
+		Model:        model,
+		Name:         "lookup_company_supplier",
+		Description:  "Look up a supplier name by supplier number. Return 'SUPPLIER: <name>' only.",
+		Instructions: "Use tools to look up the supplier name. Return exactly 'SUPPLIER: <name>' and nothing else.",
+		Tools:        []ai.Tool{NewSecretSupplierTool()},
+	}
+
+	// Coordinator executes the plan, saves each result to memory, then replies with full memory content
+	coordinator := Agent{
+		Session: session,
+		Model:   model,
+		Name:    "coordinator",
+		Description: "Execute this plan: " +
+			"1) Call 'lookup_company' with input 'Look up company 150'. " +
+			"2) Save the result to memory using save_memory. " +
+			"3) Call 'lookup_company_supplier' with input 'Look up supplier 200'. " +
+			"4) Save the result to memory again, including previous memory content. " +
+			"5) When you have the company and the supplier details, then respond with exactly the full content of ContextMemory.md (no extra text).",
+		Instructions: "Call exactly one tool at a time and wait for the response before the next call. " +
+			"When saving memory the second time, include the current memory content and append the new result so both are present. " +
+			"Return only the memory content (no commentary). " +
+			"Analyse the memory content and do not repeat the tool calls if you already have the information.",
+		Agents: []*Agent{&lookupCompany, &lookupSupplier},
+		Trace:  NewTrace(),
+	}
+
+	run, err := coordinator.Run("Execute the plan now and then return the memory content only.")
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var finalContent string
+	var toolOrder []string
+	var saveIdxs []int
+	var companyToolInput string
+	var supplierToolInput string
+
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			if !e.IsChunk {
+				finalContent = e.Content
+			}
+		case *ToolEvent:
+			toolOrder = append(toolOrder, e.ToolName)
+			if e.ToolName == "save_memory" {
+				saveIdxs = append(saveIdxs, len(toolOrder)-1)
+			}
+			if e.ToolName == "lookup_company" {
+				if v, ok := e.ToolArgs["input"].(string); ok {
+					companyToolInput = v
+				}
+			}
+			if e.ToolName == "lookup_company_supplier" {
+				if v, ok := e.ToolArgs["input"].(string); ok {
+					supplierToolInput = v
+				}
+			}
+		case *ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
+		case *ErrorEvent:
+			t.Fatalf("Agent error: %v", e.Err)
+		}
+	}
+
+	// Validate final output is the memory content containing both results
+	assert.NotEmpty(t, finalContent, "Final response should not be empty")
+	assert.Contains(t, strings.ToLower(finalContent), "nexxia", "memory should include company result")
+	assert.Contains(t, strings.ToLower(finalContent), "phoenix", "memory should include supplier result")
+
+	// Ensure orchestration used subagents and memory saves in order
+	indexOf := func(name string) int {
+		for i, n := range toolOrder {
+			if n == name {
+				return i
+			}
+		}
+		return -1
+	}
+	companyIdx := indexOf("lookup_company")
+	supplierIdx := indexOf("lookup_company_supplier")
+	assert.NotEqual(t, -1, companyIdx, "lookup_company subagent should be called")
+	assert.NotEqual(t, -1, supplierIdx, "lookup_company_supplier subagent should be called")
+	assert.Greater(t, len(saveIdxs), 1, "save_memory should be called at least twice")
+	assert.Greater(t, saveIdxs[0], companyIdx, "first save should occur after company lookup")
+	assert.Greater(t, supplierIdx, saveIdxs[0], "supplier lookup should occur after first save")
+	assert.Greater(t, saveIdxs[1], supplierIdx, "second save should occur after supplier lookup")
+
+	// Validate inputs used to call subagents
+	assert.Contains(t, strings.ToLower(companyToolInput), "look up company 150")
+	assert.Contains(t, strings.ToLower(supplierToolInput), "look up supplier 200")
 }

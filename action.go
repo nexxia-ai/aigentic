@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nexxia-ai/aigentic/ai"
 )
 
 type Action interface {
@@ -23,40 +22,42 @@ type approvalAction struct {
 	Approved   bool
 }
 
-func (a *approvalAction) Target() string { return a.ApprovalID }
+func (a *approvalAction) Target() string { return "" }
 
 type toolCallAction struct {
-	EventID    string
 	ToolCallID string
 	ToolName   string
 	ToolArgs   map[string]interface{}
 	Group      *toolCallGroup
 }
 
-func (a *toolCallAction) Target() string { return a.EventID }
+func (a *toolCallAction) Target() string { return "" }
+
+type toolResponseAction struct {
+	request  *toolCallAction
+	response string
+}
+
+func (a *toolResponseAction) Target() string { return "" }
 
 type stopAction struct {
-	EventID string
+	Error error
 }
 
-func (a *stopAction) Target() string { return a.EventID }
+func (a *stopAction) Target() string { return "" }
 
 type cancelAction struct {
-	EventID string
 }
 
-func (a *cancelAction) Target() string { return a.EventID }
+func (a *cancelAction) Target() string { return "" }
 
-func (r *AgentRun) fireLLMCallAction(msg string, tools []ai.Tool) {
-	r.queueAction(&llmCallAction{Message: msg})
-}
-
-func (r *AgentRun) fireToolCallAction(tcName string, tcArgs map[string]interface{}, toolCallID string, group *toolCallGroup) {
+func (r *AgentRun) queueToolCallAction(tcName string, tcArgs map[string]interface{}, toolCallID string, group *toolCallGroup) {
 	tool := r.findTool(tcName)
 	if tool == nil {
-		r.fireToolResponseAction(&toolCallAction{
-			EventID: "invalid-tool", ToolName: tcName, ToolArgs: tcArgs, Group: group},
-			fmt.Sprintf("tool not found: %s", tcName))
+		r.queueAction(&toolResponseAction{
+			request:  &toolCallAction{ToolName: tcName, ToolArgs: tcArgs, Group: group},
+			response: fmt.Sprintf("tool not found: %s", tcName),
+		})
 		return
 	}
 
@@ -80,80 +81,4 @@ func (r *AgentRun) fireToolCallAction(tcName string, tcArgs map[string]interface
 	}
 
 	r.queueAction(&toolCallAction{ToolCallID: toolCallID, ToolName: tcName, ToolArgs: tcArgs, Group: group})
-}
-
-func (r *AgentRun) fireToolResponseAction(action *toolCallAction, content string) {
-	// Add response to the group
-	toolMsg := ai.ToolMessage{
-		Role:       ai.ToolRole,
-		Content:    content,
-		ToolCallID: action.ToolCallID,
-		ToolName:   action.ToolName,
-	}
-	action.Group.responses[action.ToolCallID] = toolMsg
-
-	// Check if all tool calls in this group are completed
-	if len(action.Group.responses) == len(action.Group.aiMessage.ToolCalls) {
-
-		// add all tool responses and queue their events
-		for _, tc := range action.Group.aiMessage.ToolCalls {
-			if response, exists := action.Group.responses[tc.ID]; exists {
-				r.msgHistory = append(r.msgHistory, response)
-				event := &ToolResponseEvent{
-					RunID:      r.id,
-					AgentName:  r.agent.Name,
-					SessionID:  r.session.ID,
-					ToolCallID: response.ToolCallID,
-					ToolName:   action.ToolName,
-					Content:    response.Content,
-				}
-				r.queueEvent(event)
-			}
-		}
-
-		// Send any content from the AI message
-		if action.Group.aiMessage.Content != "" {
-			r.fireContentAction(action.Group.aiMessage.Content, true)
-		}
-
-		// Trigger the next LLM call
-		r.fireLLMCallAction(r.userMessage, r.agent.Tools)
-	}
-}
-
-func (r *AgentRun) fireErrorAction(err error) {
-	event := &ErrorEvent{
-		RunID:     r.id,
-		AgentName: r.agent.Name,
-		SessionID: r.session.ID,
-		Err:       err,
-	}
-	r.queueEvent(event)
-	r.queueAction(&stopAction{EventID: event.RunID})
-}
-
-func (r *AgentRun) fireContentAction(content string, isChunk bool) {
-	event := &ContentEvent{
-		RunID:     r.id,
-		AgentName: r.agent.Name,
-		SessionID: r.session.ID,
-		Content:   content,
-		IsChunk:   isChunk,
-	}
-	r.queueEvent(event)
-
-	if !isChunk {
-		r.queueAction(&stopAction{EventID: uuid.New().String()})
-	}
-}
-
-func (r *AgentRun) fireThinkingAction(thought string) {
-	event := &ThinkingEvent{
-		RunID:     r.id,
-		AgentName: r.agent.Name,
-		SessionID: r.session.ID,
-		Thought:   thought,
-	}
-	r.queueEvent(event)
-	// no action needed
 }

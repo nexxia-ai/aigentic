@@ -25,12 +25,13 @@ type toolCallGroup struct {
 }
 
 type Agent struct {
-	Model   *ai.Model
-	Name    string
-	ID      string
-	Agents  []*Agent
-	Session *Session
-	Tools   []ai.Tool
+	Model      *ai.Model
+	Name       string
+	ID         string
+	Agents     []*Agent
+	Session    *Session
+	Tools      []ai.Tool // deprecated
+	AgentTools []AgentTool
 
 	Role            string
 	Description     string
@@ -71,7 +72,7 @@ func (a *Agent) RunAndWait(message string) (string, error) {
 	return run.Wait(0)
 }
 
-func (a *Agent) createSystemMessage(think string) string {
+func (a *Agent) createSystemPrompt() string {
 	sysMsg := a.Description
 	if a.Instructions != "" {
 		sysMsg += "\n <instructions>\n" +
@@ -79,34 +80,6 @@ func (a *Agent) createSystemMessage(think string) string {
 			"\nAnalyse the entire history message history before you decide the next step to prevent executing the same calls." +
 			"\n</instructions>\n"
 	}
-
-	// sysMsg += `
-	// <scratchpad>
-	// You have access to a scratch pad to plan your next step.
-	// Use the scratch pad to store your plan of action. For Example:
-	//   1. I will first perform a search for the information I need.
-	//   2. If the information is not found, then I will call the next agent.
-	//   3. I will analyse the response and respond to the user.
-
-	// To update the scratch pad, include your notes in your response between <scratchpad> your notes </scratchpad>.
-	// Anything you add to the scratch pad will be sent back to you on the next iteration.
-
-	// Here is the current scratch pad:
-	// </scratchpad>
-	// `
-
-	if len(a.Tools) > 0 {
-		sysMsg += "\n<tools>\nYou have access to the following tools:\n"
-		for _, tool := range a.Tools {
-			sysMsg += fmt.Sprintf("<tool>\n%s\n%s\n</tool>\n", tool.Name, tool.Description)
-		}
-		sysMsg += "\n</tools>\n"
-	}
-
-	// if think != "" {
-	// 	sysMsg += "\n<think>\n" + think + "\n</think>\n"
-	// }
-
 	return sysMsg
 }
 

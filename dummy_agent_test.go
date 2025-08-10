@@ -247,7 +247,7 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		LogLevel:     slog.LevelDebug,
 	}
 
-	run, err := agent.Run("Look up company information")
+	run, err := agent.Start("Look up company information")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestToolApprovalGiven(t *testing.T) {
 		LogLevel:     slog.LevelDebug,
 	}
 
-	run, err := agent.Run("Please execute the test tool with action 'test_action'")
+	run, err := agent.Start("Please execute the test tool with action 'test_action'")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -525,7 +525,7 @@ func TestToolApprovalRejected(t *testing.T) {
 		LogLevel:     slog.LevelDebug,
 	}
 
-	run, err := agent.Run("Please execute the test tool with action 'test_action'")
+	run, err := agent.Start("Please execute the test tool with action 'test_action'")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -582,7 +582,7 @@ func TestToolApprovalTimeout(t *testing.T) {
 	approvalTimeout = time.Millisecond * 300
 	tickerInterval = time.Millisecond * 100
 
-	run, err := agent.Run("Please execute the test tool with action 'test_action'")
+	run, err := agent.Start("Please execute the test tool with action 'test_action'")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}

@@ -40,7 +40,7 @@ type Agent struct {
 	MaxLLMCalls         int // Maximum number of LLM calls (0 = unlimited)
 }
 
-func (a *Agent) Run(message string) (*AgentRun, error) {
+func (a *Agent) Start(message string) (*AgentRun, error) {
 	if a.Name == "" {
 		a.Name = "noname_" + uuid.New().String()
 	}
@@ -49,8 +49,8 @@ func (a *Agent) Run(message string) (*AgentRun, error) {
 	return run, nil
 }
 
-func (a *Agent) RunAndWait(message string) (string, error) {
-	run, err := a.Run(message)
+func (a *Agent) Execute(message string) (string, error) {
+	run, err := a.Start(message)
 	if err != nil {
 		return "", err
 	}

@@ -427,7 +427,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 					AgentName:  r.agent.Name,
 					SessionID:  r.session.ID,
 					ToolCallID: response.ToolCallID,
-					ToolName:   action.ToolName,
+					ToolName:   response.ToolName,
 					Content:    response.Content,
 				}
 				r.queueEvent(event)
@@ -494,16 +494,28 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		r.trace.LLMAIResponse(r.agent.Name, msg)
 	}
 
+	if len(msg.ToolCalls) == 0 {
+		r.msgHistory = append(r.msgHistory, msg)
+		r.queueAction(&stopAction{Error: nil})
+		return
+	}
+
+	// Optimisation for single save_memory tool call. There is no need to respond to the tool call.
+	// Simply save to memory and rerun the current message.
+	if len(msg.ToolCalls) == 1 && msg.ToolCalls[0].Name == "save_memory" {
+		var args map[string]interface{}
+		if err := json.Unmarshal([]byte(msg.ToolCalls[0].Args), &args); err == nil {
+			r.memory.Tool.Execute(r, args)
+			r.queueAction(&llmCallAction{Message: r.userMessage})
+			return
+		}
+	}
+
 	// reset history slice each time
 	if !r.memory.IncludeHistory {
 		r.msgHistory = []ai.Message{}
 	}
 	r.msgHistory = append(r.msgHistory, msg)
-
-	if len(msg.ToolCalls) == 0 {
-		r.queueAction(&stopAction{Error: nil})
-		return
-	}
 
 	// Handle tool calls
 	group := &toolCallGroup{
@@ -518,7 +530,8 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 				r.trace.RecordError(err)
 			}
 			r.queueAction(&toolResponseAction{request: &toolCallAction{
-				ToolName: tc.Name, ToolArgs: args, Group: group},
+				ToolCallID: tc.ID,
+				ToolName:   tc.Name, ToolArgs: args, Group: group},
 				response: fmt.Sprintf("invalid tool parameters: %v", err)})
 			continue
 		}

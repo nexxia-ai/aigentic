@@ -29,7 +29,7 @@ func main() {
     }
     
     // Simple synchronous call
-    response, err := agent.RunAndWait("What is the capital of France?")
+    response, err := agent.Execute("What is the capital of France?")
     if err != nil {
         log.Fatal(err)
     }
@@ -52,7 +52,7 @@ func main() {
     }
     
     // Start the agent asynchronously
-    run, err := agent.Run("Explain quantum computing in simple terms")
+    run, err := agent.Start("Explain quantum computing in simple terms")
     if err != nil {
         log.Fatal(err)
     }
@@ -144,7 +144,7 @@ coordinator := aigentic.Agent{
 }
 
 // The coordinator can now call team members automatically
-response, _ := coordinator.RunAndWait("Write an article about renewable energy trends")
+response, _ := coordinator.Execute("Write an article about renewable energy trends")
 ```
 
 ### Document Processing & Multi-Modal Support
@@ -169,7 +169,7 @@ agent := aigentic.Agent{
     },
 }
 
-response, _ := agent.RunAndWait("Summarize the key findings from these documents")
+response, _ := agent.Execute("Summarize the key findings from these documents")
 ```
 
 ### Intelligent Tool System
@@ -225,10 +225,10 @@ agent := aigentic.Agent{
 }
 
 // First conversation
-agent.RunAndWait("My name is John and I'm a software engineer")
+agent.Execute("My name is John and I'm a software engineer")
 
 // Later conversation - agent remembers John
-agent.RunAndWait("What did I tell you about my profession?")
+agent.Execute("What did I tell you about my profession?")
 // Response: "You mentioned that you're a software engineer, John."
 ```
 
@@ -253,7 +253,7 @@ agent := aigentic.Agent{
     AgentTools: []aigentic.AgentTool{approvalTool},
 }
 
-run, _ := agent.Run("Send a follow-up email to john@example.com")
+run, _ := agent.Start("Send a follow-up email to john@example.com")
 
 // Monitor for approval requests
 for event := range run.Next() {
@@ -307,7 +307,7 @@ agent := aigentic.Agent{
 }
 
 // All interactions are automatically logged
-response, _ := agent.RunAndWait("Complex reasoning task")
+response, _ := agent.Execute("Complex reasoning task")
 
 // Traces are saved to ./traces/ with full conversation history
 ```

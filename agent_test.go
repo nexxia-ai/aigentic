@@ -21,7 +21,7 @@ func TestAgentRunAndWait(t *testing.T) {
 		}),
 	}
 
-	result, err := agent.RunAndWait("Test message")
+	result, err := agent.Execute("Test message")
 
 	assert.NoError(t, err)
 	assert.Equal(t, "Hello! I received your message and processed it successfully.", result)
@@ -36,7 +36,7 @@ func TestAgentRunAndWaitWithError(t *testing.T) {
 		}),
 	}
 
-	result, err := agent.RunAndWait("Test message")
+	result, err := agent.Execute("Test message")
 
 	assert.Error(t, err)
 	assert.Equal(t, "", result)
@@ -106,7 +106,7 @@ func TestAgentToolCalling(t *testing.T) {
 		}),
 	}
 
-	result, err := agent.RunAndWait("Please use the test tool")
+	result, err := agent.Execute("Please use the test tool")
 
 	assert.NoError(t, err)
 	assert.True(t, toolCalled, "Tool should have been called")
@@ -137,7 +137,7 @@ func TestAgentFileAttachment(t *testing.T) {
 		}),
 	}
 
-	result, err := agent.RunAndWait("Please analyze these attached files")
+	result, err := agent.Execute("Please analyze these attached files")
 
 	assert.NoError(t, err)
 	assert.Contains(t, result, "I've received your message and the attached files")
@@ -226,11 +226,192 @@ func TestAgentCallingSubAgent(t *testing.T) {
 		}),
 	}
 
-	result, err := mainAgent.RunAndWait("I need help with a calculation")
+	result, err := mainAgent.Execute("I need help with a calculation")
 
 	assert.NoError(t, err)
 	assert.True(t, subAgentCalled, "Sub-agent should have been called")
 	assert.Contains(t, subAgentInput, "Please help me with this calculation")
 	assert.Contains(t, result, "Great! My helper agent has completed the task")
 	assert.Contains(t, result, "42")
+}
+
+func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
+	tool1Called := 0
+	tool2Called := 0
+	callCount := 0
+
+	// Create a test tool that will be called multiple times
+	testTool1 := ai.Tool{
+		Name:        "lookup_company",
+		Description: "A test tool for looking up companies",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"input": map[string]interface{}{
+					"type":        "string",
+					"description": "The input to lookup",
+				},
+			},
+			"required": []string{"input"},
+		},
+		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+			tool1Called++
+			input := args["input"].(string)
+			if input == "Look up company 150" {
+				return &ai.ToolResult{
+					Content: []ai.ToolContent{{
+						Type:    "text",
+						Content: "COMPANY: Nexxia",
+					}},
+					Error: false,
+				}, nil
+			}
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{{
+					Type:    "text",
+					Content: "SUPPLIER: Phoenix",
+				}},
+				Error: false,
+			}, nil
+		},
+	}
+
+	// Create a second test tool
+	testTool2 := ai.Tool{
+		Name:        "save_memory",
+		Description: "A test tool for saving to memory",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"content": map[string]interface{}{
+					"type":        "string",
+					"description": "The content to save",
+				},
+			},
+			"required": []string{"content"},
+		},
+		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+			tool2Called++
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{{
+					Type:    "text",
+					Content: "memory saved successfully",
+				}},
+				Error: false,
+			}, nil
+		},
+	}
+
+	// Track tool response events to verify all are properly handled
+	toolResponseEvents := []ToolResponseEvent{}
+	var receivedToolMessages []ai.ToolMessage
+
+	agent := Agent{
+		Name:        "test-multi-tool-agent",
+		Description: "A test agent that makes multiple tool calls including same tool with different inputs",
+		AgentTools:  []AgentTool{WrapTool(testTool1), WrapTool(testTool2)},
+		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+			callCount++
+
+			// First call: make 4 tool calls (2 lookup_company, 2 save_memory)
+			if callCount == 1 {
+				return ai.AIMessage{
+					Role:    ai.AssistantRole,
+					Content: "I'll execute the plan step by step.",
+					ToolCalls: []ai.ToolCall{
+						{
+							ID:   "call_0",
+							Type: "function",
+							Name: "lookup_company",
+							Args: `{"input": "Look up company 150"}`,
+						},
+						{
+							ID:   "call_1",
+							Type: "function",
+							Name: "save_memory",
+							Args: `{"content": "Company 150: Nexxia"}`,
+						},
+						{
+							ID:   "call_2",
+							Type: "function",
+							Name: "lookup_company",
+							Args: `{"input": "Look up supplier 200"}`,
+						},
+						{
+							ID:   "call_3",
+							Type: "function",
+							Name: "save_memory",
+							Args: `{"content": "Supplier 200: Phoenix"}`,
+						},
+					},
+				}, nil
+			}
+
+			// Second call: capture tool messages to verify they match the requests
+			for _, msg := range messages {
+				if toolMsg, ok := msg.(ai.ToolMessage); ok {
+					receivedToolMessages = append(receivedToolMessages, toolMsg)
+				}
+			}
+
+			// Second call: return final response after tool execution
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "All tools executed successfully. Company: Nexxia, Supplier: Phoenix",
+			}, nil
+		}),
+	}
+
+	// Create a custom session to capture events
+	session := NewSession()
+	agent.Session = session
+
+	// Start the agent run
+	run := newAgentRun(&agent, "Execute the plan")
+
+	// Capture tool response events
+	go func() {
+		for event := range run.Next() {
+			if toolRespEvent, ok := event.(*ToolResponseEvent); ok {
+				toolResponseEvents = append(toolResponseEvents, *toolRespEvent)
+			}
+		}
+	}()
+
+	run.start()
+	result, err := run.Wait(0)
+
+	assert.NoError(t, err)
+	assert.Contains(t, result, "All tools executed successfully")
+
+	// Verify that both tools were called the expected number of times
+	assert.Equal(t, 2, tool1Called, "lookup_company should have been called twice")
+	assert.Equal(t, 2, tool2Called, "save_memory should have been called twice")
+
+	// Most importantly: verify that we received 4 tool response messages that match the original tool calls
+	assert.Equal(t, 4, len(receivedToolMessages), "Should have received 4 tool response messages, one for each tool call")
+
+	// Verify that each tool response message has the correct ToolCallID and ToolName that correspond to the original requests
+	expectedToolResponses := map[string]struct {
+		toolName string
+		content  string
+	}{
+		"call_0": {"lookup_company", "COMPANY: Nexxia"},
+		"call_1": {"save_memory", "memory saved successfully"},
+		"call_2": {"lookup_company", "SUPPLIER: Phoenix"},
+		"call_3": {"save_memory", "memory saved successfully"},
+	}
+
+	actualToolResponses := make(map[string]struct {
+		toolName string
+		content  string
+	})
+	for _, toolMsg := range receivedToolMessages {
+		actualToolResponses[toolMsg.ToolCallID] = struct {
+			toolName string
+			content  string
+		}{toolMsg.ToolName, toolMsg.Content}
+	}
+
+	assert.Equal(t, expectedToolResponses, actualToolResponses, "Tool response messages should have correct tool call IDs, tool names, and content that match the original requests")
 }

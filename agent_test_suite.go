@@ -316,7 +316,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 				tt.agent.AgentTools = append(tt.agent.AgentTools, WrapTool(tool))
 			}
 
-			run, err := tt.agent.Run(tt.message)
+			run, err := tt.agent.Start(tt.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
@@ -390,7 +390,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 				agent.AgentTools = append(agent.AgentTools, WrapTool(tool))
 			}
 			agent.Documents = test.attachments
-			run, err := agent.Run(test.message)
+			run, err := agent.Start(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
@@ -458,7 +458,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 				test.agent.AgentTools = append(test.agent.AgentTools, WrapTool(tool))
 			}
 			test.agent.Documents = test.attachments
-			run, err := test.agent.Run(test.message)
+			run, err := test.agent.Start(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
@@ -564,7 +564,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			toolOrder := []string{}
 
 			msg := fmt.Sprintf("Create an invoice for company '%s' for the amount %s. Return the final canonical line only.", tc.companyName, tc.amount)
-			run, err := coordinator.Run(msg)
+			run, err := coordinator.Start(msg)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
@@ -688,7 +688,7 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 				Documents:    tc.attachments,
 			}
 
-			run, err := agent.Run("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
+			run, err := agent.Start("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
@@ -739,7 +739,7 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		Trace:  NewTrace(),
 	}
 
-	run, err := coordinator.Run("call the names of expert1, expert2 and expert3 and return them in order, do not add any additional text or commentary.")
+	run, err := coordinator.Start("call the names of expert1, expert2 and expert3 and return them in order, do not add any additional text or commentary.")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -798,7 +798,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 	for i, run := range runs {
 		t.Logf("Starting run %d: %s", i+1, run.name)
 
-		agentRun, err := agent.Run(run.message)
+		agentRun, err := agent.Start(run.message)
 		if err != nil {
 			t.Fatalf("Run %d failed to start: %v", i+1, err)
 		}
@@ -867,7 +867,7 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 	}
 
 	message := "What is the capital of France what give me a brief summary of the city"
-	run, err := agent.Run(message)
+	run, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -908,7 +908,7 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 	}
 
 	message := "What is the capital of France?"
-	run, err := agent.Run(message)
+	run, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -949,7 +949,7 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 	}
 
 	message := "Give me a brief summary of Paris"
-	run, err := agent.Run(message)
+	run, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -991,7 +991,7 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 	}
 
 	message := "tell me the name of the company with the number 150. Use tools. "
-	run, err := agent.Run(message)
+	run, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -1032,7 +1032,7 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 	}
 
 	message := "What company has the number 150?"
-	run, err := agent.Run(message)
+	run, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -1070,7 +1070,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	lookupCompany := Agent{
 		Model:        model,
 		Name:         "lookup_company",
-		Description:  "Look up a company name by company number. Return 'COMPANY: <name>' only.",
+		Description:  "This agent allows you to look up a company name by company number. Please provide the request as 'lookup the company name for xxx'",
 		Instructions: "Use tools to look up the company name. Return exactly 'COMPANY: <name>' and nothing else.",
 		AgentTools:   []AgentTool{NewSecretNumberTool()},
 	}
@@ -1078,7 +1078,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	lookupSupplier := Agent{
 		Model:        model,
 		Name:         "lookup_company_supplier",
-		Description:  "Look up a supplier name by supplier number. Return 'SUPPLIER: <name>' only.",
+		Description:  "This agent allows you to look up a supplier name by supplier number. The request should be in the format 'lookup the supplier name for xxx'",
 		Instructions: "Use tools to look up the supplier name. Return exactly 'SUPPLIER: <name>' and nothing else.",
 		AgentTools:   []AgentTool{NewSecretSupplierTool()},
 	}
@@ -1089,16 +1089,17 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		Model:       model,
 		Name:        "coordinator",
 		Description: "You are a coordinator that executes a plan and saves the results to memory. ",
-		Instructions: "1) Execute the plan by executing each task in the order specified. " +
-			"2) Keep track of the tasks you have already executed to avoid repeating the same task. Save the tasks you have executed to memory." +
-			"3) When saving memory, include the current memory content and append the new result so both are present. " +
-			"4) Return only the memory content (no commentary). " +
+		Instructions: "1) First analyse the plan and identify tasks" +
+			"2) Execute the plan by executing each task in the order specified. " +
+			"3) Keep track of the tasks you have already executed to avoid repeating the same task. Save the tasks you have executed to memory." +
+			"4) When saving memory, include the current memory content and append the new result so both are present. " +
+			"5) Return only the memory content (no commentary). " +
 			"Do not make up information. You must use the tools to get the information.",
 		Agents: []*Agent{&lookupCompany, &lookupSupplier},
 		Trace:  NewTrace(),
 	}
 
-	run, err := coordinator.Run(
+	run, err := coordinator.Start(
 		"Execute the following plan: " +
 			"1) Call 'lookup_company' with input 'Look up company 150'. " +
 			"2) Save the result to memory using save_memory. " +

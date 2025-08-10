@@ -121,7 +121,7 @@ func main() {
 
 	// Run Simple Agent
 	fmt.Println("=== Running Simple Agent ===")
-	response, err := simpleAgent.RunAndWait("Hello! Can you tell me a fun fact about space?")
+	response, err := simpleAgent.Execute("Hello! Can you tell me a fun fact about space?")
 	if err != nil {
 		log.Fatalf("Error running simple agent: %v", err)
 	}
@@ -129,7 +129,7 @@ func main() {
 
 	// Run Tool Agent
 	fmt.Println("=== Running Tool Agent ===")
-	response, err = toolAgent.RunAndWait("I am Nexxia")
+	response, err = toolAgent.Execute("I am Nexxia")
 	if err != nil {
 		log.Fatalf("Error running tool agent: %v", err)
 	}
@@ -137,7 +137,7 @@ func main() {
 
 	// Run Attachment Agent
 	fmt.Println("=== Running Attachment Agent ===")
-	response, err = attachmentAgent.RunAndWait("Please analyze this text file and tell me what it contains.")
+	response, err = attachmentAgent.Execute("Please analyze this text file and tell me what it contains.")
 	if err != nil {
 		log.Fatalf("Error running attachment agent: %v", err)
 	}
@@ -145,7 +145,7 @@ func main() {
 
 	// Run Multi Agent
 	fmt.Println("=== Running Multi Agent ===")
-	response, err = multiAgent.RunAndWait("I need information about quantum computing. Can you research this topic for me?")
+	response, err = multiAgent.Execute("I need information about quantum computing. Can you research this topic for me?")
 	if err != nil {
 		log.Fatalf("Error running multi agent: %v", err)
 	}

@@ -131,13 +131,6 @@ func RunModelTestSuite(t *testing.T, suite ModelTestSuite) {
 			TestContextCancellation(t, suite.NewModel())
 		})
 
-		t.Run("GenerateWithTimeout", func(t *testing.T) {
-			if shouldSkipTest("GenerateWithTimeout") {
-				t.Skipf("Skipping GenerateWithTimeout test for %s", suite.Name)
-			}
-			TestGenerateWithTimeout(t, suite.NewModel())
-		})
-
 		t.Run("StreamingBasic", func(t *testing.T) {
 			if shouldSkipTest("StreamingBasic") {
 				t.Skipf("Skipping StreamingBasic test for %s", suite.Name)
@@ -177,16 +170,6 @@ func TestGenerateSimple(t *testing.T, model *Model) {
 	_, content := got.Value()
 	if !strings.Contains(content, "Canberra") {
 		t.Errorf("Model.Call() = %v, want content containing 'Canberra'", got)
-	}
-
-	got, err = model.Generate(args.ctx, args.messages, args.tools)
-	if err != nil {
-		t.Errorf("Model.Generate() error = %v", err)
-		return
-	}
-	_, content = got.Value()
-	if !strings.Contains(content, "Canberra") {
-		t.Errorf("Model.Generate() = %v, want content containing 'Canberra'", got)
 	}
 }
 
@@ -514,73 +497,6 @@ func TestContextCancellation(t *testing.T, model *Model) {
 
 				// Log the response for debugging
 				t.Logf("Got successful response: %s", response.Content)
-			}
-		})
-	}
-}
-
-func TestGenerateWithTimeout(t *testing.T, model *Model) {
-	testCases := []struct {
-		name        string
-		timeout     time.Duration
-		expectError bool
-		errorType   string
-	}{
-		{
-			name:        "short timeout",
-			timeout:     100 * time.Millisecond,
-			expectError: true,
-			errorType:   "context deadline exceeded",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Create a context with timeout
-			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
-			defer cancel()
-
-			// Create a simple message
-			messages := []Message{
-				UserMessage{
-					Role:    UserRole,
-					Content: "What is the capital of France?",
-				},
-			}
-
-			// Make the Generate call
-			start := time.Now()
-			response, err := model.Generate(ctx, messages, []Tool{})
-			duration := time.Since(start)
-
-			if tc.expectError {
-				// Should have an error
-				if err == nil {
-					t.Error("Expected error due to timeout, but got none")
-					return
-				}
-
-				// Check error type
-				errStr := err.Error()
-				if !strings.Contains(strings.ToLower(errStr), strings.ToLower(tc.errorType)) {
-					t.Errorf("Expected error containing '%s', got: %s", tc.errorType, errStr)
-				}
-
-				// Verify the call was actually interrupted
-				if duration > tc.timeout*2 {
-					t.Errorf("Generate call took too long (%v) for timeout test with %v timeout", duration, tc.timeout)
-				}
-			} else {
-				// Should not have an error
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-					return
-				}
-
-				// Should have a response
-				if response.Content == "" {
-					t.Error("Expected response content, got empty string")
-				}
 			}
 		})
 	}

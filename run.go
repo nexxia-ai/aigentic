@@ -20,7 +20,7 @@ type AgentRun struct {
 	session *Session
 	model   *ai.Model
 
-	tools      []ai.Tool
+	tools      []AgentTool
 	msgHistory []ai.Message
 
 	memory *Memory
@@ -62,7 +62,7 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		maxLLMCalls = a.MaxLLMCalls
 	}
 
-	memory := NewFileMemory("./traces/ContextMemory_" + runID + ".md")
+	memory := NewMemory()
 	run := &AgentRun{
 		id:               runID,
 		agent:            a,
@@ -91,18 +91,18 @@ func (r *AgentRun) start() {
 }
 
 func (r *AgentRun) stop() {
-	os.Remove(r.memory.filepath)
-
 	close(r.eventQueue)
 	close(r.actionQueue)
 }
 
-func (r *AgentRun) addTools() []ai.Tool {
-	tools := make([]ai.Tool, 0, len(r.agent.Tools)+len(r.agent.Agents))
-	tools = append(tools, r.agent.Tools...)
+func (r *AgentRun) addTools() []AgentTool {
+	totalToolsCount := len(r.agent.AgentTools) + len(r.agent.Agents) + 1 // +1 for memory tool
+	tools := make([]AgentTool, 0, totalToolsCount)
+	tools = append(tools, r.agent.AgentTools...)
+
 	for _, aa := range r.agent.Agents {
 		// tool adapter for sub-agent
-		agentTool := ai.Tool{
+		agentTool := AgentTool{
 			Name:        aa.Name,
 			Description: aa.Description,
 			InputSchema: map[string]interface{}{
@@ -115,18 +115,18 @@ func (r *AgentRun) addTools() []ai.Tool {
 				},
 				"required": []string{"input"},
 			},
-			Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+			Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 				input := ""
 				if v, ok := args["input"].(string); ok {
 					input = v
 				}
-				run := newAgentRun(aa, input)
-				run.session = r.session
-				run.trace = r.trace
-				run.logger = r.logger.With("sub-agent", aa.Name)
-				run.parentRun = r
-				run.start()
-				content, err := run.Wait(0)
+				subRun := newAgentRun(aa, input)
+				subRun.session = r.session
+				subRun.trace = r.trace
+				subRun.logger = r.logger.With("sub-agent", aa.Name)
+				subRun.parentRun = r
+				subRun.start()
+				content, err := subRun.Wait(0)
 				if err != nil {
 					return &ai.ToolResult{
 						Content: []ai.ToolContent{{
@@ -148,22 +148,12 @@ func (r *AgentRun) addTools() []ai.Tool {
 		tools = append(tools, agentTool)
 	}
 
-	tools = append(tools, r.memory.Tool.toTool(r))
+	// Add memory tool
+	tools = append(tools, r.memory.Tool)
 	return tools
 }
 
-func (r *AgentRun) createToolPrompt() string {
-	if len(r.tools) > 0 {
-		msg := "You have access to the following tools:\n"
-		for _, tool := range r.tools {
-			msg += fmt.Sprintf("<tool>\n%s\n%s\n</tool>\n", tool.Name, tool.Description)
-		}
-		return msg
-	}
-	return ""
-}
-
-func (r *AgentRun) findTool(tcName string) *ai.Tool {
+func (r *AgentRun) findTool(tcName string) *AgentTool {
 	for i := range r.tools {
 		if r.tools[i].Name == tcName {
 			return &r.tools[i]
@@ -187,10 +177,6 @@ func (r *AgentRun) Wait(d time.Duration) (string, error) {
 		}
 	}
 	return content, err
-}
-
-func (r *AgentRun) RunAndWait() (string, error) {
-	return r.Wait(0)
 }
 
 func (r *AgentRun) Approve(approvalID string, approved bool) {
@@ -289,7 +275,7 @@ func (r *AgentRun) runApprovalAction(act *approvalAction) {
 	})
 }
 
-func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
+func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	// Check limit before making any LLM call
 	if r.maxLLMCalls > 0 && r.llmCallCount >= r.maxLLMCalls {
@@ -299,6 +285,11 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 		return
 	}
 	r.llmCallCount++ // Increment counter
+
+	tools := make([]ai.Tool, len(agentTools))
+	for i, agentTool := range agentTools {
+		tools[i] = agentTool.toTool(r)
+	}
 
 	event := &LLMCallEvent{
 		RunID:     r.id,
@@ -310,22 +301,11 @@ func (r *AgentRun) runLLMCallAction(message string, tools []ai.Tool) {
 	r.queueEvent(event)
 
 	msgs := []ai.Message{
-		ai.SystemMessage{Role: ai.SystemRole, Content: r.agent.createSystemPrompt()},
-	}
-	if s := r.memory.SystemPrompt(); s != "" {
-		msgs = append(msgs, ai.SystemMessage{Role: ai.SystemRole, Content: s})
-	}
-	if s := r.createToolPrompt(); s != "" {
-		msgs = append(msgs, ai.SystemMessage{Role: ai.SystemRole, Content: s})
+		ai.SystemMessage{Role: ai.SystemRole, Content: r.createSystemPrompt()},
 	}
 
-	userMsgs := r.agent.createUserMsg(message)
+	userMsgs := r.createUserMsg(message)
 	msgs = append(msgs, userMsgs...)
-
-	if s := r.memory.Content(); s != "" {
-		ss := "<ContextMemory.md>\n" + s + "\n</ContextMemory.md>\n"
-		msgs = append(msgs, ai.UserMessage{Role: ai.UserRole, Content: ss})
-	}
 
 	// always send msgHistory
 	// even when memory is not including history, the msgHistory only contains
@@ -392,7 +372,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	r.queueEvent(toolEvent) // send after adding to the map
 
 	r.logger.Debug("calling tool", "tool", act.ToolName, "args", act.ToolArgs)
-	result, err := tool.Call(act.ToolArgs)
+	result, err := tool.Call(r, act.ToolArgs)
 	if err != nil {
 		if r.trace != nil {
 			r.trace.RecordError(err)

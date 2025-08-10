@@ -248,6 +248,8 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 			t.logMessageContent("content", content)
 		}
 	}
+
+	t.file.Sync()
 	return nil
 }
 
@@ -258,6 +260,7 @@ func (t *Trace) LLMAIResponse(agentName string, msg ai.AIMessage) {
 
 	fmt.Fprintf(t.file, "⬇️  assistant: role=%s\n", msg.Role) // Role might vary by provider
 	t.logAIMessage(msg)
+	t.file.Sync()
 }
 
 // logMessageContent is a helper method to format and log message content
@@ -323,6 +326,7 @@ func (t *Trace) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content
 			fmt.Fprintf(t.file, "     %s\n", line)
 		}
 	}
+	t.file.Sync()
 	return nil
 }
 
@@ -336,6 +340,7 @@ func (t *Trace) RecordError(err error) error {
 	defer traceSync.Unlock()
 
 	fmt.Fprintf(t.file, "❌ Error: %v\n", err)
+	t.file.Sync()
 	return nil
 }
 

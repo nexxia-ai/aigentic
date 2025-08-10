@@ -6,11 +6,10 @@ import (
 
 // Tool mimics a "standard" mcp tool definition so you can easily use it with any mcp client
 type Tool struct {
-	Name            string                                                 `json:"name"`
-	Description     string                                                 `json:"description"`
-	InputSchema     map[string]interface{}                                 `json:"inputSchema,omitempty"`
-	Execute         func(args map[string]interface{}) (*ToolResult, error) `json:"-"`
-	RequireApproval bool
+	Name        string                                                 `json:"name"`
+	Description string                                                 `json:"description"`
+	InputSchema map[string]interface{}                                 `json:"inputSchema,omitempty"`
+	Execute     func(args map[string]interface{}) (*ToolResult, error) `json:"-"`
 }
 
 // Call executes the tool with the given arguments

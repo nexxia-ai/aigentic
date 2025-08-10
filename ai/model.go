@@ -21,7 +21,7 @@ var (
 
 // Retry configuration constants
 const (
-	defaultMaxRetries   = 3
+	defaultMaxRetries   = 5
 	defaultBaseDelay    = 1 * time.Second
 	defaultMaxDelay     = 30 * time.Second
 	defaultJitterFactor = 0.1

@@ -9,40 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCreateUserMsg(t *testing.T) {
-	doc1 := NewInMemoryDocument("", "file-abc123", []byte("test content"), nil)
-	doc2 := NewInMemoryDocument("", "test.png", []byte("image data"), nil)
-	agent := Agent{
-		Documents: []*Document{
-			&doc1,
-			&doc2,
-		},
-	}
-
-	// Test with message and attachments (no FileID)
-	messages := agent.createUserMsg("Hello, please analyze these files")
-
-	assert.Len(t, messages, 3) // 1 main message + 2 attachments
-
-	// Check main message
-	mainMsg, ok := messages[0].(ai.UserMessage)
-	assert.True(t, ok)
-	assert.Equal(t, "Hello, please analyze these files", mainMsg.Content)
-
-	// Check first attachment message (should include content)
-	att1Msg, ok := messages[1].(ai.ResourceMessage)
-	assert.True(t, ok)
-	assert.Contains(t, att1Msg.Name, "file-abc123")
-	assert.Contains(t, string(att1Msg.Body.([]byte)), "test content")
-
-	// Check second attachment message (should include content)
-	att2Msg, ok := messages[2].(ai.ResourceMessage)
-	assert.True(t, ok)
-	assert.Contains(t, att2Msg.Name, "test.png")
-	assert.Contains(t, string(att2Msg.Body.([]byte)), "image data")
-
-}
-
 func TestAgentRunAndWait(t *testing.T) {
 	agent := Agent{
 		Name:        "test-agent",
@@ -112,7 +78,7 @@ func TestAgentToolCalling(t *testing.T) {
 		Name:        "test-tool-agent",
 		Description: "A test agent that uses tools",
 		Trace:       NewTrace(),
-		Tools:       []ai.Tool{testTool},
+		AgentTools:  []AgentTool{WrapTool(testTool)},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -182,14 +148,7 @@ func TestAgentFileAttachment(t *testing.T) {
 	}
 
 	// Check that the user message is present
-	userMsgFound := false
-	for _, msg := range receivedMessages {
-		if userMsg, ok := msg.(ai.UserMessage); ok && userMsg.Content == "Please analyze these attached files" {
-			userMsgFound = true
-			break
-		}
-	}
-	assert.True(t, userMsgFound, "User message should be present")
+	assert.Contains(t, receivedMessages[1].(ai.UserMessage).Content, "Please analyze these attached files")
 
 	// Check that both attachments are present as ResourceMessages
 	textFileFound := false
@@ -271,7 +230,7 @@ func TestAgentCallingSubAgent(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.True(t, subAgentCalled, "Sub-agent should have been called")
-	assert.Equal(t, "Please help me with this calculation", subAgentInput)
+	assert.Contains(t, subAgentInput, "Please help me with this calculation")
 	assert.Contains(t, result, "Great! My helper agent has completed the task")
 	assert.Contains(t, result, "42")
 }

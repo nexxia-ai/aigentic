@@ -1,45 +1,33 @@
 package aigentic
 
 import (
-	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-type pendingApproval struct {
-	ApprovalID string
-	Tool       *ai.Tool
-	ToolCallID string
-	ToolArgs   map[string]interface{}
-	Group      *toolCallGroup
-	deadline   time.Time
-}
-
-type toolCallGroup struct {
-	aiMessage *ai.AIMessage
-	responses map[string]ai.ToolMessage
-}
-
 type Agent struct {
 	Model      *ai.Model
 	Name       string
-	ID         string
 	Agents     []*Agent
 	Session    *Session
-	Tools      []ai.Tool // deprecated
 	AgentTools []AgentTool
 
-	Role            string
-	Description     string
-	Goal            string
-	Instructions    string
-	ExpectedOutput  string
-	SuccessCriteria string
+	// Description should containt a description of the agent's role and capabilities.
+	// It will be added to the system prompt. If this is a sub-agent, the Description is passed to the parent agent.
+	Description string
 
+	// Instructions should contain specific instructions for the agent to carry out its task.
+	// Instructions are useful to create specific bullet points for the agent.
+	// For example,
+	//       "Return dates in yyyy/mm/dd format"
+	//       "call tool X, then tool Y, then tool Z, in this order".
+	Instructions string
+
+	// Retries is the number of times to retry the agent if it fails.
+	// If Retries is 0, the agent will not retry.
 	Retries             int
 	DelayBetweenRetries int
 	ExponentialBackoff  bool
@@ -53,11 +41,8 @@ type Agent struct {
 }
 
 func (a *Agent) Run(message string) (*AgentRun, error) {
-	if a.ID == "" {
-		a.ID = uuid.New().String()
-	}
 	if a.Name == "" {
-		a.Name = a.ID
+		a.Name = "noname_" + uuid.New().String()
 	}
 	run := newAgentRun(a, message)
 	run.start()
@@ -70,62 +55,6 @@ func (a *Agent) RunAndWait(message string) (string, error) {
 		return "", err
 	}
 	return run.Wait(0)
-}
-
-func (a *Agent) createSystemPrompt() string {
-	sysMsg := a.Description
-	if a.Instructions != "" {
-		sysMsg += "\n <instructions>\n" +
-			a.Instructions +
-			"\nAnalyse the entire history message history before you decide the next step to prevent executing the same calls." +
-			"\n</instructions>\n"
-	}
-	return sysMsg
-}
-
-// createUserMsg returns a list of Messages, with each attachment as a separate Resource message
-func (a *Agent) createUserMsg(message string) []ai.Message {
-	var messages []ai.Message
-
-	// Add the main user message if there's content
-	if message != "" {
-		userMsg := ai.UserMessage{Role: ai.UserRole, Content: message}
-		messages = append(messages, userMsg)
-	}
-
-	// Add each attachment as a separate Resource message with actual content
-	for _, doc := range a.Documents {
-		content, err := doc.Bytes()
-		if err != nil {
-			continue // or handle error appropriately
-		}
-
-		attachmentMsg := ai.ResourceMessage{
-			Role: ai.UserRole,
-			URI:  "",
-			Name: doc.Filename,
-			Body: content,
-			Type: deriveTypeFromMime(doc.MimeType),
-		}
-		messages = append(messages, attachmentMsg)
-	}
-
-	// Add attachment references as Resource messages with file:// URI
-	for _, docRef := range a.DocumentReferences {
-		// Use the document ID as the file reference
-		fileID := docRef.ID()
-
-		refMsg := ai.ResourceMessage{
-			Role: ai.UserRole,
-			URI:  fmt.Sprintf("file://%s", fileID),
-			Name: docRef.Filename,
-			Body: nil,                                 // No body for file references
-			Type: deriveTypeFromMime(docRef.MimeType), // Use actual MIME type
-		}
-		messages = append(messages, refMsg)
-	}
-
-	return messages
 }
 
 // deriveTypeFromMime derives the resource type from MIME type

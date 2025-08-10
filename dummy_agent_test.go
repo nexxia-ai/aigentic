@@ -242,7 +242,7 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Always use the lookup_company_name tool to get information.",
 		MaxLLMCalls:  3, // Limit to 3 LLM calls
-		Tools:        []ai.Tool{tool},
+		AgentTools:   []AgentTool{WrapTool(tool)},
 		Trace:        NewTrace(),
 		LogLevel:     slog.LevelDebug,
 	}
@@ -402,10 +402,11 @@ func TestDummyStreaming(t *testing.T) {
 	})
 }
 
-func getApprovalTool() ai.Tool {
-	return ai.Tool{
-		Name:        "test_approval_tool",
-		Description: "A test tool that requires approval",
+func getApprovalTool() AgentTool {
+	return AgentTool{
+		Name:            "test_approval_tool",
+		Description:     "A test tool that requires approval",
+		RequireApproval: true,
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -416,14 +417,13 @@ func getApprovalTool() ai.Tool {
 			},
 			"required": []string{"action"},
 		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			action, _ := args["action"].(string)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Tool executed: " + action}},
 				Error:   false,
 			}, nil
 		},
-		RequireApproval: true,
 	}
 }
 
@@ -467,7 +467,7 @@ func TestToolApprovalGiven(t *testing.T) {
 		Name:         "approval_test_agent",
 		Description:  "Test agent for approval functionality",
 		Instructions: "Use the test_approval_tool when requested.",
-		Tools:        []ai.Tool{approvalTool},
+		AgentTools:   []AgentTool{approvalTool},
 		Trace:        NewTrace(),
 		LogLevel:     slog.LevelDebug,
 	}
@@ -520,7 +520,7 @@ func TestToolApprovalRejected(t *testing.T) {
 		Name:         "approval_test_agent",
 		Description:  "Test agent for approval functionality",
 		Instructions: "Use the test_approval_tool when requested.",
-		Tools:        []ai.Tool{approvalTool},
+		AgentTools:   []AgentTool{approvalTool},
 		Trace:        NewTrace(),
 		LogLevel:     slog.LevelDebug,
 	}
@@ -574,7 +574,7 @@ func TestToolApprovalTimeout(t *testing.T) {
 		Name:         "timeout_test_agent",
 		Description:  "Test agent for approval timeout functionality",
 		Instructions: "Use the test_approval_tool when requested.",
-		Tools:        []ai.Tool{approvalTool},
+		AgentTools:   []AgentTool{approvalTool},
 		Trace:        NewTrace(),
 		LogLevel:     slog.LevelDebug,
 	}

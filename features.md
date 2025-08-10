@@ -372,7 +372,11 @@ if err != nil {
 
 agent := aigentic.Agent{
     Model: model,
-    Tools: mcpHost.Tools, // Automatically available tools from MCP servers
+}
+
+// Convert MCP tools to AgentTools
+for _, tool := range mcpHost.Tools {
+    agent.AgentTools = append(agent.AgentTools, aigentic.WrapTool(tool))
 }
 
 // Now agent can use file systems, databases, APIs, etc. through MCP

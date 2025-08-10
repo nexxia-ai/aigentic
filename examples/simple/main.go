@@ -41,14 +41,13 @@ var simpleAgent = aigentic.Agent{
 }
 
 // attachmentAgent demonstrates an agent that accepts file attachments
+var doc = aigentic.NewInMemoryDocument("", "sample.txt", []byte("This is a sample text file with some information about artificial intelligence."), nil)
 var attachmentAgent = aigentic.Agent{
 	Model:        model,
 	Name:         "AttachmentAgent",
 	Description:  "An agent that can analyze and work with file attachments",
 	Instructions: "You can analyze images and documents. Describe what you see and provide insights about the content.",
-	Documents: []*aigentic.Document{
-		aigentic.NewInMemoryDocument("", "sample.txt", []byte("This is a sample text file with some information about artificial intelligence."), nil),
-	},
+	Documents:    []*aigentic.Document{&doc},
 }
 
 // multiAgent demonstrates a multi-agent system that can delegate tasks to other agents
@@ -74,12 +73,12 @@ var toolAgent = aigentic.Agent{
 	Name:         "ToolAgent",
 	Description:  "An agent that can perform mathematical calculations using tools",
 	Instructions: "You have access to a calculator tool. Use it to help users with mathematical calculations.",
-	Tools:        []ai.Tool{createCalculatorTool()},
+	AgentTools:   []aigentic.AgentTool{createCalculatorTool()},
 }
 
 // createCalculatorTool creates a tool that returns a greeting
-func createCalculatorTool() ai.Tool {
-	return ai.Tool{
+func createCalculatorTool() aigentic.AgentTool {
+	return aigentic.AgentTool{
 		Name:        "greeting",
 		Description: "A tool that returns a greeting",
 		InputSchema: map[string]interface{}{
@@ -92,7 +91,7 @@ func createCalculatorTool() ai.Tool {
 			},
 			"required": []string{"name"},
 		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(run *aigentic.AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			name, ok := args["name"].(string)
 			if !ok {
 				return &ai.ToolResult{

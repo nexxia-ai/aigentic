@@ -1,63 +1,47 @@
 package aigentic
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
 type Memory struct {
 	SystemPrompt   func() string
 	UserPrompt     func() string
-	Content        func() string
+	content        string
 	Tool           AgentTool
 	IncludeHistory bool
-	filepath       string
 }
 
 const systemPrompt = `
-The current working directory contains a file called ContextMemory.md that will be automatically added to your context. 
-This file serves as a persistent memory store for any information relevant to completing the current task and future related tasks.
+The agent maintains a file called ContextMemory.md that will be automatically added to your context. 
+
+The ContextMemory.md file serves as a persistent memory store any information relevant to completing the current task and future related tasks.
 The ContextMemory.md file starts empty and is updated by you using the save_memory tool.
+It is most useful for complex, multi-step tasks that require coordination between multiple tools. Or when the request explicitly asks you to save the memory.
 
-The ContextMemory.md file can store any information that might be useful across multiple tool invocations or when you need to complete several related tasks to fulfill user instructions. 
-This includes but is not limited to:
-- Storing essential data such as account IDs, user IDs, customer references, and validation rules
-- Recording step-by-step planning and process workflows for complex tasks
-- Maintaining business logic, decision criteria, and operational parameters
-- Preserving contextual information about ongoing processes, user preferences, and system states
-- Keeping track of intermediate results, partial solutions, or state information between tool calls
-- Storing any relevant information that might be needed in subsequent interactions
+You can use the save_memory tool to save the ContextMemory.md file at any time during your task execution. 
+Reasons why you want to save the ContextMemory.md file:
+- Save a multi-step plan of action for the task so you can followw and track progress
+- Retain state between multiple tool invocations
 
-You can use the save_memory tool to save this file at any time during your task execution. 
-The save_memory tool is particularly useful when:
-- You need to maintain state between multiple tool invocations
-- You're working on a complex task that requires several steps
-- You want to preserve information that might be needed in future requests
-- You've gathered important context or data that should be remembered
-
-When you encounter any information that might be relevant for completing the current task or future related tasks, 
-consider using the save_memory tool to store it in ContextMemory.md so it's available in subsequent interactions.
+For complex processing with several steps, you should use the save_memory tool to store information relevant for completing the current task or other sub tasks.
+For simple tasks, you do not need to use the save_memory tool for simple requests that can be answered in one step.
 `
 
-func NewFileMemory(path string) *Memory {
+func NewMemory() *Memory {
 	return &Memory{
 		SystemPrompt: func() string {
 			return systemPrompt
 		},
-		UserPrompt: nil,
-		Content: func() string {
-			s, err := os.ReadFile(path)
-			if err == nil {
-				return string(s)
-			}
-			return "memory is empty"
-		},
+		content:        "memory is empty",
+		UserPrompt:     nil,
 		Tool:           NewSaveMemoryTool(),
 		IncludeHistory: false,
-		filepath:       path,
 	}
+}
+
+func (m *Memory) Content() string {
+	return m.content
 }
 
 type SaveMemoryParams struct {
@@ -66,30 +50,20 @@ type SaveMemoryParams struct {
 
 const (
 	SaveMemoryToolName    = "save_memory"
-	saveMemoryDescription = `Memory saving tool that stores important business context and information to ContextMemory.md for persistent memory across inference calls.
+	saveMemoryDescription = `
+This tool saves the content to ContextMemory.md for persistent memory across multi step tasks.
+The ContextMemory.md file is automatically included in future inference calls.
 
-WHEN TO USE THIS TOOL:
-- Use when you want to save important context information that should be remembered for future invocation
-- Helpful for storing account IDs, user IDs, validation data, and business rules required for future calls
-- Perfect for maintaining step-by-step instructions created by the LLM for complex processes
-- Essential for preserving workflow state and process knowledge across different llm invocations
+When to use this tool:
+- Use the tool for complex multi step processing or when you have explicitly told to do so.
+- Use it to record the plan of action and completion status.
+- Use when you want to save important context information that should be remembered for future invocations
+- Use it to save important context such as account IDs, user IDs, validation data, and business rules required for future calls
 
-HOW TO USE:
-- Provide the content you want to save to memory
-- The tool will overwrite the content to ContextMemory.md with the new content
-- This file will be automatically included in future LLM requests for context
-
-LIMITATIONS:
-- Content is stored as plain text in markdown format
-- Cannot store binary data 
-- Memory is transient and will be deletedafter a full agent run
-- Each call to save_memory overwrites the content of ContextMemory.md
-
-TIPS:
-- Record step-by-step instructions created by the LLM for complex workflows
-- Save important context about ongoing business processes as required to complete the task
+Instructions:
+- Provide the full content you want to save to memory. The tool will overwrite ContextMemory.md with the new content
 - Keep memory entries concise and well-organized with clear labels
-- Add or remove memory entries before writing to the file
+- You must maintain the memory by adding or removing memory entries before saving to ContextMemory.md
 - Use markdown formatting for better readability and structure`
 )
 
@@ -112,7 +86,6 @@ func NewSaveMemoryTool() AgentTool {
 }
 
 func saveMemoryExecute(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-	// Extract content directly from args
 	rawContent, ok := args["content"]
 	if !ok {
 		return &ai.ToolResult{
@@ -134,32 +107,7 @@ func saveMemoryExecute(run *AgentRun, args map[string]interface{}) (*ai.ToolResu
 		}, nil
 	}
 
-	// timestamp := time.Now().Format("2006-01-02 15:04:05")
-	// memoryEntry := fmt.Sprintf("\n\n## Memory Entry - %s\n\n%s\n", timestamp, content)
-	memoryEntry := content
-
-	// file, err := os.OpenFile(run.memory.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	file, err := os.OpenFile(run.memory.filepath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error opening memory file: %v", err),
-			}},
-			Error: true,
-		}, nil
-	}
-	defer file.Close()
-
-	if _, err := file.WriteString(memoryEntry); err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error writing memory entry: %v", err),
-			}},
-			Error: true,
-		}, nil
-	}
+	run.memory.content = content
 
 	return &ai.ToolResult{
 		Content: []ai.ToolContent{{

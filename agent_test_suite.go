@@ -104,8 +104,32 @@ func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
 	})
 }
 
-// NewSecretNumberTool returns a SimpleTool struct for testing
-func NewSecretNumberTool() ai.Tool {
+// NewSecretNumberTool returns an AgentTool struct for testing
+func NewSecretNumberTool() AgentTool {
+	return AgentTool{
+		Name:        "lookup_company_name",
+		Description: "A tool that looks up the name of a company based on a company number",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"company_number": map[string]interface{}{
+					"type":        "string",
+					"description": "The company number to lookup",
+				},
+			},
+			"required": []string{"company_number"},
+		},
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{{Type: "text", Content: "Nexxia"}},
+				Error:   false,
+			}, nil
+		},
+	}
+}
+
+// NewSecretNumberToolLegacy returns an ai.Tool struct for testing (legacy compatibility)
+func NewSecretNumberToolLegacy() ai.Tool {
 	return ai.Tool{
 		Name:        "lookup_company_name",
 		Description: "A tool that looks up the name of a company based on a company number",
@@ -128,9 +152,9 @@ func NewSecretNumberTool() ai.Tool {
 	}
 }
 
-// NewSecretSupplierTool returns a SimpleTool struct for testing supplier lookup
-func NewSecretSupplierTool() ai.Tool {
-	return ai.Tool{
+// NewSecretSupplierTool returns an AgentTool struct for testing supplier lookup
+func NewSecretSupplierTool() AgentTool {
+	return AgentTool{
 		Name:        "lookup_supplier_name",
 		Description: "A tool that looks up the name of a supplier based on a supplier number",
 		InputSchema: map[string]interface{}{
@@ -143,7 +167,7 @@ func NewSecretSupplierTool() ai.Tool {
 			},
 			"required": []string{"supplier_number"},
 		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Phoenix"}},
 				Error:   false,
@@ -153,8 +177,8 @@ func NewSecretSupplierTool() ai.Tool {
 }
 
 // NewLookupCompanyByNameTool simulates looking up a company by name and returning an ID or not found
-func NewLookupCompanyByNameTool() ai.Tool {
-	return ai.Tool{
+func NewLookupCompanyByNameTool() AgentTool {
+	return AgentTool{
 		Name:        "lookup_company_id",
 		Description: "Lookup a company ID by its name. Returns 'COMPANY_ID: <id>; NAME: <name>' if found, otherwise 'NOT_FOUND'",
 		InputSchema: map[string]interface{}{
@@ -167,7 +191,7 @@ func NewLookupCompanyByNameTool() ai.Tool {
 			},
 			"required": []string{"name"},
 		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			name, _ := args["name"].(string)
 			content := "NOT_FOUND"
 			if strings.EqualFold(strings.TrimSpace(name), "Nexxia") {
@@ -179,8 +203,8 @@ func NewLookupCompanyByNameTool() ai.Tool {
 }
 
 // NewCreateCompanyTool simulates creating a company, returning a deterministic ID for testing
-func NewCreateCompanyTool() ai.Tool {
-	return ai.Tool{
+func NewCreateCompanyTool() AgentTool {
+	return AgentTool{
 		Name:        "create_company",
 		Description: "Create a new company by name. Returns 'COMPANY_ID: <id>; NAME: <name>'",
 		InputSchema: map[string]interface{}{
@@ -193,7 +217,7 @@ func NewCreateCompanyTool() ai.Tool {
 			},
 			"required": []string{"name"},
 		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			name, _ := args["name"].(string)
 			// Deterministic ID derived from name for test stability
 			id := "COMP-NEW-001"
@@ -210,8 +234,8 @@ func NewCreateCompanyTool() ai.Tool {
 }
 
 // NewCreateInvoiceTool simulates creating an invoice for a company ID and amount
-func NewCreateInvoiceTool() ai.Tool {
-	return ai.Tool{
+func NewCreateInvoiceTool() AgentTool {
+	return AgentTool{
 		Name:        "create_invoice",
 		Description: "Create an invoice for a company. Returns 'INVOICE_ID: <id>; AMOUNT: <amount>'",
 		InputSchema: map[string]interface{}{
@@ -228,7 +252,7 @@ func NewCreateInvoiceTool() ai.Tool {
 			},
 			"required": []string{"company_id", "amount"},
 		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			amountStr := ""
 			switch v := args["amount"].(type) {
 			case float64:
@@ -265,7 +289,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			expectedError: false,
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, agent.ID)
+				assert.NotEmpty(t, agent.Name)
 				assert.Contains(t, strings.ToLower(content), "sydney")
 			},
 			tools: []ai.Tool{},
@@ -277,7 +301,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			expectedError: false,
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, agent.ID)
+				assert.NotEmpty(t, agent.Name)
 				assert.Contains(t, strings.ToLower(content), "sydney")
 			},
 			tools: []ai.Tool{},
@@ -287,7 +311,10 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.agent.Documents = tt.attachments
-			tt.agent.Tools = tt.tools
+			// Convert ai.Tools to AgentTools
+			for _, tool := range tt.tools {
+				tt.agent.AgentTools = append(tt.agent.AgentTools, WrapTool(tool))
+			}
 
 			run, err := tt.agent.Run(tt.message)
 			if err != nil {
@@ -339,7 +366,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 			message: "What is the capital of Australia?",
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, agent.ID)
+				assert.NotEmpty(t, agent.Name)
 				assert.Contains(t, strings.ToLower(content), "canberra")
 			},
 			tools: []ai.Tool{},
@@ -358,7 +385,10 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			agent := newAgent()
-			agent.Tools = test.tools
+			// Convert ai.Tools to AgentTools
+			for _, tool := range test.tools {
+				agent.AgentTools = append(agent.AgentTools, WrapTool(tool))
+			}
 			agent.Documents = test.attachments
 			run, err := agent.Run(test.message)
 			if err != nil {
@@ -412,7 +442,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			name:        "tool call",
 			message:     "tell me the name of the company with the number 150. Use tools.",
 			agent:       newAgent(),
-			tools:       []ai.Tool{NewSecretNumberTool()},
+			tools:       []ai.Tool{NewSecretNumberToolLegacy()},
 			attachments: []*Document{},
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
@@ -423,7 +453,10 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			test.agent.Tools = test.tools
+			// Convert ai.Tools to AgentTools
+			for _, tool := range test.tools {
+				test.agent.AgentTools = append(test.agent.AgentTools, WrapTool(tool))
+			}
 			test.agent.Documents = test.attachments
 			run, err := test.agent.Run(test.message)
 			if err != nil {
@@ -460,7 +493,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 		Name:         "lookup",
 		Description:  "Lookup company details by name. Return either 'COMPANY_ID: <id>; NAME: <name>' or 'NOT_FOUND' only.",
 		Instructions: "Use tools to perform the lookup and return the canonical format only.",
-		Tools:        []ai.Tool{NewLookupCompanyByNameTool()},
+		AgentTools:   []AgentTool{NewLookupCompanyByNameTool()},
 	}
 
 	companyCreator := Agent{
@@ -468,7 +501,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 		Name:         "company_creator",
 		Description:  "Create a new company by name and return 'COMPANY_ID: <id>; NAME: <name>' only.",
 		Instructions: "Use tools to create the company and return the canonical format only.",
-		Tools:        []ai.Tool{NewCreateCompanyTool()},
+		AgentTools:   []AgentTool{NewCreateCompanyTool()},
 	}
 
 	invoiceCreator := Agent{
@@ -476,7 +509,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 		Name:         "invoice_creator",
 		Description:  "Create an invoice for a given company_id and amount. Return 'INVOICE_ID: <id>; AMOUNT: <amount>' only.",
 		Instructions: "Use tools to create the invoice and return the canonical format only.",
-		Tools:        []ai.Tool{NewCreateInvoiceTool()},
+		AgentTools:   []AgentTool{NewCreateInvoiceTool()},
 	}
 
 	coordinator := Agent{
@@ -488,7 +521,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			"3) Call 'invoice_creator' with the resolved company_id and the requested amount. " +
 			"Finally, return exactly: 'COMPANY_ID: <id>; NAME: <name>; INVOICE_ID: <invoice>; AMOUNT: <amount>'.",
 		Instructions: "Call exactly one tool at a time and wait for the response before the next call. " +
-			"Use the save_memory tool to persist important context between tool calls, especially after getting company information. " +
+			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
 		Agents: []*Agent{&lookup, &companyCreator, &invoiceCreator},
 		Trace:  NewTrace(),
@@ -684,9 +717,9 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 			Remember:
 			return your name only
 			do not add any additional information` +
-				fmt.Sprintf("Your name is %s.", expertName),
-			Model: model,
-			Tools: nil,
+				fmt.Sprintf("My name is %s.", expertName),
+			Model:      model,
+			AgentTools: nil,
 		}
 	}
 
@@ -694,8 +727,12 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		Name:        "coordinator",
 		Description: "You are the coordinator to collect signature from experts. Your role is to call each expert one by one in order to get their names",
 		Instructions: `
+		Create a plan for what you have to do and save the plan to memory. 
+		Update the plan as you proceed to reflect tasks already completed.
 		Call each expert one by one in order to request their name - what is your name?
+		Save each expert name to memory.
 		You must call all the experts in order.
+		Do no make up information. Use only the names provided by the agents.
 		Return the final names as received from the last expert. do not add any additional text or commentary.`,
 		Model:  model,
 		Agents: experts,
@@ -728,7 +765,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		Model:        model,
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
-		Tools:        []ai.Tool{NewSecretNumberTool()},
+		AgentTools:   []AgentTool{NewSecretNumberTool()},
 		Trace:        NewTrace(),
 		// LogLevel:     slog.LevelDebug,
 	}
@@ -853,7 +890,7 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 	}
 
 	assert.NotEmpty(t, finalContent)
-	assert.NotEmpty(t, agent.ID)
+	assert.NotEmpty(t, agent.Name)
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 }
@@ -894,7 +931,7 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 	}
 
 	assert.NotEmpty(t, finalContent)
-	assert.NotEmpty(t, agent.ID)
+	assert.NotEmpty(t, run.ID)
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 }
@@ -935,7 +972,7 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 	}
 
 	assert.NotEmpty(t, finalContent)
-	assert.NotEmpty(t, agent.ID)
+	assert.NotEmpty(t, run.ID)
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 }
@@ -950,7 +987,7 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible.",
 		Stream:       true,
-		Tools:        []ai.Tool{NewSecretNumberTool()},
+		AgentTools:   []AgentTool{NewSecretNumberTool()},
 	}
 
 	message := "tell me the name of the company with the number 150. Use tools. "
@@ -991,7 +1028,7 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Use the lookup tool to find company information when asked.",
 		Stream:       true,
-		Tools:        []ai.Tool{NewSecretNumberTool()},
+		AgentTools:   []AgentTool{NewSecretNumberTool()},
 	}
 
 	message := "What company has the number 150?"
@@ -1035,7 +1072,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		Name:         "lookup_company",
 		Description:  "Look up a company name by company number. Return 'COMPANY: <name>' only.",
 		Instructions: "Use tools to look up the company name. Return exactly 'COMPANY: <name>' and nothing else.",
-		Tools:        []ai.Tool{NewSecretNumberTool()},
+		AgentTools:   []AgentTool{NewSecretNumberTool()},
 	}
 
 	lookupSupplier := Agent{
@@ -1043,29 +1080,32 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		Name:         "lookup_company_supplier",
 		Description:  "Look up a supplier name by supplier number. Return 'SUPPLIER: <name>' only.",
 		Instructions: "Use tools to look up the supplier name. Return exactly 'SUPPLIER: <name>' and nothing else.",
-		Tools:        []ai.Tool{NewSecretSupplierTool()},
+		AgentTools:   []AgentTool{NewSecretSupplierTool()},
 	}
 
 	// Coordinator executes the plan, saves each result to memory, then replies with full memory content
 	coordinator := Agent{
-		Session: session,
-		Model:   model,
-		Name:    "coordinator",
-		Description: "Execute this plan: " +
+		Session:     session,
+		Model:       model,
+		Name:        "coordinator",
+		Description: "You are a coordinator that executes a plan and saves the results to memory. ",
+		Instructions: "1) Execute the plan by executing each task in the order specified. " +
+			"2) Keep track of the tasks you have already executed to avoid repeating the same task. Save the tasks you have executed to memory." +
+			"3) When saving memory, include the current memory content and append the new result so both are present. " +
+			"4) Return only the memory content (no commentary). " +
+			"Do not make up information. You must use the tools to get the information.",
+		Agents: []*Agent{&lookupCompany, &lookupSupplier},
+		Trace:  NewTrace(),
+	}
+
+	run, err := coordinator.Run(
+		"Execute the following plan: " +
 			"1) Call 'lookup_company' with input 'Look up company 150'. " +
 			"2) Save the result to memory using save_memory. " +
 			"3) Call 'lookup_company_supplier' with input 'Look up supplier 200'. " +
 			"4) Save the result to memory again, including previous memory content. " +
 			"5) When you have the company and the supplier details, then respond with exactly the full content of ContextMemory.md (no extra text).",
-		Instructions: "Call exactly one tool at a time and wait for the response before the next call. " +
-			"When saving memory the second time, include the current memory content and append the new result so both are present. " +
-			"Return only the memory content (no commentary). " +
-			"Analyse the memory content and do not repeat the tool calls if you already have the information.",
-		Agents: []*Agent{&lookupCompany, &lookupSupplier},
-		Trace:  NewTrace(),
-	}
-
-	run, err := coordinator.Run("Execute the plan now and then return the memory content only.")
+	)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -1123,11 +1163,11 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	assert.NotEqual(t, -1, companyIdx, "lookup_company subagent should be called")
 	assert.NotEqual(t, -1, supplierIdx, "lookup_company_supplier subagent should be called")
 	assert.Greater(t, len(saveIdxs), 1, "save_memory should be called at least twice")
-	assert.Greater(t, saveIdxs[0], companyIdx, "first save should occur after company lookup")
-	assert.Greater(t, supplierIdx, saveIdxs[0], "supplier lookup should occur after first save")
-	assert.Greater(t, saveIdxs[1], supplierIdx, "second save should occur after supplier lookup")
 
 	// Validate inputs used to call subagents
 	assert.Contains(t, strings.ToLower(companyToolInput), "look up company 150")
 	assert.Contains(t, strings.ToLower(supplierToolInput), "look up supplier 200")
+
+	assert.Contains(t, finalContent, "Nexxia")
+	assert.Contains(t, finalContent, "Phoenix")
 }

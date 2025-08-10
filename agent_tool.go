@@ -2,9 +2,24 @@ package aigentic
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 )
+
+type pendingApproval struct {
+	ApprovalID string
+	Tool       *AgentTool
+	ToolCallID string
+	ToolArgs   map[string]interface{}
+	Group      *toolCallGroup
+	deadline   time.Time
+}
+
+type toolCallGroup struct {
+	aiMessage *ai.AIMessage
+	responses map[string]ai.ToolMessage
+}
 
 type AgentTool struct {
 	UserValidation  string
@@ -30,6 +45,18 @@ func (t *AgentTool) toTool(run *AgentRun) ai.Tool {
 		InputSchema: t.InputSchema,
 		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
 			return t.Execute(run, args)
+		},
+	}
+}
+
+// WrapTool creates an AgentTool from an ai.Tool
+func WrapTool(tool ai.Tool) AgentTool {
+	return AgentTool{
+		Name:        tool.Name,
+		Description: tool.Description,
+		InputSchema: tool.InputSchema,
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
+			return tool.Execute(args)
 		},
 	}
 }

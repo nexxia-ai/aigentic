@@ -47,7 +47,7 @@ var attachmentAgent = aigentic.Agent{
 	Name:         "AttachmentAgent",
 	Description:  "An agent that can analyze and work with file attachments",
 	Instructions: "You can analyze images and documents. Describe what you see and provide insights about the content.",
-	Documents:    []*aigentic.Document{&doc},
+	Documents:    []*aigentic.Document{doc},
 }
 
 // multiAgent demonstrates a multi-agent system that can delegate tasks to other agents

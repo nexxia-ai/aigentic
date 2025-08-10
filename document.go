@@ -79,9 +79,9 @@ func (d *Document) SetLoader(loader func(*Document) ([]byte, error)) {
 	d.loader = loader
 }
 
-func NewInMemoryDocument(id, filename string, data []byte, srcDoc *Document) Document {
+func NewInMemoryDocument(id, filename string, data []byte, srcDoc *Document) *Document {
 	mimeType := mime.TypeByExtension(filepath.Ext(filename))
-	return Document{
+	return &Document{
 		id:         id,
 		Filename:   filename,
 		FilePath:   filename,

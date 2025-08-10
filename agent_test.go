@@ -124,8 +124,8 @@ func TestAgentFileAttachment(t *testing.T) {
 		Name:        "test-attachment-agent",
 		Description: "A test agent that handles file attachments",
 		Documents: []*Document{
-			&doc1,
-			&doc2,
+			doc1,
+			doc2,
 		},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			receivedMessages = messages

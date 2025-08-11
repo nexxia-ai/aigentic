@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/rand"
 	"net/http"
@@ -21,8 +22,8 @@ var (
 
 // Retry configuration constants
 const (
-	defaultMaxRetries   = 5
-	defaultBaseDelay    = 1 * time.Second
+	defaultMaxRetries   = 10
+	defaultBaseDelay    = 3 * time.Second
 	defaultMaxDelay     = 30 * time.Second
 	defaultJitterFactor = 0.1
 )
@@ -140,7 +141,7 @@ func (m *Model) callWithRetry(ctx context.Context, messages []Message, tools []T
 		}
 	}
 
-	// All retries exhausted
+	slog.Error("all retries exhausted", "error", lastErr)
 	return AIMessage{}, lastErr
 }
 
@@ -194,6 +195,7 @@ func (m *Model) streamWithRetry(ctx context.Context, messages []Message, tools [
 			// Continue to next attempt
 		}
 	}
+	slog.Error("all retries exhausted", "error", lastErr)
 
 	// All retries exhausted
 	return AIMessage{}, lastErr

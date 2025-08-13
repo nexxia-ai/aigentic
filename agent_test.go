@@ -303,7 +303,6 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 	}
 
 	// Track tool response events to verify all are properly handled
-	toolResponseEvents := []ToolResponseEvent{}
 	var receivedToolMessages []ai.ToolMessage
 
 	agent := Agent{
@@ -362,24 +361,7 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 		}),
 	}
 
-	// Create a custom session to capture events
-	session := NewSession()
-	agent.Session = session
-
-	// Start the agent run
-	run := newAgentRun(&agent, "Execute the plan")
-
-	// Capture tool response events
-	go func() {
-		for event := range run.Next() {
-			if toolRespEvent, ok := event.(*ToolResponseEvent); ok {
-				toolResponseEvents = append(toolResponseEvents, *toolRespEvent)
-			}
-		}
-	}()
-
-	run.start()
-	result, err := run.Wait(0)
+	result, err := agent.Execute("Execute the plan")
 
 	assert.NoError(t, err)
 	assert.Contains(t, result, "All tools executed successfully")

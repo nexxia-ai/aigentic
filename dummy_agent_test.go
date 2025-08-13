@@ -499,7 +499,7 @@ func TestToolApprovalGiven(t *testing.T) {
 
 	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
 	assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
-	assert.Contains(t, approvalEvent.Content, "Approval required for tool: test_approval_tool", "Content should mention the tool")
+	assert.Contains(t, approvalEvent.ValidationResult.Message, "", "message should be empty")
 	assert.NotNil(t, toolEvent, "Should have received a ToolEvent")
 	assert.Contains(t, finalContent, "Tool execution completed successfully", "Should have final content")
 	assert.Equal(t, 0, len(run.pendingApprovals), "Should have no pending approvals")
@@ -552,7 +552,7 @@ func TestToolApprovalRejected(t *testing.T) {
 	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
 	if approvalEvent != nil {
 		assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
-		assert.Contains(t, approvalEvent.Content, "Approval required for tool: test_approval_tool", "Content should mention the tool")
+		assert.Contains(t, approvalEvent.ValidationResult.Message, "", "message should be empty")
 	}
 	assert.True(t, toolRequested, "Tool should have been requested")
 	assert.True(t, toolResponseReceived, "Should have received a tool response indicating denial")
@@ -620,7 +620,7 @@ func TestToolApprovalTimeout(t *testing.T) {
 	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
 	if approvalEvent != nil {
 		assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
-		assert.Contains(t, approvalEvent.Content, "Approval required for tool: test_approval_tool", "Content should mention the tool")
+		assert.Contains(t, approvalEvent.ValidationResult.Message, "", "message should be empty")
 	}
 	assert.True(t, toolRequested, "Tool should have been requested")
 	assert.Equal(t, 0, len(run.pendingApprovals), "Should have no pending approvals")

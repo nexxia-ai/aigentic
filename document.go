@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mime"
 	"path/filepath"
+	"time"
 )
 
 // DocumentStore interface for any storage backend
@@ -20,11 +21,12 @@ type DocumentProcessor interface {
 // Document is a common type to work with documents. You can load documents using the DocumentStore interface.
 // Pass documents to agents and the agents will handle the inclusion of the document in the context.
 type Document struct {
-	id       string
-	Filename string
-	FilePath string
-	FileSize int64
-	MimeType string
+	id        string
+	Filename  string
+	FilePath  string
+	FileSize  int64
+	MimeType  string
+	CreatedAt time.Time
 
 	// Private content field to enable lazy loading
 	binary []byte

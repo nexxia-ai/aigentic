@@ -20,8 +20,8 @@ var (
 	ErrTemporary    = errors.New("temporary error - retry recommended")
 )
 
-// Retry configuration constants
-const (
+// Retry configuration variables - can be modified for testing
+var (
 	defaultMaxRetries   = 10
 	defaultBaseDelay    = 3 * time.Second
 	defaultMaxDelay     = 30 * time.Second
@@ -118,7 +118,7 @@ func (m *Model) callWithRetry(ctx context.Context, messages []Message, tools []T
 		lastErr = err
 
 		// Check if this is a temporary error
-		if !errors.Is(err, ErrTemporary) {
+		if err != ErrTemporary {
 			// Non-retryable error - return immediately
 			if m.RecordFilename != "" {
 				m.recordAIMessage(response, err)
@@ -131,9 +131,8 @@ func (m *Model) callWithRetry(ctx context.Context, messages []Message, tools []T
 			break
 		}
 
+		// Calculate delay and wait
 		delay := m.calculateBackoffDelay(attempt)
-		slog.Error("retryable error", "waiting", delay, "error", err)
-
 		select {
 		case <-ctx.Done():
 			return AIMessage{}, ctx.Err()

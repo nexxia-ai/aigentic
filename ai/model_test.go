@@ -7,8 +7,26 @@ import (
 	"time"
 )
 
+// setupFastRetryForTests sets fast retry parameters for testing to avoid long delays
+func setupFastRetryForTests() {
+	defaultBaseDelay = 10 * time.Millisecond
+	defaultMaxDelay = 50 * time.Millisecond
+	defaultJitterFactor = 0.1
+}
+
+// resetRetryDefaults resets retry parameters to production defaults
+func resetRetryDefaults() {
+	defaultBaseDelay = 3 * time.Second
+	defaultMaxDelay = 30 * time.Second
+	defaultJitterFactor = 0.1
+}
+
 // TestRetryMechanism tests the retry functionality of the model
 func TestRetryMechanism(t *testing.T) {
+	// Setup fast retry for all sub-tests
+	setupFastRetryForTests()
+	defer resetRetryDefaults()
+
 	t.Run("TemporaryErrorRetries", func(t *testing.T) {
 		attempts := 0
 		maxRetries := 3
@@ -176,6 +194,10 @@ func TestRetryMechanism(t *testing.T) {
 
 // TestBackoffDelayCalculation tests the exponential backoff delay calculation
 func TestBackoffDelayCalculation(t *testing.T) {
+	// Setup fast retry for testing
+	setupFastRetryForTests()
+	defer resetRetryDefaults()
+
 	model := &Model{}
 
 	testCases := []struct {
@@ -183,10 +205,10 @@ func TestBackoffDelayCalculation(t *testing.T) {
 		minExpected time.Duration
 		maxExpected time.Duration
 	}{
-		{0, 900 * time.Millisecond, 1100 * time.Millisecond},  // 1s ± 10% jitter
-		{1, 1800 * time.Millisecond, 2200 * time.Millisecond}, // 2s ± 10% jitter
-		{2, 3600 * time.Millisecond, 4400 * time.Millisecond}, // 4s ± 10% jitter
-		{10, 29 * time.Second, 33 * time.Second},              // Should cap at 30s ± 10% jitter
+		{0, 9 * time.Millisecond, 11 * time.Millisecond},   // 10ms ± 10% jitter
+		{1, 18 * time.Millisecond, 22 * time.Millisecond},  // 20ms ± 10% jitter
+		{2, 36 * time.Millisecond, 44 * time.Millisecond},  // 40ms ± 10% jitter
+		{10, 45 * time.Millisecond, 55 * time.Millisecond}, // Should cap at 50ms ± 10% jitter
 	}
 
 	for _, tc := range testCases {
@@ -203,6 +225,10 @@ func TestBackoffDelayCalculation(t *testing.T) {
 
 // TestStreamingRetry tests retry functionality for streaming calls
 func TestStreamingRetry(t *testing.T) {
+	// Setup fast retry for testing
+	setupFastRetryForTests()
+	defer resetRetryDefaults()
+
 	t.Run("StreamingTemporaryErrorRetries", func(t *testing.T) {
 		attempts := 0
 		maxRetries := 3
@@ -245,6 +271,10 @@ func TestStreamingRetry(t *testing.T) {
 
 // TestContextCancellationDuringRetry tests that context cancellation works during retry delays
 func TestContextCancellationDuringRetry(t *testing.T) {
+	// Setup fast retry for testing
+	setupFastRetryForTests()
+	defer resetRetryDefaults()
+
 	attempts := 0
 	maxRetries := 5
 
@@ -256,7 +286,7 @@ func TestContextCancellationDuringRetry(t *testing.T) {
 	model.MaxRetries = &maxRetries
 
 	// Create a context that will be cancelled after a short delay
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
@@ -272,7 +302,7 @@ func TestContextCancellationDuringRetry(t *testing.T) {
 	}
 
 	// Should not take too long (should be cancelled before all retries complete)
-	if duration > 200*time.Millisecond {
+	if duration > 100*time.Millisecond {
 		t.Errorf("Call took too long (%v), context cancellation may not be working during retries", duration)
 	}
 

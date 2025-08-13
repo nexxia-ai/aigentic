@@ -38,16 +38,16 @@ type ToolResponseEvent struct {
 func (e *ToolResponseEvent) ID() string { return e.RunID }
 
 type ToolEvent struct {
-	RunID     string
-	EventID   string
-	AgentName string
-	SessionID string
-	ToolName  string
-	ToolArgs  map[string]interface{}
-	ToolGroup *toolCallGroup
-	Approved  bool
-	Result    interface{}
-	Error     error
+	RunID            string
+	EventID          string
+	AgentName        string
+	SessionID        string
+	ToolName         string
+	ValidationResult ValidationResult
+	ToolGroup        *toolCallGroup
+	Approved         bool
+	Result           interface{}
+	Error            error
 }
 
 func (e *ToolEvent) ID() string { return e.RunID }
@@ -71,9 +71,10 @@ type ErrorEvent struct {
 func (e *ErrorEvent) ID() string { return e.RunID }
 
 type ApprovalEvent struct {
-	RunID      string
-	ApprovalID string
-	Content    string
+	RunID            string
+	ApprovalID       string
+	ToolName         string
+	ValidationResult ValidationResult
 }
 
 func (e *ApprovalEvent) ID() string { return e.RunID }

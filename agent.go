@@ -27,7 +27,6 @@ type Agent struct {
 	Instructions string
 
 	// Retries is the number of times to retry the agent if it fails.
-	// If Retries is 0, the agent will not retry.
 	Retries             int
 	DelayBetweenRetries int
 	ExponentialBackoff  bool

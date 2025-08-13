@@ -31,7 +31,7 @@ type AgentRun struct {
 	trace            *Trace
 	userMessage      string
 	parentRun        *AgentRun // pointer toparent if this is a sub-agent
-	logger           *slog.Logger
+	Logger           *slog.Logger
 	maxLLMCalls      int // maximum number of LLM calls
 	llmCallCount     int // number of LLM calls made
 	approvalTimeout  time.Duration
@@ -76,7 +76,7 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		pendingApprovals: make(map[string]pendingApproval),
 		approvalTimeout:  approvalTimeout,
 		memory:           memory,
-		logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
+		Logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 	run.tools = run.addTools()
 	return run
@@ -115,15 +115,18 @@ func (r *AgentRun) addTools() []AgentTool {
 				},
 				"required": []string{"input"},
 			},
-			Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
+			Validate: func(run *AgentRun, args map[string]interface{}) (ValidationResult, error) {
+				return ValidationResult{Values: args}, nil
+			},
+			NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
 				input := ""
-				if v, ok := args["input"].(string); ok {
+				if v, ok := validationResult.Values.(map[string]any)["input"].(string); ok {
 					input = v
 				}
 				subRun := newAgentRun(aa, input)
 				subRun.session = r.session
 				subRun.trace = r.trace
-				subRun.logger = r.logger.With("sub-agent", aa.Name)
+				subRun.Logger = r.Logger.With("sub-agent", aa.Name)
 				subRun.parentRun = r
 				subRun.start()
 				content, err := subRun.Wait(0)
@@ -150,6 +153,20 @@ func (r *AgentRun) addTools() []AgentTool {
 
 	// Add memory tool
 	tools = append(tools, r.memory.Tool)
+
+	// make sure all tools have a validation and execute function
+	for i := range tools {
+		if tools[i].Validate == nil {
+			tools[i].Validate = func(run *AgentRun, args map[string]interface{}) (ValidationResult, error) {
+				return ValidationResult{Values: args, Message: ""}, nil
+			}
+		}
+		if tools[i].NewExecute == nil {
+			tools[i].NewExecute = func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+				return nil, nil
+			}
+		}
+	}
 	return tools
 }
 
@@ -246,11 +263,11 @@ func (r *AgentRun) checkApprovalTimeouts() {
 	now := time.Now()
 	for approvalID, approval := range r.pendingApprovals {
 		if now.After(approval.deadline) {
-			r.logger.Error("approval timed out", "approvalID", approvalID, "deadline", approval.deadline)
+			r.Logger.Error("approval timed out", "approvalID", approvalID, "deadline", approval.deadline)
 			delete(r.pendingApprovals, approvalID)
 			r.queueAction(
 				&toolResponseAction{
-					request:  &toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group},
+					request:  &toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ValidationResult: approval.ValidationResult, Group: approval.Group},
 					response: fmt.Sprintf("approval timed out for tool: %s", approval.Tool.Name),
 				})
 		}
@@ -260,17 +277,17 @@ func (r *AgentRun) checkApprovalTimeouts() {
 func (r *AgentRun) runApprovalAction(act *approvalAction) {
 	approval, ok := r.pendingApprovals[act.ApprovalID]
 	if !ok {
-		r.logger.Error("invalid approval ID", "approvalID", act.ApprovalID)
+		r.Logger.Error("invalid approval ID", "approvalID", act.ApprovalID)
 		return
 	}
 	delete(r.pendingApprovals, act.ApprovalID)
 
 	if act.Approved {
-		r.queueAction(&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group})
+		r.queueAction(&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ValidationResult: approval.ValidationResult, Group: approval.Group})
 		return
 	}
 	r.queueAction(&toolResponseAction{
-		request:  &toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ToolArgs: approval.ToolArgs, Group: approval.Group},
+		request:  &toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ValidationResult: approval.ValidationResult, Group: approval.Group},
 		response: fmt.Sprintf("approval denied for tool: %s", approval.Tool.Name),
 	})
 }
@@ -318,9 +335,9 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 	}
 
 	if r.parentRun == nil {
-		r.logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
+		r.Logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
 	} else {
-		r.logger.Debug("calling sub-agent LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
+		r.Logger.Debug("calling sub-agent LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
 	}
 
 	var respMsg ai.AIMessage
@@ -361,18 +378,18 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 
 	eventID := uuid.New().String()
 	toolEvent := &ToolEvent{
-		RunID:     r.id,
-		EventID:   eventID,
-		AgentName: r.agent.Name,
-		SessionID: r.session.ID,
-		ToolName:  act.ToolName,
-		ToolArgs:  act.ToolArgs,
-		ToolGroup: act.Group,
+		RunID:            r.id,
+		EventID:          eventID,
+		AgentName:        r.agent.Name,
+		SessionID:        r.session.ID,
+		ToolName:         act.ToolName,
+		ValidationResult: act.ValidationResult,
+		ToolGroup:        act.Group,
 	}
 	r.queueEvent(toolEvent) // send after adding to the map
 
-	r.logger.Debug("calling tool", "tool", act.ToolName, "args", act.ToolArgs)
-	result, err := tool.Call(r, act.ToolArgs)
+	r.Logger.Debug("calling tool", "tool", act.ToolName, "args", act.ValidationResult)
+	result, err := tool.call(r, act.ValidationResult)
 	if err != nil {
 		if r.trace != nil {
 			r.trace.RecordError(err)
@@ -394,7 +411,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 
 	if r.trace != nil {
 		// Convert tool args to JSON string for tracing
-		argsJSON, _ := json.Marshal(act.ToolArgs)
+		argsJSON, _ := json.Marshal(act.ValidationResult)
 		r.trace.LLMToolResponse(r.agent.Name, &ai.ToolCall{
 			ID:   act.ToolCallID,
 			Type: "function",
@@ -531,11 +548,50 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			}
 			r.queueAction(&toolResponseAction{request: &toolCallAction{
 				ToolCallID: tc.ID,
-				ToolName:   tc.Name, ToolArgs: args, Group: group},
+				ToolName:   tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
 				response: fmt.Sprintf("invalid tool parameters: %v", err)})
 			continue
 		}
-		r.queueToolCallAction(tc.Name, args, tc.ID, group)
+
+		tool := r.findTool(tc.Name)
+		if tool == nil {
+			r.queueAction(&toolResponseAction{
+				request:  &toolCallAction{ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
+				response: fmt.Sprintf("tool not found: %s", tc.Name),
+			})
+			continue
+		}
+
+		// run validation
+		values, err := tool.validateInput(r, args)
+		if err != nil {
+			r.queueAction(&toolResponseAction{
+				request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
+				response: fmt.Sprintf("invalid tool parameters: %v", err)})
+			continue
+		}
+
+		if tool.RequireApproval {
+			approvalID := uuid.New().String()
+			r.pendingApprovals[approvalID] = pendingApproval{
+				ApprovalID:       approvalID,
+				Tool:             tool,
+				ToolCallID:       tc.ID,
+				ValidationResult: values,
+				Group:            group,
+				deadline:         time.Now().Add(r.approvalTimeout),
+			}
+			approvalEvent := &ApprovalEvent{
+				RunID:            r.id,
+				ApprovalID:       approvalID,
+				ToolName:         tc.Name,
+				ValidationResult: values,
+			}
+			r.queueEvent(approvalEvent)
+			return
+		}
+
+		r.queueAction(&toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: values, Group: group})
 	}
 }
 
@@ -550,7 +606,7 @@ func (r *AgentRun) queueEvent(event Event) {
 		// queued
 	default:
 		// queue full, drop or handle overflow
-		r.logger.Error("event queue is full. dropping event", "event", event)
+		r.Logger.Error("event queue is full. dropping event", "event", event)
 	}
 }
 
@@ -560,6 +616,6 @@ func (r *AgentRun) queueAction(action Action) {
 		// queued
 	default:
 		// queue full, drop or handle overflow
-		r.logger.Error("action queue is full. dropping action", "action", action)
+		r.Logger.Error("action queue is full. dropping action", "action", action)
 	}
 }

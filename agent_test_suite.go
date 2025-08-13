@@ -1115,17 +1115,18 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 				finalContent = e.Content
 			}
 		case *ToolEvent:
+			args := e.ValidationResult.Values.(map[string]any)
 			toolOrder = append(toolOrder, e.ToolName)
 			if e.ToolName == "save_memory" {
 				saveIdxs = append(saveIdxs, len(toolOrder)-1)
 			}
 			if e.ToolName == "lookup_company" {
-				if v, ok := e.ToolArgs["input"].(string); ok {
+				if v, ok := args["input"].(string); ok {
 					companyToolInput = v
 				}
 			}
 			if e.ToolName == "lookup_company_supplier" {
-				if v, ok := e.ToolArgs["input"].(string); ok {
+				if v, ok := args["input"].(string); ok {
 					supplierToolInput = v
 				}
 			}

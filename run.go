@@ -350,6 +350,8 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 			r.handleAIMessage(chunk, true) // isChunk is true
 			return nil
 		})
+		respMsg.Content = ""
+		respMsg.Think = ""
 	default:
 		respMsg, err = r.model.Call(r.session.Context, msgs, tools)
 	}

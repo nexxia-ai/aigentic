@@ -320,13 +320,11 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
-			var finalContent string
+			var chunks []string
 			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
-					if !e.IsChunk {
-						finalContent = e.Content
-					}
+					chunks = append(chunks, e.Content)
 				case *ToolEvent:
 				case *ApprovalEvent:
 					run.Approve(e.ApprovalID, true)
@@ -334,6 +332,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
+			finalContent := strings.Join(chunks, "")
 			if tt.validate != nil {
 				tt.validate(t, finalContent, tt.agent)
 			}
@@ -394,13 +393,11 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
-			var finalContent string
+			var chunks []string
 			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
-					if !e.IsChunk {
-						finalContent = e.Content
-					}
+					chunks = append(chunks, e.Content)
 				case *ToolEvent:
 				case *ApprovalEvent:
 					run.Approve(e.ApprovalID, true)
@@ -408,6 +405,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
+			finalContent := strings.Join(chunks, "")
 			if test.validate != nil {
 				test.validate(t, finalContent, agent)
 			}
@@ -462,13 +460,11 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
-			var finalContent string
+			var chunks []string
 			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
-					if !e.IsChunk {
-						finalContent = e.Content
-					}
+					chunks = append(chunks, e.Content)
 				case *ToolEvent:
 				case *ApprovalEvent:
 					run.Approve(e.ApprovalID, true)
@@ -476,6 +472,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
+			finalContent := strings.Join(chunks, "")
 			if test.validate != nil {
 				test.validate(t, finalContent, test.agent)
 			}
@@ -569,13 +566,11 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 				t.Fatalf("Agent run failed: %v", err)
 			}
 
-			finalContent := ""
+			var chunks []string
 			for ev := range run.Next() {
 				switch e := ev.(type) {
 				case *ContentEvent:
-					if !e.IsChunk {
-						finalContent = e.Content
-					}
+					chunks = append(chunks, e.Content)
 				case *ToolEvent:
 					toolOrder = append(toolOrder, e.ToolName)
 				case *ApprovalEvent:
@@ -584,6 +579,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
+			finalContent := strings.Join(chunks, "")
 
 			// Validate final content
 			assert.NotEmpty(t, finalContent)
@@ -863,15 +859,11 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
-	var finalContent string
 	var chunks []string
 	for ev := range run.Next() {
 		switch e := ev.(type) {
 		case *ContentEvent:
 			chunks = append(chunks, e.Content)
-			if !e.IsChunk {
-				finalContent = e.Content
-			}
 		case *ToolEvent:
 		case *ApprovalEvent:
 			run.Approve(e.ApprovalID, true)
@@ -879,6 +871,7 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}
+	finalContent := strings.Join(chunks, "")
 
 	assert.NotEmpty(t, finalContent)
 	assert.NotEmpty(t, agent.Name)
@@ -904,15 +897,11 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
-	var finalContent string
 	var chunks []string
 	for ev := range run.Next() {
 		switch e := ev.(type) {
 		case *ContentEvent:
 			chunks = append(chunks, e.Content)
-			if !e.IsChunk {
-				finalContent = e.Content
-			}
 		case *ToolEvent:
 		case *ApprovalEvent:
 			run.Approve(e.ApprovalID, true)
@@ -921,6 +910,7 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 		}
 	}
 
+	finalContent := strings.Join(chunks, "")
 	assert.NotEmpty(t, finalContent)
 	assert.NotEmpty(t, run.ID)
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
@@ -945,15 +935,11 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
-	var finalContent string
 	var chunks []string
 	for ev := range run.Next() {
 		switch e := ev.(type) {
 		case *ContentEvent:
 			chunks = append(chunks, e.Content)
-			if !e.IsChunk {
-				finalContent = e.Content
-			}
 		case *ToolEvent:
 		case *ApprovalEvent:
 			run.Approve(e.ApprovalID, true)
@@ -962,6 +948,7 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 		}
 	}
 
+	finalContent := strings.Join(chunks, "")
 	assert.NotEmpty(t, finalContent)
 	assert.NotEmpty(t, run.ID)
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
@@ -987,15 +974,11 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
-	var finalContent string
 	var chunks []string
 	for ev := range run.Next() {
 		switch e := ev.(type) {
 		case *ContentEvent:
 			chunks = append(chunks, e.Content)
-			if !e.IsChunk {
-				finalContent = e.Content
-			}
 		case *ToolEvent:
 		case *ApprovalEvent:
 			run.Approve(e.ApprovalID, true)
@@ -1004,6 +987,7 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 		}
 	}
 
+	finalContent := strings.Join(chunks, "")
 	assert.NotEmpty(t, finalContent)
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
@@ -1028,16 +1012,12 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
-	var finalContent string
 	var chunks []string
 	var toolCalls int
 	for ev := range run.Next() {
 		switch e := ev.(type) {
 		case *ContentEvent:
 			chunks = append(chunks, e.Content)
-			if !e.IsChunk {
-				finalContent = e.Content
-			}
 		case *ToolEvent:
 			toolCalls++
 		case *ApprovalEvent:
@@ -1047,6 +1027,7 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 		}
 	}
 
+	finalContent := strings.Join(chunks, "")
 	assert.NotEmpty(t, finalContent)
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
@@ -1102,18 +1083,16 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
-	var finalContent string
 	var toolOrder []string
 	var saveIdxs []int
 	var companyToolInput string
 	var supplierToolInput string
+	var chunks []string
 
 	for ev := range run.Next() {
 		switch e := ev.(type) {
 		case *ContentEvent:
-			if !e.IsChunk {
-				finalContent = e.Content
-			}
+			chunks = append(chunks, e.Content)
 		case *ToolEvent:
 			args := e.ValidationResult.Values.(map[string]any)
 			toolOrder = append(toolOrder, e.ToolName)
@@ -1137,7 +1116,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		}
 	}
 
-	// Validate final output is the memory content containing both results
+	finalContent := strings.Join(chunks, "")
 	assert.NotEmpty(t, finalContent, "Final response should not be empty")
 	assert.Contains(t, strings.ToLower(finalContent), "nexxia", "memory should include company result")
 	assert.Contains(t, strings.ToLower(finalContent), "phoenix", "memory should include supplier result")

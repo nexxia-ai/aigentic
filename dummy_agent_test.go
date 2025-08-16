@@ -1,7 +1,6 @@
 package aigentic
 
 import (
-	"log/slog"
 	"testing"
 	"time"
 
@@ -244,7 +243,7 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		MaxLLMCalls:  3, // Limit to 3 LLM calls
 		AgentTools:   []AgentTool{WrapTool(tool)},
 		Trace:        NewTrace(),
-		LogLevel:     slog.LevelDebug,
+		// LogLevel:     slog.LevelDebug,
 	}
 
 	run, err := agent.Start("Look up company information")
@@ -469,7 +468,7 @@ func TestToolApprovalGiven(t *testing.T) {
 		Instructions: "Use the test_approval_tool when requested.",
 		AgentTools:   []AgentTool{approvalTool},
 		Trace:        NewTrace(),
-		LogLevel:     slog.LevelDebug,
+		// LogLevel:     slog.LevelDebug,
 	}
 
 	run, err := agent.Start("Please execute the test tool with action 'test_action'")
@@ -522,7 +521,7 @@ func TestToolApprovalRejected(t *testing.T) {
 		Instructions: "Use the test_approval_tool when requested.",
 		AgentTools:   []AgentTool{approvalTool},
 		Trace:        NewTrace(),
-		LogLevel:     slog.LevelDebug,
+		// LogLevel:     slog.LevelDebug,
 	}
 
 	run, err := agent.Start("Please execute the test tool with action 'test_action'")
@@ -576,7 +575,7 @@ func TestToolApprovalTimeout(t *testing.T) {
 		Instructions: "Use the test_approval_tool when requested.",
 		AgentTools:   []AgentTool{approvalTool},
 		Trace:        NewTrace(),
-		LogLevel:     slog.LevelDebug,
+		// LogLevel:     slog.LevelDebug,
 	}
 
 	approvalTimeout = time.Millisecond * 300

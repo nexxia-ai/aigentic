@@ -501,14 +501,13 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		r.queueEvent(event)
 	}
 
-	// return if this is a chunk (streaming)
-	if isChunk {
+	// return if this is a chunk (streaming) and there are no tool calls
+	if isChunk && len(msg.ToolCalls) == 0 {
 		return
 	}
 
 	// this not a chunk, which means the model Call/Stream is complete
 	// add to history and fire tool calls
-
 	if r.trace != nil {
 		r.trace.LLMAIResponse(r.agent.Name, msg)
 	}
@@ -530,19 +529,24 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		}
 	}
 
-	// reset history slice each time
+	// When the agent is not including history,
+	// reset history slice each time so that we only keep the last assistant msg and tool responses (if any)
 	if !r.memory.IncludeHistory {
 		r.msgHistory = []ai.Message{}
 	}
 	r.msgHistory = append(r.msgHistory, msg)
 
-	// Handle tool calls
+	r.groupToolCalls(msg.ToolCalls, msg)
+}
+
+// groupToolCalls processes a slice of tool calls and queues the appropriate actions
+func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage) {
 	group := &toolCallGroup{
 		aiMessage: &msg,
 		responses: make(map[string]ai.ToolMessage),
 	}
 
-	for _, tc := range msg.ToolCalls {
+	for _, tc := range toolCalls {
 		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
 			if r.trace != nil {

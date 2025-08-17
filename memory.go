@@ -5,11 +5,10 @@ import (
 )
 
 type Memory struct {
-	SystemPrompt   func() string
-	UserPrompt     func() string
-	content        string
-	Tool           AgentTool
-	IncludeHistory bool
+	SystemPrompt func() string
+	UserPrompt   func() string
+	content      string
+	Tool         AgentTool
 }
 
 const systemPrompt = `
@@ -35,10 +34,9 @@ func NewMemory() *Memory {
 		SystemPrompt: func() string {
 			return systemPrompt
 		},
-		content:        "memory is empty",
-		UserPrompt:     nil,
-		Tool:           NewSaveMemoryTool(),
-		IncludeHistory: false,
+		content:    "memory is empty",
+		UserPrompt: nil,
+		Tool:       NewSaveMemoryTool(),
 	}
 }
 

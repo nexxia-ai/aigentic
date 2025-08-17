@@ -29,6 +29,8 @@ type Agent struct {
 	// IncludeHistory is a flag to include the message history in the prompt.
 	IncludeHistory bool
 
+	Memory *Memory
+
 	// Retries is the number of times to retry the agent if it fails.
 	Retries             int
 	DelayBetweenRetries int

@@ -19,7 +19,8 @@ var (
 )
 
 type MCPConfig struct {
-	MCPServers map[string]ServerConfig `json:"mcpServers"`
+	MCPServers  map[string]ServerConfig `json:"mcpServers"`
+	InitTimeout time.Duration           `json:"initTimeout,omitempty"`
 }
 
 type ServerConfig struct {
@@ -80,7 +81,10 @@ func createMCPClients(config *MCPConfig) (map[string]MCPClient, error) {
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if config.InitTimeout == 0 {
+			config.InitTimeout = 30 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), config.InitTimeout)
 		defer cancel()
 
 		slog.Info("Initializing server...", "name", name)

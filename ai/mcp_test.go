@@ -2,6 +2,7 @@ package ai
 
 import (
 	"testing"
+	"time"
 )
 
 func TestNewMCPHost(t *testing.T) {
@@ -24,9 +25,11 @@ func TestNewMCPHost(t *testing.T) {
 				Command: "mcp-filesystem-server",
 				Args: []string{
 					"C:\\Users\\User\\Downloads",
-					"c:"},
+					"c:",
+				},
 			},
 		},
+		InitTimeout: 1 * time.Second,
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

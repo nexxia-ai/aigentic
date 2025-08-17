@@ -40,8 +40,10 @@ func (r *AgentRun) createSystemPrompt() string {
 		sysMsg += "\n <instructions>\n" + r.agent.Instructions + "\n</instructions>\n\n"
 	}
 
-	if s := r.memory.SystemPrompt(); s != "" {
-		sysMsg += "\n<memory>\n" + s + "\n</memory>\n\n"
+	if r.memory != nil {
+		if s := r.memory.SystemPrompt(); s != "" {
+			sysMsg += "\n<memory>\n" + s + "\n</memory>\n\n"
+		}
 	}
 
 	if s := r.createToolPrompt(); s != "" {
@@ -54,9 +56,11 @@ func (r *AgentRun) createSystemPrompt() string {
 // createUserMsg returns a list of Messages, with each attachment as a separate Resource message
 func (r *AgentRun) createUserMsg(message string) []ai.Message {
 	userMsg := ""
-	if s := r.memory.Content(); s != "" {
-		userMsg += "This is the content of the memory file (called ContextMemory.md):\n"
-		userMsg += "<ContextMemory.md>\n" + s + "\n</ContextMemory.md>\n\n"
+	if r.memory != nil {
+		if s := r.memory.Content(); s != "" {
+			userMsg += "This is the content of the memory file (called ContextMemory.md):\n"
+			userMsg += "<ContextMemory.md>\n" + s + "\n</ContextMemory.md>\n\n"
+		}
 	}
 
 	if message != "" {

@@ -23,7 +23,8 @@ type AgentRun struct {
 	tools      []AgentTool
 	msgHistory []ai.Message
 
-	memory *Memory
+	memory         *Memory
+	includeHistory bool
 
 	eventQueue       chan Event
 	actionQueue      chan Action
@@ -62,9 +63,6 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		maxLLMCalls = a.MaxLLMCalls
 	}
 
-	memory := NewMemory()
-	memory.IncludeHistory = a.IncludeHistory
-
 	run := &AgentRun{
 		id:               runID,
 		agent:            a,
@@ -77,7 +75,8 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		actionQueue:      make(chan Action, 100),
 		pendingApprovals: make(map[string]pendingApproval),
 		approvalTimeout:  approvalTimeout,
-		memory:           memory,
+		memory:           a.Memory,
+		includeHistory:   a.IncludeHistory,
 		Logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 	run.tools = run.addTools()
@@ -154,7 +153,9 @@ func (r *AgentRun) addTools() []AgentTool {
 	}
 
 	// Add memory tool
-	tools = append(tools, r.memory.Tool)
+	if r.memory != nil {
+		tools = append(tools, r.memory.Tool)
+	}
 
 	// make sure all tools have a validation and execute function
 	for i := range tools {
@@ -533,7 +534,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 
 	// When the agent is not including history,
 	// reset history slice each time so that we only keep the last assistant msg and tool responses (if any)
-	if !r.memory.IncludeHistory {
+	if !r.includeHistory {
 		r.msgHistory = []ai.Message{}
 	}
 	r.msgHistory = append(r.msgHistory, msg)

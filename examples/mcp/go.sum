@@ -14,6 +14,8 @@ github.com/mark3labs/mcp-go v0.25.0 h1:UUpcMT3L5hIhuDy7aifj4Bphw4Pfx1Rf8mzMXDe8R
 github.com/mark3labs/mcp-go v0.25.0/go.mod h1:rXqOudj/djTORU/ThxYx8fqEVj/5pvTuuebQ2RC7uk4=
 github.com/nexxia-ai/aigentic v0.3.2 h1:HeykHs0fSZ43IC67m3jWYuKYSFzPhs2PTxWDLp4xrNg=
 github.com/nexxia-ai/aigentic v0.3.2/go.mod h1:KJK0WmbpjyAfcoHUDCVZz10GgLDCsL/qQM22xgO5ZAE=
+github.com/nexxia-ai/aigentic-openai v0.2.1 h1:cbMm6WRwlbeJo6mDB6JaHL+FLrb1XR6BXBDQNRNQCnw=
+github.com/nexxia-ai/aigentic-openai v0.2.1/go.mod h1:/56+FhxMN21x7lAlStjjOXyXU54gRLL355mk4lzfnUg=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rogpeppe/go-internal v1.11.0 h1:cWPaGQEPrBb5/AsnsZesgZZ9yb1OQ+GOISoDNXVBh4M=

@@ -2,7 +2,10 @@ module mcp
 
 go 1.24.3
 
-require github.com/nexxia-ai/aigentic v0.3.2
+require (
+	github.com/nexxia-ai/aigentic v0.3.2
+	github.com/nexxia-ai/aigentic-openai v0.2.1
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

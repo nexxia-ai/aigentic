@@ -63,6 +63,8 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 	}
 
 	memory := NewMemory()
+	memory.IncludeHistory = a.IncludeHistory
+
 	run := &AgentRun{
 		id:               runID,
 		agent:            a,

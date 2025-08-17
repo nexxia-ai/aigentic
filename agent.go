@@ -26,6 +26,9 @@ type Agent struct {
 	//       "call tool X, then tool Y, then tool Z, in this order".
 	Instructions string
 
+	// IncludeHistory is a flag to include the message history in the prompt.
+	IncludeHistory bool
+
 	// Retries is the number of times to retry the agent if it fails.
 	Retries             int
 	DelayBetweenRetries int

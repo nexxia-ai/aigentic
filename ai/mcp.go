@@ -40,13 +40,18 @@ type ToolResult struct {
 	Error   bool
 }
 
-type MCPHost struct {
-	clients map[string]mcpclient.MCPClient
-	Tools   []*Tool
+type MCPClient struct {
+	Name   string
+	client mcpclient.MCPClient
+	Tools  []Tool
 }
 
-func createMCPClients(config *MCPConfig) (map[string]mcpclient.MCPClient, error) {
-	clients := make(map[string]mcpclient.MCPClient)
+type MCPHost struct {
+	Clients map[string]MCPClient
+}
+
+func createMCPClients(config *MCPConfig) (map[string]MCPClient, error) {
+	clients := make(map[string]MCPClient)
 
 	for name, server := range config.MCPServers {
 		var env []string
@@ -71,14 +76,8 @@ func createMCPClients(config *MCPConfig) (map[string]mcpclient.MCPClient, error)
 			client, err = mcpclient.NewStdioMCPClient(server.Command, env, server.Args...)
 		}
 		if err != nil {
-			for _, c := range clients {
-				c.Close()
-			}
-			return nil, fmt.Errorf(
-				"failed to create MCP client for %s: %w",
-				name,
-				err,
-			)
+			slog.Error("failed to create MCP client - skipping mcp server", "name", name, "error", err)
+			continue
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -87,29 +86,119 @@ func createMCPClients(config *MCPConfig) (map[string]mcpclient.MCPClient, error)
 		slog.Info("Initializing server...", "name", name)
 		initRequest := mcp.InitializeRequest{}
 		initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-		initRequest.Params.ClientInfo = mcp.Implementation{
-			Name:    "mcphost",
-			Version: "0.1.0",
-		}
+		initRequest.Params.ClientInfo = mcp.Implementation{Name: "mcphost", Version: "0.1.0"}
 		initRequest.Params.Capabilities = mcp.ClientCapabilities{}
 
 		_, err = client.Initialize(ctx, initRequest)
 		if err != nil {
 			client.Close()
-			for _, c := range clients {
-				c.Close()
-			}
-			return nil, fmt.Errorf(
-				"failed to initialize MCP client for %s: %w",
-				name,
-				err,
-			)
+			slog.Error("failed to initialize MCP client - skipping mcp server", "name", name, "error", err)
+			continue
 		}
 
-		clients[name] = client
+		mcpClient := MCPClient{Name: name, client: client}
+		mcpClient.Tools, err = mcpClient.fetchTools()
+		if err != nil {
+			slog.Error("failed to fetch tools", "name", name, "error", err)
+			continue
+		}
+		clients[name] = mcpClient
 	}
 
 	return clients, nil
+}
+
+func (h *MCPClient) fetchTools() ([]Tool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	toolsResult, err := h.client.ListTools(ctx, mcp.ListToolsRequest{})
+	cancel()
+
+	if err != nil {
+		slog.Error("Error fetching tools", "server", h.Name, "error", err)
+		return nil, err
+	}
+
+	var tools []Tool
+	for _, tool := range toolsResult.Tools {
+		simpleTool := Tool{Name: tool.Name, Description: tool.Description}
+		if len(tool.InputSchema.Properties) > 0 {
+			// Convert mcp.ToolInputSchema to map[string]interface{}
+			simpleTool.InputSchema = map[string]interface{}{
+				"type":       "object",
+				"properties": tool.InputSchema.Properties,
+				"required":   tool.InputSchema.Required,
+			}
+		}
+
+		// Set up the execute function to call the MCP tool
+		simpleTool.Execute = func(args map[string]interface{}) (*ToolResult, error) {
+			request := mcp.CallToolRequest{
+				Request: mcp.Request{
+					Method: "tools/call",
+				},
+			}
+			request.Params.Name = tool.Name
+			if len(tool.InputSchema.Properties) > 0 {
+				request.Params.Arguments = args
+			}
+
+			slog.Debug("tool call", "tool", tool.Name, "args", args)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			result, err := h.client.CallTool(ctx, request)
+			if err != nil {
+				slog.Error("error calling tool", "tool", tool.Name, "error", err)
+				err = errors.Join(ErrCallingTool, err)
+				return nil, err
+			}
+
+			toolResult := &ToolResult{}
+			if result.IsError {
+				msg := "failed to call tool"
+				if c, ok := result.Content[0].(mcp.TextContent); ok {
+					msg = c.Text
+				}
+				slog.Error("error calling tool", "tool", tool.Name, "error", msg)
+				err = errors.Join(ErrCallingTool, errors.New(msg))
+				return nil, err
+			}
+
+			for _, content := range result.Content {
+				switch c := content.(type) {
+				case mcp.TextContent:
+					toolResult.Content = append(toolResult.Content, ToolContent{
+						Type:    "text",
+						Content: string(c.Text),
+					})
+					slog.Info("tool call text result", "tool", tool.Name, "result", string(c.Text))
+				case mcp.ImageContent:
+					toolResult.Content = append(toolResult.Content, ToolContent{
+						Type:    "image",
+						Content: c.Data,
+					})
+					slog.Info("tool call image result", "tool", tool.Name, "result_len", len(c.Data))
+				case mcp.EmbeddedResource:
+					s, ok := c.Resource.(mcp.TextResourceContents)
+					if !ok {
+						slog.Error("tool call embedded result", "tool", tool.Name, "result", fmt.Sprintf("%+v", c.Resource))
+						continue
+					}
+					toolResult.Content = append(toolResult.Content, ToolContent{
+						Type:    "resource",
+						Content: s.MIMEType + ":" + s.URI + ":" + s.Text,
+					})
+					slog.Info("tool call embedded result", "tool", tool.Name, "result", s.MIMEType+":"+s.URI+":"+s.Text)
+				default:
+					slog.Error("tool call unsupported content type", "tool", tool.Name, "type", fmt.Sprintf("%T", content))
+				}
+			}
+
+			return toolResult, nil
+		}
+
+		tools = append(tools, simpleTool)
+	}
+	return tools, nil
 }
 
 func LoadMCPConfig(filename string) (*MCPConfig, error) {
@@ -160,124 +249,22 @@ func NewMCPHost(config *MCPConfig) (*MCPHost, error) {
 	var err error
 
 	h := &MCPHost{}
-	h.clients, err = createMCPClients(config)
+	h.Clients, err = createMCPClients(config)
 	if err != nil {
 		return nil, fmt.Errorf("error creating MCP clients: %v", err)
 	}
 
-	for name := range h.clients {
+	for name := range h.Clients {
 		slog.Info("Server connected", "name", name)
 	}
 
-	for serverName, client := range h.clients {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-
-		toolsResult, err := client.ListTools(ctx, mcp.ListToolsRequest{})
-		cancel()
-
-		if err != nil {
-			slog.Error(
-				"Error fetching tools",
-				"server",
-				serverName,
-				"error",
-				err,
-			)
-			continue
-		}
-
-		for _, tool := range toolsResult.Tools {
-			// Create a SimpleTool that wraps the MCP tool
-			simpleTool := &Tool{
-				Name:        tool.Name,
-				Description: tool.Description,
-			}
-			if len(tool.InputSchema.Properties) > 0 {
-				// Convert mcp.ToolInputSchema to map[string]interface{}
-				simpleTool.InputSchema = map[string]interface{}{
-					"type":       "object",
-					"properties": tool.InputSchema.Properties,
-					"required":   tool.InputSchema.Required,
-				}
-			}
-
-			// Set up the execute function to call the MCP tool
-			simpleTool.Execute = func(args map[string]interface{}) (*ToolResult, error) {
-				request := mcp.CallToolRequest{
-					Request: mcp.Request{
-						Method: "tools/call",
-					},
-				}
-				request.Params.Name = tool.Name
-				if len(tool.InputSchema.Properties) > 0 {
-					request.Params.Arguments = args
-				}
-
-				slog.Debug("tool call", "tool", tool.Name, "args", args)
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				result, err := client.CallTool(ctx, request)
-				if err != nil {
-					slog.Error("error calling tool", "tool", tool.Name, "error", err)
-					err = errors.Join(ErrCallingTool, err)
-					return nil, err
-				}
-
-				toolResult := &ToolResult{}
-				if result.IsError {
-					msg := "failed to call tool"
-					if c, ok := result.Content[0].(mcp.TextContent); ok {
-						msg = c.Text
-					}
-					slog.Error("error calling tool", "tool", tool.Name, "error", msg)
-					err = errors.Join(ErrCallingTool, errors.New(msg))
-					return nil, err
-				}
-
-				for _, content := range result.Content {
-					switch c := content.(type) {
-					case mcp.TextContent:
-						toolResult.Content = append(toolResult.Content, ToolContent{
-							Type:    "text",
-							Content: string(c.Text),
-						})
-						slog.Info("tool call text result", "tool", tool.Name, "result", string(c.Text))
-					case mcp.ImageContent:
-						toolResult.Content = append(toolResult.Content, ToolContent{
-							Type:    "image",
-							Content: c.Data,
-						})
-						slog.Info("tool call image result", "tool", tool.Name, "result_len", len(c.Data))
-					case mcp.EmbeddedResource:
-						s, ok := c.Resource.(mcp.TextResourceContents)
-						if !ok {
-							slog.Error("tool call embedded result", "tool", tool.Name, "result", fmt.Sprintf("%+v", c.Resource))
-							continue
-						}
-						toolResult.Content = append(toolResult.Content, ToolContent{
-							Type:    "resource",
-							Content: s.MIMEType + ":" + s.URI + ":" + s.Text,
-						})
-						slog.Info("tool call embedded result", "tool", tool.Name, "result", s.MIMEType+":"+s.URI+":"+s.Text)
-					default:
-						slog.Error("tool call unsupported content type", "tool", tool.Name, "type", fmt.Sprintf("%T", content))
-					}
-				}
-
-				return toolResult, nil
-			}
-
-			h.Tools = append(h.Tools, simpleTool)
-		}
-
-	}
 	return h, nil
 }
 
 func (h *MCPHost) Close() {
 	slog.Info("Shutting down MCP servers...")
-	for name, client := range h.clients {
-		if err := client.Close(); err != nil {
+	for name, client := range h.Clients {
+		if err := client.client.Close(); err != nil {
 			slog.Error("Failed to close server", "name", name, "error", err)
 		}
 	}

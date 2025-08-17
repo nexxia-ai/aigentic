@@ -178,7 +178,7 @@ func TestProcessImage(t *testing.T, model *Model) {
 		ctx: context.Background(),
 		messages: []Message{
 			UserMessage{Role: UserRole,
-				Content: "Extract the text from this image and return the word SUCCESS if it worked followed by the text" +
+				Content: "Extract the text from this image and return the word SUCCESS if it worked followed by the extracted text verbatim" +
 					"Return the word FAILED followed by your explanation if you could not extract the text" +
 					"Do not make up information. If you cannot read the image, return FAILED followed by your explanation."},
 			ResourceMessage{Role: UserRole, Name: "test.png", MIMEType: "image/png", Body: func() []byte {
@@ -536,7 +536,7 @@ func TestStreamingBasic(t *testing.T, model *Model) {
 	if len(chunks) < 2 {
 		t.Errorf("Expected multiple chunks, got %d", len(chunks))
 	}
-	t.Logf("Got %d chunks", len(chunks))
+	// t.Logf("Got %d chunks", len(chunks))
 
 	// Verify the final content matches the accumulated chunks
 	accumulatedChunks := strings.Join(chunks, "")
@@ -587,7 +587,7 @@ func TestStreamingWithTools(t *testing.T, model *Model) {
 	if len(chunks) < 2 {
 		t.Errorf("Expected at least one chunk, got %d", len(chunks))
 	}
-	t.Logf("Got %d chunks", len(chunks))
+	// t.Logf("Got %d chunks", len(chunks))
 
 	// Check that we received tool calls in any chunk or final message
 	foundEchoTool := false
@@ -671,5 +671,5 @@ func TestTextMultipleMessages(t *testing.T, model *Model) {
 		t.Errorf("Expected response to contain calculation result or reference to numbers, got: %s", got.Content)
 	}
 
-	t.Logf("Response: %s", got.Content)
+	// t.Logf("Response: %s", got.Content)
 }

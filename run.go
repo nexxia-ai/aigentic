@@ -42,11 +42,15 @@ func (r *AgentRun) ID() string {
 	return r.id
 }
 
+func (r *AgentRun) Session() *Session {
+	return r.session
+}
+
 func newAgentRun(a *Agent, message string) *AgentRun {
 	runID := uuid.New().String()
 	session := a.Session
 	if session == nil {
-		session = NewSession()
+		session = NewSession(context.Background())
 	}
 	model := a.Model
 	if model == nil {

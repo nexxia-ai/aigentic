@@ -21,20 +21,30 @@ type Session struct {
 	// Session state and memory
 	State map[string]interface{}
 
-	Context context.Context
-	Trace   *Trace
+	Context    context.Context
+	cancelFunc context.CancelFunc
+	Trace      *Trace
 
 	RunHistory []AgentRun
 }
 
 // NewSession creates a new session with default settings
-func NewSession() *Session {
+func NewSession(ctx context.Context) *Session {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(ctx)
 	s := &Session{
-		ID:        uuid.New().String(),
-		Context:   context.Background(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		State:     make(map[string]interface{}),
+		ID:         uuid.New().String(),
+		Context:    ctx,
+		cancelFunc: cancel,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		State:      make(map[string]interface{}),
 	}
 	return s
+}
+
+func (h *Session) Cancel() {
+	h.cancelFunc()
 }

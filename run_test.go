@@ -76,7 +76,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 			}
 
 			// Create a session
-			session := NewSession()
+			session := NewSession(context.Background())
 			agent.Session = session
 
 			// Create an agent run
@@ -175,7 +175,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 	}
 
 	// Create a session
-	session := NewSession()
+	session := NewSession(context.Background())
 	agent.Session = session
 
 	// Create an agent run
@@ -242,7 +242,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 	}
 
 	// Create a session
-	session := NewSession()
+	session := NewSession(context.Background())
 	agent.Session = session
 
 	// Create an agent run
@@ -316,7 +316,7 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 	}
 
 	// Create a session
-	session := NewSession()
+	session := NewSession(context.Background())
 	agent.Session = session
 
 	// Create an agent run
@@ -417,7 +417,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 		Trace:       NewTrace(),
 	}
 
-	session := NewSession()
+	session := NewSession(context.Background())
 	agent.Session = session
 
 	run := newAgentRun(agent, "Test chunking")

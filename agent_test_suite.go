@@ -3,6 +3,7 @@ package aigentic
 // This file contains reusable integration tests to test various model providers.
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -270,7 +271,7 @@ func NewCreateInvoiceTool() AgentTool {
 
 // Individual test functions that can be reused
 func TestBasicAgent(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	tests := []struct {
@@ -341,7 +342,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 }
 
 func TestAgentRun(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	newAgent := func() Agent {
@@ -414,7 +415,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 }
 
 func TestToolIntegration(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	newAgent := func() Agent {
@@ -481,7 +482,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 }
 
 func TestTeamCoordination(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	// Subagents
@@ -522,6 +523,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			"Do not add commentary.",
 		Agents: []*Agent{&lookup, &companyCreator, &invoiceCreator},
 		Trace:  NewTrace(),
+		Memory: NewMemory(),
 		// LogLevel: slog.LevelDebug,
 	}
 
@@ -842,7 +844,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 }
 
 func TestBasicStreaming(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	agent := Agent{
@@ -880,7 +882,7 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 }
 
 func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	agent := Agent{
@@ -918,7 +920,7 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 }
 
 func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	agent := Agent{
@@ -956,7 +958,7 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 }
 
 func TestStreamingWithTools(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	agent := Agent{
@@ -994,7 +996,7 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 }
 
 func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	agent := Agent{
@@ -1035,7 +1037,7 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 }
 
 func TestMemoryPersistence(t *testing.T, model *ai.Model) {
-	session := NewSession()
+	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
 	// Sub-agents
@@ -1069,6 +1071,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 			"Do not make up information. You must use the tools to get the information.",
 		Agents: []*Agent{&lookupCompany, &lookupSupplier},
 		Trace:  NewTrace(),
+		Memory: NewMemory(),
 	}
 
 	run, err := coordinator.Start(

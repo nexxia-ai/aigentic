@@ -10,7 +10,6 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-// NewMultiAgentChainAgent creates a coordinator with expert agents
 func NewMultiAgentChainAgent(model *ai.Model) aigentic.Agent {
 	const numExperts = 3
 
@@ -43,13 +42,13 @@ func NewMultiAgentChainAgent(model *ai.Model) aigentic.Agent {
 		Return the final names as received from the last expert. do not add any additional text or commentary.`,
 		Model:  model,
 		Agents: experts,
+		Memory: aigentic.NewMemory(),
 		Trace:  aigentic.NewTrace(),
 	}
 
 	return coordinator
 }
 
-// RunMultiAgentChain executes the multi agent chain example and returns benchmark results
 func RunMultiAgentChain(model *ai.Model) (BenchResult, error) {
 	start := time.Now()
 
@@ -83,7 +82,6 @@ func RunMultiAgentChain(model *ai.Model) (BenchResult, error) {
 		}
 	}
 
-	// Check ordering - expert1 should appear before expert2, expert2 before expert3
 	pos1 := strings.Index(response, "expert1")
 	pos2 := strings.Index(response, "expert2")
 	pos3 := strings.Index(response, "expert3")

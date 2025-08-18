@@ -8,22 +8,16 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-// NewConcurrentRunsAgent creates an agent that can handle concurrent executions
-func NewConcurrentRunsAgent(model *ai.Model) aigentic.Agent {
-	return aigentic.Agent{
+func RunConcurrentRuns(model *ai.Model) (BenchResult, error) {
+	start := time.Now()
+
+	var agent = aigentic.Agent{
 		Model:        model,
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
 		AgentTools:   []aigentic.AgentTool{NewSecretNumberTool()},
 		Trace:        aigentic.NewTrace(),
 	}
-}
-
-// RunConcurrentRuns executes the concurrent runs example and returns benchmark results
-func RunConcurrentRuns(model *ai.Model) (BenchResult, error) {
-	start := time.Now()
-
-	agent := NewConcurrentRunsAgent(model)
 
 	// Define multiple sequential runs
 	runs := []struct {

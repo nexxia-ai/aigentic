@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"strings"
 	"time"
 
@@ -9,36 +8,16 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-// NewStreamingAgent creates an agent configured for streaming
-func NewStreamingAgent(model *ai.Model) aigentic.Agent {
-	return aigentic.Agent{
-		Model:        model,
-		Description:  "You are a helpful assistant that provides clear and concise answers.",
-		Instructions: "Always explain your reasoning and provide examples when possible.",
-		Stream:       true,
-	}
-}
-
-// NewStreamingWithToolsAgent creates a streaming agent with tools
-func NewStreamingWithToolsAgent(model *ai.Model) aigentic.Agent {
-	return aigentic.Agent{
-		Model:        model,
-		Description:  "You are a helpful assistant that provides clear and concise answers.",
-		Instructions: "Always explain your reasoning and provide examples when possible.",
-		Stream:       true,
-		AgentTools:   []aigentic.AgentTool{NewSecretNumberTool()},
-	}
-}
-
-// RunStreaming executes the streaming example and returns benchmark results
 func RunStreaming(model *ai.Model) (BenchResult, error) {
 	start := time.Now()
 
-	session := aigentic.NewSession(context.Background())
-	session.Trace = aigentic.NewTrace()
-
-	agent := NewStreamingAgent(model)
-	agent.Session = session
+	agent := aigentic.Agent{
+		Model:        model,
+		Description:  "You are a helpful assistant that provides clear and concise answers.",
+		Instructions: "Always explain your reasoning and provide examples when possible.",
+		Stream:       true,
+		Trace:        aigentic.NewTrace(),
+	}
 
 	run, err := agent.Start("What is the capital of France and give me a brief summary of the city")
 	if err != nil {
@@ -63,14 +42,12 @@ func RunStreaming(model *ai.Model) (BenchResult, error) {
 	finalContent := strings.Join(chunks, "")
 	result := CreateBenchResult("Streaming", model, start, finalContent, nil)
 
-	// Validate response contains expected content
 	if err := ValidateResponse(finalContent, "paris"); err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
 		return result, err
 	}
 
-	// Should have received streaming chunks
 	if len(chunks) < 2 {
 		result.Success = false
 		result.ErrorMessage = "Should have received streaming chunks"
@@ -84,15 +61,17 @@ func RunStreaming(model *ai.Model) (BenchResult, error) {
 	return result, nil
 }
 
-// RunStreamingWithTools executes streaming with tools and returns benchmark results
 func RunStreamingWithTools(model *ai.Model) (BenchResult, error) {
 	start := time.Now()
 
-	session := aigentic.NewSession(context.Background())
-	session.Trace = aigentic.NewTrace()
-
-	agent := NewStreamingWithToolsAgent(model)
-	agent.Session = session
+	agent := aigentic.Agent{
+		Model:        model,
+		Description:  "You are a helpful assistant that provides clear and concise answers.",
+		Instructions: "Always explain your reasoning and provide examples when possible.",
+		Stream:       true,
+		AgentTools:   []aigentic.AgentTool{NewSecretNumberTool()},
+		Trace:        aigentic.NewTrace(),
+	}
 
 	run, err := agent.Start("tell me the name of the company with the number 150. Use tools.")
 	if err != nil {
@@ -117,14 +96,12 @@ func RunStreamingWithTools(model *ai.Model) (BenchResult, error) {
 	finalContent := strings.Join(chunks, "")
 	result := CreateBenchResult("StreamingWithTools", model, start, finalContent, nil)
 
-	// Validate response contains tool result
 	if err := ValidateResponse(finalContent, "Nexxia"); err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
 		return result, err
 	}
 
-	// Should have received streaming chunks
 	if len(chunks) < 2 {
 		result.Success = false
 		result.ErrorMessage = "Should have received streaming chunks"

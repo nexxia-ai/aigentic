@@ -7,25 +7,18 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-// NewFileAttachmentsAgent creates an agent that can analyze file attachments
-func NewFileAttachmentsAgent(model *ai.Model) aigentic.Agent {
-	// Create a sample text document for testing
+func RunFileAttachmentsAgent(model *ai.Model) (BenchResult, error) {
+	start := time.Now()
+
 	doc := aigentic.NewInMemoryDocument("", "sample.txt", []byte("This is a test text file with some sample content for analysis. The content includes information about artificial intelligence and machine learning."), nil)
 
-	return aigentic.Agent{
+	agent := aigentic.Agent{
 		Model:        model,
 		Description:  "You are a helpful assistant that analyzes text files and provides insights.",
 		Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
 		Documents:    []*aigentic.Document{doc},
+		Trace:        aigentic.NewTrace(),
 	}
-}
-
-// RunFileAttachmentsAgent executes the file attachments example and returns benchmark results
-func RunFileAttachmentsAgent(model *ai.Model) (BenchResult, error) {
-	start := time.Now()
-
-	agent := NewFileAttachmentsAgent(model)
-	agent.Trace = aigentic.NewTrace()
 
 	response, err := agent.Execute("Please analyze the attached file and tell me what it contains. If you are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
 
@@ -35,14 +28,12 @@ func RunFileAttachmentsAgent(model *ai.Model) (BenchResult, error) {
 		return result, err
 	}
 
-	// Validate that the analysis was successful
 	if err := ValidateResponse(response, "SUCCESS:"); err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
 		return result, err
 	}
 
-	// Also check that it mentions some content from the file
 	contentChecks := []string{"artificial intelligence", "machine learning", "sample content"}
 	contentFound := false
 	for _, check := range contentChecks {

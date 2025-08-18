@@ -9,20 +9,14 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-// NewSimpleAgent creates a basic conversational agent following the agent rule
-func NewSimpleAgent(model *ai.Model) aigentic.Agent {
-	return aigentic.Agent{
+func RunSimpleAgent(model *ai.Model) (BenchResult, error) {
+	start := time.Now()
+
+	agent := aigentic.Agent{
 		Model:        model,
 		Description:  "A basic conversational agent that provides clear and helpful responses",
 		Instructions: "Answer questions clearly and concisely. For geography questions, provide accurate information.",
 	}
-}
-
-// RunSimpleAgent executes the simple agent example and returns benchmark results
-func RunSimpleAgent(model *ai.Model) (BenchResult, error) {
-	start := time.Now()
-
-	agent := NewSimpleAgent(model)
 	response, err := agent.Execute("What is the capital of Australia?")
 
 	duration := time.Since(start)
@@ -40,7 +34,6 @@ func RunSimpleAgent(model *ai.Model) (BenchResult, error) {
 		return result, err
 	}
 
-	// Validate response content
 	if !strings.Contains(strings.ToLower(response), "canberra") {
 		err = fmt.Errorf("expected response to contain 'Canberra', got: %s", response)
 		result.Success = false

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -39,6 +40,10 @@ type ModelDesc struct {
 
 func openAIProvider(modelName string) *ai.Model {
 	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		slog.Error("OPENAI_API_KEY is not set")
+		return nil
+	}
 	return openai.NewModel(modelName, apiKey)
 }
 
@@ -48,6 +53,10 @@ func ollamaProvider(modelName string) *ai.Model {
 
 func geminiProvider(modelName string) *ai.Model {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
+	if apiKey == "" {
+		slog.Error("GOOGLE_API_KEY is not set")
+		return nil
+	}
 	return gemini.NewGeminiModel(modelName, apiKey)
 }
 
@@ -85,7 +94,7 @@ func main() {
 	for _, name := range modelNames {
 		model := createModel(name)
 		if model == nil {
-			fmt.Printf("Unknown or unconfigured model: %s\n", name)
+			fmt.Printf("Model unknown or missing authentication: %s\n", name)
 			fmt.Println("\nAvailable models:")
 			for _, modelDesc := range modelsTable {
 				fmt.Printf("  %s\n", modelDesc.Name)

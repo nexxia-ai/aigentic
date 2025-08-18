@@ -41,7 +41,7 @@ func NewMemoryPersistenceAgent(model *ai.Model) aigentic.Agent {
 			"Do not make up information. You must use the tools to get the information.",
 		Agents: []*aigentic.Agent{&lookupCompany, &lookupSupplier},
 		Trace:  aigentic.NewTrace(),
-		Memory: aigentic.NewMemory(),
+		Memory: aigentic.NewMemory(), // this is important to save the plan
 	}
 
 	return coordinator

@@ -1,33 +1,23 @@
 package core
 
 import (
-	"context"
 	"time"
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-// NewToolIntegrationAgent creates an agent that uses tools
-func NewToolIntegrationAgent(model *ai.Model) aigentic.Agent {
-	return aigentic.Agent{
+func RunToolIntegration(model *ai.Model) (BenchResult, error) {
+	start := time.Now()
+
+	agent := aigentic.Agent{
 		Model:        model,
 		Name:         "test-agent",
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible. Use tools when requested.",
 		AgentTools:   []aigentic.AgentTool{NewSecretNumberTool()},
+		Trace:        aigentic.NewTrace(),
 	}
-}
-
-// RunToolIntegration executes the tool integration example and returns benchmark results
-func RunToolIntegration(model *ai.Model) (BenchResult, error) {
-	start := time.Now()
-
-	session := aigentic.NewSession(context.Background())
-	session.Trace = aigentic.NewTrace()
-
-	agent := NewToolIntegrationAgent(model)
-	agent.Session = session
 
 	run, err := agent.Start("tell me the name of the company with the number 150. Use tools.")
 	if err != nil {
@@ -56,7 +46,6 @@ func RunToolIntegration(model *ai.Model) (BenchResult, error) {
 
 	result := CreateBenchResult("ToolIntegration", model, start, response, nil)
 
-	// Validate that the response contains the expected tool result
 	if err := ValidateResponse(response, "Nexxia"); err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()

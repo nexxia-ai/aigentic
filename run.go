@@ -98,6 +98,9 @@ func (r *AgentRun) start() {
 func (r *AgentRun) stop() {
 	close(r.eventQueue)
 	close(r.actionQueue)
+	if r.trace != nil {
+		r.trace.Close()
+	}
 }
 
 func (r *AgentRun) addTools() []AgentTool {
@@ -222,6 +225,7 @@ func (r *AgentRun) processLoop() {
 		select {
 		case action, ok := <-r.actionQueue:
 			if !ok {
+				r.runStopAction(&stopAction{Error: fmt.Errorf("action queue closed unexpectedly")})
 				return
 			}
 			switch act := action.(type) {
@@ -248,6 +252,7 @@ func (r *AgentRun) processLoop() {
 			r.checkApprovalTimeouts()
 
 		case <-r.session.Context.Done():
+			r.runStopAction(&stopAction{Error: fmt.Errorf("session context cancelled")})
 			return
 		}
 	}
@@ -255,6 +260,7 @@ func (r *AgentRun) processLoop() {
 
 func (r *AgentRun) runStopAction(act *stopAction) {
 	if act.Error != nil {
+		r.Logger.Error("stopping agent", "error", act.Error)
 		event := &ErrorEvent{
 			RunID:     r.id,
 			AgentName: r.agent.Name,

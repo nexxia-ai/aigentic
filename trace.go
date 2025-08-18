@@ -354,17 +354,7 @@ func (t *Trace) Close() error {
 	defer traceSync.Unlock()
 
 	t.EndTime = time.Now()
+	fmt.Fprintf(t.file, "End Time: %s\n", t.EndTime.Format(time.RFC3339))
 
-	_, err := fmt.Fprintf(t.file, "End Time: %s\n", t.EndTime.Format(time.RFC3339))
-	if err != nil {
-		return err
-	}
-
-	err = t.file.Close()
-	if err != nil {
-		return err
-	}
-
-	slog.Debug("Trace saved", "file", t.filename)
-	return nil
+	return t.file.Close()
 }

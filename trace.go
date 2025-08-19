@@ -2,6 +2,7 @@ package aigentic
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 )
 
 const (
-	defaultTraceDirectory    = "traces"
 	defaultRetentionDuration = 7 * 24 * time.Hour
 	defaultMaxTraceFiles     = 10
 )
@@ -37,9 +37,31 @@ type Trace struct {
 	EndTime           time.Time     // End time of the trace
 	directory         string        // Path to the trace directory
 	filename          string        // Path to the trace file
-	file              *os.File      // File to write traces to
+	file              traceWriter   // File to write traces to (or io.Discard if file creation fails)
 	RetentionDuration time.Duration // How long to keep traces
 	MaxTraceFiles     int           // Maximum number of files to keep
+}
+
+// traceWriter interface for writing trace data
+type traceWriter interface {
+	io.Writer
+	Sync() error
+	Close() error
+}
+
+// discardWriter wraps io.Discard to implement traceWriter interface
+type discardWriter struct{}
+
+func (d *discardWriter) Write(p []byte) (n int, err error) {
+	return io.Discard.Write(p)
+}
+
+func (d *discardWriter) Sync() error {
+	return nil
+}
+
+func (d *discardWriter) Close() error {
+	return nil
 }
 
 func newTraceID() string {
@@ -49,8 +71,10 @@ func newTraceID() string {
 
 // NewTrace creates a new Trace instance with default cleanup settings.
 func NewTrace(config ...TraceConfig) *Trace {
+	defaultDir := filepath.Join(os.TempDir(), "aigentic-traces")
+
 	cfg := TraceConfig{
-		Directory:         defaultTraceDirectory,
+		Directory:         defaultDir,
 		RetentionDuration: defaultRetentionDuration,
 		MaxTraceFiles:     defaultMaxTraceFiles,
 		SessionID:         newTraceID(),
@@ -75,15 +99,19 @@ func NewTrace(config ...TraceConfig) *Trace {
 	if _, err := os.Stat(cfg.Directory); os.IsNotExist(err) {
 		if err := os.MkdirAll(cfg.Directory, 0755); err != nil {
 			slog.Error("Failed to create trace directory", "directory", cfg.Directory, "error", err)
-			return nil
 		}
 	}
 
 	filename := filepath.Join(cfg.Directory, fmt.Sprintf("trace-%s.txt", cfg.SessionID))
 
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	var file traceWriter
+	osFile, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil
+		slog.Error("Failed to open trace file, using io.Discard", "file", filename, "error", err)
+		// Use io.Discard wrapped in a traceWriter when file creation fails
+		file = &discardWriter{}
+	} else {
+		file = osFile
 	}
 
 	t := &Trace{
@@ -95,7 +123,9 @@ func NewTrace(config ...TraceConfig) *Trace {
 		RetentionDuration: cfg.RetentionDuration,
 		MaxTraceFiles:     cfg.MaxTraceFiles,
 	}
-	t.Cleanup()
+	slog.Info("Trace file location", "file", filename)
+
+	t.Cleanup() // remove old entries
 
 	return t
 }

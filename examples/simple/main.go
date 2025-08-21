@@ -57,7 +57,7 @@ var multiAgent = aigentic.Agent{
 	Description:  "An agent that coordinates with other agents to complete complex tasks",
 	Instructions: "You can delegate tasks to other agents. Use the ResearchAgent for detailed research tasks.",
 	LogLevel:     slog.LevelDebug,
-	Agents: []*aigentic.Agent{
+	Agents: []aigentic.Agent{
 		{
 			Model:        model,
 			Name:         "ResearchAgent",

@@ -118,7 +118,7 @@ func saveMemoryExecute(run *AgentRun, args map[string]interface{}) (*ai.ToolResu
 		}, nil
 	}
 
-	run.memory.content = content
+	run.agent.Memory.content = content
 
 	return &ai.ToolResult{
 		Content: []ai.ToolContent{{

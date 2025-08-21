@@ -199,7 +199,7 @@ func TestAgentCallingSubAgent(t *testing.T) {
 	mainAgent := Agent{
 		Name:        "main-agent",
 		Description: "A main agent that delegates work to sub-agents",
-		Agents:      []*Agent{&subAgent},
+		Agents:      []Agent{subAgent},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 			// First call: request sub-agent tool call regardless of message count

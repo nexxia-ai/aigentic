@@ -16,15 +16,14 @@ var approvalTimeout = time.Minute * 60
 
 type AgentRun struct {
 	id      string
-	agent   *Agent
+	agent   Agent
 	session *Session
 	model   *ai.Model
 
 	tools      []AgentTool
 	msgHistory []ai.Message
 
-	memory         *Memory
-	includeHistory bool
+	contextManager ContextManager
 
 	eventQueue       chan Event
 	actionQueue      chan Action
@@ -46,7 +45,7 @@ func (r *AgentRun) Session() *Session {
 	return r.session
 }
 
-func newAgentRun(a *Agent, message string) *AgentRun {
+func newAgentRun(a Agent, message string) *AgentRun {
 	runID := uuid.New().String()
 	session := a.Session
 	if session == nil {
@@ -79,8 +78,7 @@ func newAgentRun(a *Agent, message string) *AgentRun {
 		actionQueue:      make(chan Action, 100),
 		pendingApprovals: make(map[string]pendingApproval),
 		approvalTimeout:  approvalTimeout,
-		memory:           a.Memory,
-		includeHistory:   a.IncludeHistory,
+		contextManager:   NewBasicContextManager(a, message),
 		Logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 	run.tools = run.addTools()
@@ -160,8 +158,8 @@ func (r *AgentRun) addTools() []AgentTool {
 	}
 
 	// Add memory tool
-	if r.memory != nil {
-		tools = append(tools, r.memory.Tool)
+	if r.agent.Memory != nil {
+		tools = append(tools, r.agent.Memory.Tool)
 	}
 
 	// make sure all tools have a validation and execute function
@@ -330,18 +328,26 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 	}
 	r.queueEvent(event)
 
-	msgs := []ai.Message{
-		ai.SystemMessage{Role: ai.SystemRole, Content: r.createSystemPrompt()},
+	// msgs := []ai.Message{
+	// 	ai.SystemMessage{Role: ai.SystemRole, Content: r.createSystemPrompt()},
+	// }
+
+	// userMsgs := r.createUserMsg(message)
+	// msgs = append(msgs, userMsgs...)
+
+	// // always send msgHistory
+	// // even when memory is not including history, the msgHistory only contains
+	// // the last assistant and tool responses if this is a tool response action.
+	// // the agent will only keep the last assistant and tool responses if the memory is not including history.
+	// msgs = append(msgs, r.msgHistory...)
+
+	var err error
+	msgs := []ai.Message{}
+	msgs, err = r.contextManager.BuildPrompt(r.session.Context, r.msgHistory, tools)
+	if err != nil {
+		r.queueAction(&stopAction{Error: err})
+		return
 	}
-
-	userMsgs := r.createUserMsg(message)
-	msgs = append(msgs, userMsgs...)
-
-	// always send msgHistory
-	// even when memory is not including history, the msgHistory only contains
-	// the last assistant and tool responses if this is a tool response action.
-	// the agent will only keep the last assistant and tool responses if the memory is not including history.
-	msgs = append(msgs, r.msgHistory...)
 
 	if r.trace != nil {
 		r.trace.LLMCall(r.model.ModelName, r.agent.Name, msgs)
@@ -354,7 +360,6 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 	}
 
 	var respMsg ai.AIMessage
-	var err error
 
 	switch r.agent.Stream {
 	case true:
@@ -536,18 +541,14 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 	if len(msg.ToolCalls) == 1 && msg.ToolCalls[0].Name == "save_memory" {
 		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(msg.ToolCalls[0].Args), &args); err == nil {
-			r.memory.Tool.Execute(r, args)
+			r.agent.Memory.Tool.Execute(r, args)
 			r.queueAction(&llmCallAction{Message: r.userMessage})
 			return
 		}
 	}
 
-	// When the agent is not including history,
 	// reset history slice each time so that we only keep the last assistant msg and tool responses (if any)
-	if !r.includeHistory {
-		r.msgHistory = []ai.Message{}
-	}
-	r.msgHistory = append(r.msgHistory, msg)
+	r.msgHistory = []ai.Message{msg}
 
 	r.groupToolCalls(msg.ToolCalls, msg)
 }

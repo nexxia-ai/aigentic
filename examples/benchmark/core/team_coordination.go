@@ -46,7 +46,7 @@ func NewTeamCoordinationAgent(model *ai.Model) aigentic.Agent {
 		Instructions: "Call exactly one tool at a time and wait for the response before the next call. " +
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
-		Agents: []*aigentic.Agent{&lookup, &companyCreator, &invoiceCreator},
+		Agents: []aigentic.Agent{lookup, companyCreator, invoiceCreator},
 		Trace:  aigentic.NewTrace(),
 		Memory: aigentic.NewMemory(),
 	}

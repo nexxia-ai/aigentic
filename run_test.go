@@ -67,7 +67,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a streaming agent
-			agent := &Agent{
+			agent := Agent{
 				Name:        "test-streaming-agent",
 				Description: tt.description,
 				Model:       tt.streamingModel,
@@ -161,7 +161,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 
 func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 	// Create a non-streaming agent
-	agent := &Agent{
+	agent := Agent{
 		Name:        "test-non-streaming-agent",
 		Description: "Test non-streaming agent",
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
@@ -215,7 +215,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 
 func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 	// Create a streaming agent that makes tool calls
-	agent := &Agent{
+	agent := Agent{
 		Name:        "test-tool-streaming-agent",
 		Description: "Test streaming agent with tool calls",
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
@@ -301,7 +301,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 
 func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 	// Create an agent with limited LLM calls
-	agent := &Agent{
+	agent := Agent{
 		Name:        "test-limited-agent",
 		Description: "Test agent with LLM call limit",
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
@@ -409,7 +409,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 		}, nil
 	})
 
-	agent := &Agent{
+	agent := Agent{
 		Name:        "test-chunk-agent",
 		Description: "Test agent with controlled chunking",
 		Model:       streamingModel,

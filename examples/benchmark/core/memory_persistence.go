@@ -39,7 +39,7 @@ func NewMemoryPersistenceAgent(model *ai.Model) aigentic.Agent {
 			"4) When saving memory, include the current memory content and append the new result so both are present. " +
 			"5) Return only the memory content (no commentary). " +
 			"Do not make up information. You must use the tools to get the information.",
-		Agents: []*aigentic.Agent{&lookupCompany, &lookupSupplier},
+		Agents: []aigentic.Agent{lookupCompany, lookupSupplier},
 		Trace:  aigentic.NewTrace(),
 		Memory: aigentic.NewMemory(), // this is important to save the plan
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mime"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -93,5 +94,23 @@ func NewInMemoryDocument(id, filename string, data []byte, srcDoc *Document) *Do
 		Selected:   false,
 		SourceDoc:  srcDoc,
 		ChunkIndex: -1,
+	}
+}
+
+// deriveTypeFromMime derives the resource type from MIME type
+func deriveTypeFromMime(mimeType string) string {
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "image"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "video"
+	case strings.HasPrefix(mimeType, "text/"):
+		return "text"
+	case mimeType == "application/pdf":
+		return "document"
+	default:
+		return "document"
 	}
 }

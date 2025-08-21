@@ -1,15 +1,48 @@
 package aigentic
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-func (r *AgentRun) createToolPrompt() string {
-	if len(r.tools) > 0 {
+type ContextManager interface {
+	BuildPrompt(context.Context, []ai.Message, []ai.Tool) ([]ai.Message, error)
+}
+
+type BasicContextManager struct {
+	agent      Agent // copy of agent
+	userMsg    string
+	msgHistory []ai.Message
+	currentMsg int
+}
+
+var _ ContextManager = &BasicContextManager{}
+
+func NewBasicContextManager(agent Agent, userMsg string) *BasicContextManager {
+	return &BasicContextManager{agent: agent, userMsg: userMsg}
+}
+
+func (r *BasicContextManager) BuildPrompt(ctx context.Context, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
+	r.currentMsg = len(r.msgHistory)
+	r.msgHistory = append(r.msgHistory, messages...)
+
+	msgs := []ai.Message{
+		ai.SystemMessage{Role: ai.SystemRole, Content: r.createSystemPrompt(tools)},
+	}
+
+	userMsgs := r.createUserMsg(r.userMsg)
+	msgs = append(msgs, userMsgs...)
+
+	msgs = append(msgs, r.msgHistory...)
+	return msgs, nil
+}
+
+func (r *BasicContextManager) createToolPrompt(tools []ai.Tool) string {
+	if len(tools) > 0 {
 		msg := ""
-		for _, tool := range r.tools {
+		for _, tool := range tools {
 			msg += fmt.Sprintf("<tool>\n%s\n%s\n</tool>\n", tool.Name, tool.Description)
 		}
 		return msg
@@ -17,16 +50,16 @@ func (r *AgentRun) createToolPrompt() string {
 	return ""
 }
 
-func (r *AgentRun) createSystemPrompt() string {
+func (r *BasicContextManager) createSystemPrompt(tools []ai.Tool) string {
 	sysMsg := ""
-	if r.parentRun == nil {
+	if len(r.agent.Agents) == 0 {
 		sysMsg += "You are an autonomous agent working to complete a task.\n"
 	} else {
 		sysMsg += "You are an autonomous sub-agent working to complete a task on behalf of a coordinator agent.\n"
 	}
 	sysMsg += "You have to consider all the information you were given and reason about the next step to take.\n"
 
-	if len(r.tools) > 0 {
+	if len(tools) > 0 {
 		sysMsg += "You have access to one or more tools to complete the task. Use these tools as required to complete the task.\n"
 	}
 	sysMsg += "\n"
@@ -40,13 +73,13 @@ func (r *AgentRun) createSystemPrompt() string {
 		sysMsg += "\n <instructions>\n" + r.agent.Instructions + "\n</instructions>\n\n"
 	}
 
-	if r.memory != nil {
-		if s := r.memory.SystemPrompt(); s != "" {
+	if r.agent.Memory != nil {
+		if s := r.agent.Memory.SystemPrompt(); s != "" {
 			sysMsg += "\n<memory>\n" + s + "\n</memory>\n\n"
 		}
 	}
 
-	if s := r.createToolPrompt(); s != "" {
+	if s := r.createToolPrompt(tools); s != "" {
 		sysMsg += "You have access to the following tools:\n"
 		sysMsg += "\n<tools>\n" + s + "\n</tools>\n\n"
 	}
@@ -54,10 +87,10 @@ func (r *AgentRun) createSystemPrompt() string {
 }
 
 // createUserMsg returns a list of Messages, with each attachment as a separate Resource message
-func (r *AgentRun) createUserMsg(message string) []ai.Message {
+func (r *BasicContextManager) createUserMsg(message string) []ai.Message {
 	userMsg := ""
-	if r.memory != nil {
-		if s := r.memory.Content(); s != "" {
+	if r.agent.Memory != nil {
+		if s := r.agent.Memory.Content(); s != "" {
 			userMsg += "This is the content of the memory file (called ContextMemory.md):\n"
 			userMsg += "<ContextMemory.md>\n" + s + "\n</ContextMemory.md>\n\n"
 		}

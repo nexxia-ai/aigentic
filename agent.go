@@ -2,16 +2,16 @@ package aigentic
 
 import (
 	"log/slog"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
+// Agent is the main declarative type for an agent.
 type Agent struct {
 	Model      *ai.Model
 	Name       string
-	Agents     []*Agent
+	Agents     []Agent
 	Session    *Session
 	AgentTools []AgentTool
 
@@ -44,7 +44,9 @@ type Agent struct {
 	MaxLLMCalls         int // Maximum number of LLM calls (0 = unlimited)
 }
 
-func (a *Agent) Start(message string) (*AgentRun, error) {
+// Start starts a new agent run.
+// The agent is passed by value and is not modified during the run.
+func (a Agent) Start(message string) (*AgentRun, error) {
 	if a.Name == "" {
 		a.Name = "noname_" + uuid.New().String()
 	}
@@ -53,28 +55,12 @@ func (a *Agent) Start(message string) (*AgentRun, error) {
 	return run, nil
 }
 
-func (a *Agent) Execute(message string) (string, error) {
+// Execute is a convenience method that starts a new agent run and waits for the result.
+// The agent is passed by value and is not modified during the run.
+func (a Agent) Execute(message string) (string, error) {
 	run, err := a.Start(message)
 	if err != nil {
 		return "", err
 	}
 	return run.Wait(0)
-}
-
-// deriveTypeFromMime derives the resource type from MIME type
-func deriveTypeFromMime(mimeType string) string {
-	switch {
-	case strings.HasPrefix(mimeType, "image/"):
-		return "image"
-	case strings.HasPrefix(mimeType, "audio/"):
-		return "audio"
-	case strings.HasPrefix(mimeType, "video/"):
-		return "video"
-	case strings.HasPrefix(mimeType, "text/"):
-		return "text"
-	case mimeType == "application/pdf":
-		return "document"
-	default:
-		return "document"
-	}
 }

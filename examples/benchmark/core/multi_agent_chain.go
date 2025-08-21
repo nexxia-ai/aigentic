@@ -13,10 +13,10 @@ import (
 func NewMultiAgentChainAgent(model *ai.Model) aigentic.Agent {
 	const numExperts = 3
 
-	experts := make([]*aigentic.Agent, numExperts)
+	experts := make([]aigentic.Agent, numExperts)
 	for i := 0; i < numExperts; i++ {
 		expertName := fmt.Sprintf("expert%d", i+1)
-		experts[i] = &aigentic.Agent{
+		experts[i] = aigentic.Agent{
 			Name:        expertName,
 			Description: "You are an expert in a group of experts. Your role is to respond with your name",
 			Instructions: `

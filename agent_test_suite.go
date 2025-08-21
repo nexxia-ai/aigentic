@@ -279,7 +279,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 		name          string
 		message       string
 		expectedError bool
-		validate      func(t *testing.T, content string, agent Agent)
+		validate      func(t *testing.T, content string, run *AgentRun)
 		attachments   []*Document
 		tools         []ai.Tool
 	}{
@@ -288,9 +288,10 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			name:          "empty agent",
 			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
-			validate: func(t *testing.T, content string, agent Agent) {
+			validate: func(t *testing.T, content string, run *AgentRun) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, agent.Name)
+				assert.NotEmpty(t, run.ID())
+				assert.NotEmpty(t, run.agent.Name)
 				assert.Contains(t, strings.ToLower(content), "sydney")
 			},
 			tools: []ai.Tool{},
@@ -300,9 +301,10 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			name:          "basic conversation",
 			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
-			validate: func(t *testing.T, content string, agent Agent) {
+			validate: func(t *testing.T, content string, run *AgentRun) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, agent.Name)
+				assert.NotEmpty(t, run.ID())
+				assert.NotEmpty(t, run.agent.Name)
 				assert.Contains(t, strings.ToLower(content), "sydney")
 			},
 			tools: []ai.Tool{},
@@ -335,7 +337,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			}
 			finalContent := strings.Join(chunks, "")
 			if tt.validate != nil {
-				tt.validate(t, finalContent, tt.agent)
+				tt.validate(t, finalContent, run)
 			}
 		})
 	}
@@ -357,16 +359,17 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 	tests := []struct {
 		name        string
 		message     string
-		validate    func(t *testing.T, content string, agent Agent)
+		validate    func(t *testing.T, content string, run *AgentRun)
 		attachments []*Document
 		tools       []ai.Tool
 	}{
 		{
 			name:    "basic conversation",
 			message: "What is the capital of Australia?",
-			validate: func(t *testing.T, content string, agent Agent) {
+			validate: func(t *testing.T, content string, run *AgentRun) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, agent.Name)
+				assert.NotEmpty(t, run.ID())
+				assert.NotEmpty(t, run.agent.Name)
 				assert.Contains(t, strings.ToLower(content), "canberra")
 			},
 			tools: []ai.Tool{},
@@ -374,8 +377,10 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 		{
 			name:    "conversation with instructions",
 			message: "Explain the concept of recursion",
-			validate: func(t *testing.T, content string, agent Agent) {
+			validate: func(t *testing.T, content string, run *AgentRun) {
 				assert.NotEmpty(t, content)
+				assert.NotEmpty(t, run.ID())
+				assert.NotEmpty(t, run.agent.Name)
 				assert.Contains(t, strings.ToLower(content), "recursion")
 			},
 			tools: []ai.Tool{},
@@ -408,7 +413,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 			}
 			finalContent := strings.Join(chunks, "")
 			if test.validate != nil {
-				test.validate(t, finalContent, agent)
+				test.validate(t, finalContent, run)
 			}
 		})
 	}
@@ -521,7 +526,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 		Instructions: "Call exactly one tool at a time and wait for the response before the next call. " +
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
-		Agents: []*Agent{&lookup, &companyCreator, &invoiceCreator},
+		Agents: []Agent{lookup, companyCreator, invoiceCreator},
 		Trace:  NewTrace(),
 		Memory: NewMemory(),
 		// LogLevel: slog.LevelDebug,
@@ -696,10 +701,10 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 	const numExperts = 3
 
-	experts := make([]*Agent, numExperts)
+	experts := make([]Agent, numExperts)
 	for i := 0; i < numExperts; i++ {
 		expertName := fmt.Sprintf("expert%d", i+1)
-		experts[i] = &Agent{
+		experts[i] = Agent{
 			Name:        expertName,
 			Description: "You are an expert in a group of experts. Your role is to respond with your name",
 			Instructions: `
@@ -876,7 +881,8 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 	finalContent := strings.Join(chunks, "")
 
 	assert.NotEmpty(t, finalContent)
-	assert.NotEmpty(t, agent.Name)
+	assert.NotEmpty(t, run.ID())
+	assert.NotEmpty(t, run.agent.Name)
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 }
@@ -1069,7 +1075,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 			"4) When saving memory, include the current memory content and append the new result so both are present. " +
 			"5) Return only the memory content (no commentary). " +
 			"Do not make up information. You must use the tools to get the information.",
-		Agents: []*Agent{&lookupCompany, &lookupSupplier},
+		Agents: []Agent{lookupCompany, lookupSupplier},
 		Trace:  NewTrace(),
 		Memory: NewMemory(),
 	}

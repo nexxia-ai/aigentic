@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,8 +18,9 @@ import (
 )
 
 type Capability struct {
-	Name        string
-	RunFunction func(*ai.Model) (core.BenchResult, error)
+	Name         string
+	RunFunction  func(*ai.Model) (core.BenchResult, error)
+	EvalFunction func(*ai.Model, *ai.Model) // Optional evaluation function (model, scoreModel)
 }
 
 var capabilities = []Capability{
@@ -26,7 +28,7 @@ var capabilities = []Capability{
 	{Name: "ToolIntegration", RunFunction: core.RunToolIntegration},
 	{Name: "TeamCoordination", RunFunction: core.RunTeamCoordination},
 	{Name: "FileAttachments", RunFunction: core.RunFileAttachmentsAgent},
-	{Name: "MultiAgentChain", RunFunction: core.RunMultiAgentChain},
+	{Name: "MultiAgentChain", RunFunction: core.RunMultiAgentChain, EvalFunction: core.RunMultiAgentEvaluation},
 	{Name: "ConcurrentRuns", RunFunction: core.RunConcurrentRuns},
 	{Name: "Streaming", RunFunction: core.RunStreaming},
 	{Name: "StreamingWithTools", RunFunction: core.RunStreamingWithTools},
@@ -63,6 +65,7 @@ func geminiProvider(modelName string) *ai.Model {
 var modelsTable = []ModelDesc{
 	{Name: "gpt-4o-mini", ProviderFunc: openAIProvider},
 	{Name: "gpt-4o", ProviderFunc: openAIProvider},
+	{Name: "gpt", ProviderFunc: openAIProvider},
 	{Name: "qwen", ProviderFunc: ollamaProvider},
 	{Name: "llama3.2", ProviderFunc: ollamaProvider},
 	{Name: "gemma", ProviderFunc: ollamaProvider},
@@ -74,18 +77,38 @@ func main() {
 	// Load environment variables
 	utils.LoadEnvFile("./.env")
 
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run main.go <model_name>")
+	// Define command-line flags
+	var testsFlag string
+	var evalMode bool
+	flag.StringVar(&testsFlag, "test", "", "Comma-separated list of tests to run (case-insensitive)")
+	flag.BoolVar(&evalMode, "eval", false, "Run evaluation mode for tests that support it")
+	flag.Parse()
+
+	// Get remaining arguments (model names)
+	args := flag.Args()
+
+	if len(args) < 1 {
+		fmt.Println("Usage: go run main.go [-test \"test1,test2\"] [-eval] <model_name> [model_name...]")
 		fmt.Println("\nAvailable models:")
 		for _, model := range modelsTable {
 			fmt.Printf("  %-s\n", model.Name)
 		}
+		fmt.Println("\nAvailable tests:")
+		for _, cap := range capabilities {
+			evalSupport := ""
+			if cap.EvalFunction != nil {
+				evalSupport = " (supports -eval)"
+			}
+			fmt.Printf("  %s%s\n", cap.Name, evalSupport)
+		}
 		fmt.Println("\nExamples:")
 		fmt.Println("  go run main.go gpt-4o-mini gemma3:12b")
+		fmt.Println("  go run main.go -test \"SimpleAgent,ToolIntegration\" qwen gpt-4o")
+		fmt.Println("  go run main.go -eval -test \"MultiAgentChain\" gpt-4o-mini")
 		os.Exit(1)
 	}
 
-	modelName := strings.Join(os.Args[1:], " ")
+	modelName := strings.Join(args, " ")
 
 	// Parse individual model names from the input
 	modelNames := strings.Fields(modelName)
@@ -109,10 +132,50 @@ func main() {
 		os.Exit(1)
 	}
 
-	runModels(models)
+	// Filter capabilities based on test flag
+	filteredCapabilities := filterCapabilities(testsFlag)
+
+	if evalMode {
+		runEvaluationMode(models, filteredCapabilities)
+	} else {
+		runModels(models, filteredCapabilities)
+	}
 }
 
-func runModels(models []*ai.Model) {
+func filterCapabilities(testsFlag string) []Capability {
+	if testsFlag == "" {
+		return capabilities
+	}
+
+	// Parse comma-separated test names
+	testNames := strings.Split(testsFlag, ",")
+	for i, name := range testNames {
+		testNames[i] = strings.TrimSpace(name)
+	}
+
+	var filtered []Capability
+	for _, capability := range capabilities {
+		for _, testName := range testNames {
+			if strings.EqualFold(capability.Name, testName) {
+				filtered = append(filtered, capability)
+				break
+			}
+		}
+	}
+
+	if len(filtered) == 0 {
+		fmt.Printf("No matching tests found for: %s\n", testsFlag)
+		fmt.Println("\nAvailable tests:")
+		for _, cap := range capabilities {
+			fmt.Printf("  %s\n", cap.Name)
+		}
+		os.Exit(1)
+	}
+
+	return filtered
+}
+
+func runModels(models []*ai.Model, capabilitiesToRun []Capability) {
 	allResults := make([][]core.BenchResult, len(models))
 
 	for index, model := range models {
@@ -120,7 +183,7 @@ func runModels(models []*ai.Model) {
 		fmt.Println("-" + fmt.Sprintf("%30s", "-"))
 
 		results := []core.BenchResult{}
-		for _, testCase := range capabilities {
+		for _, testCase := range capabilitiesToRun {
 			fmt.Printf("  %s... ", testCase.Name)
 
 			result, err := testCase.RunFunction(model)
@@ -135,6 +198,66 @@ func runModels(models []*ai.Model) {
 	}
 
 	generateComparisonReport(allResults)
+}
+
+func runEvaluationMode(models []*ai.Model, capabilitiesToRun []Capability) {
+	fmt.Println("🔍 Running in Evaluation Mode")
+	fmt.Println("=" + strings.Repeat("=", 40))
+
+	if len(models) < 1 {
+		fmt.Println("❌ Evaluation mode requires at least 1 model")
+		os.Exit(1)
+	}
+
+	// Use first model as primary, second as scoring model (or same if only one)
+	primaryModel := models[0]
+	scoreModel := primaryModel
+	if len(models) > 1 {
+		scoreModel = models[1]
+		fmt.Printf("📊 Using %s for scoring evaluations\n", scoreModel.ModelName)
+	} else {
+		fmt.Printf("📊 Using %s for both testing and scoring\n", primaryModel.ModelName)
+	}
+
+	fmt.Printf("🤖 Primary model: %s\n\n", primaryModel.ModelName)
+
+	for _, capability := range capabilitiesToRun {
+		fmt.Printf("🔬 Evaluating %s...\n", capability.Name)
+		fmt.Println("-" + strings.Repeat("-", 40))
+
+		if capability.EvalFunction != nil {
+			// Use custom evaluation function if available
+			capability.EvalFunction(primaryModel, scoreModel)
+		} else {
+			// Run standard benchmark with evaluation enabled
+			runCapabilityWithEval(capability, primaryModel)
+		}
+
+		fmt.Println()
+	}
+
+	fmt.Println("✅ Evaluation complete!")
+}
+
+// runCapabilityWithEval runs a capability with evaluation enabled
+func runCapabilityWithEval(capability Capability, model *ai.Model) {
+	fmt.Printf("Running %s with evaluation instrumentation...\n", capability.Name)
+
+	// For capabilities that don't have custom eval functions,
+	// we would need to modify them to enable evaluation
+	// For now, just run the regular function
+	result, err := capability.RunFunction(model)
+
+	if err != nil {
+		fmt.Printf("❌ Failed: %v\n", err)
+	} else {
+		fmt.Printf("✅ Completed in %v\n", result.Duration)
+		if result.Success {
+			fmt.Printf("📊 Result: Success\n")
+		} else {
+			fmt.Printf("📊 Result: Failed - %s\n", result.ErrorMessage)
+		}
+	}
 }
 
 func createModel(modelName string) *ai.Model {

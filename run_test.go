@@ -151,10 +151,6 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 				assert.Equal(t, tt.expectedFinal, finalContent, "Final concatenated content should match expected")
 			}
 
-			// Verify chunk flags
-			for _, ce := range contentEvents {
-				assert.True(t, ce.IsChunk, "All content events should be marked as chunks during streaming")
-			}
 		})
 	}
 }
@@ -210,7 +206,6 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 	// Verify content events (should be only one final event, not chunks)
 	assert.Len(t, contentEvents, 1, "Non-streaming agent should have only one content event")
 	assert.Equal(t, "This is a non-streaming response", contentEvents[0].Content)
-	assert.False(t, contentEvents[0].IsChunk, "Non-streaming content should not be marked as chunk")
 }
 
 func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {

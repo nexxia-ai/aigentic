@@ -58,25 +58,26 @@ func NewDummyModel(responseFunc func(ctx context.Context, messages []Message, to
 	}
 }
 
-// Global state for replay function to ensure sequential access across multiple model instances
-var (
-	replayRecords     []RecordedResponse
-	replayIndex       int
-	replayMutex       sync.Mutex
-	replayInitialized bool
-)
+// replayState holds the state for a single replay function instance
+type replayState struct {
+	records []RecordedResponse
+	index   int
+	mutex   sync.Mutex
+}
 
 // ReplayFunctionFromData creates a function that replays recorded responses from provided data sequentially
+// Each call creates an independent replay function with its own state
 func ReplayFunctionFromData(responses []RecordedResponse) (func(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error), error) {
-	replayMutex.Lock()
-	defer replayMutex.Unlock()
+	// Create a new state instance for this replay function
+	state := &replayState{
+		records: make([]RecordedResponse, len(responses)),
+		index:   0,
+	}
 
-	// Reset the replay state
-	replayRecords = responses
-	replayIndex = 0
-	replayInitialized = true
+	// Copy the responses to avoid shared state issues
+	copy(state.records, responses)
 
-	// Return a function that replays the next recorded response
+	// Return a function that replays the next recorded response using this specific state
 	return func(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error) {
 		// Check if context is done (timeout or cancellation)
 		select {
@@ -85,21 +86,22 @@ func ReplayFunctionFromData(responses []RecordedResponse) (func(ctx context.Cont
 		default:
 			// Continue with normal processing
 		}
-		replayMutex.Lock()
-		defer replayMutex.Unlock()
+
+		state.mutex.Lock()
+		defer state.mutex.Unlock()
 
 		// Check if we have more records to replay
-		if replayIndex >= len(replayRecords) {
+		if state.index >= len(state.records) {
 			// Return a default response if we've exhausted all records
 			return AIMessage{
 				Role:    AssistantRole,
-				Content: fmt.Sprintf("No more recorded responses available (requested %d, have %d)", replayIndex+1, len(replayRecords)),
+				Content: fmt.Sprintf("No more recorded responses available (requested %d, have %d)", state.index+1, len(state.records)),
 			}, nil
 		}
 
 		// Get the current record
-		record := replayRecords[replayIndex]
-		replayIndex++
+		record := state.records[state.index]
+		state.index++
 
 		// Return the recorded response and error if it exists
 		if record.Error != "" {

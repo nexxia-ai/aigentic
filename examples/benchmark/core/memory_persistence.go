@@ -17,7 +17,7 @@ func NewMemoryPersistenceAgent(model *ai.Model) aigentic.Agent {
 		Name:         "lookup_company",
 		Description:  "This agent allows you to look up a company name by company number. Please provide the request as 'lookup the company name for xxx'",
 		Instructions: "Use tools to look up the company name. Return exactly 'COMPANY: <name>' and nothing else.",
-		AgentTools:   []aigentic.AgentTool{NewSecretNumberTool()},
+		AgentTools:   []aigentic.AgentTool{NewCompanyNameTool()},
 	}
 
 	lookupSupplier := aigentic.Agent{
@@ -52,7 +52,6 @@ func RunMemoryPersistenceAgent(model *ai.Model) (BenchResult, error) {
 	start := time.Now()
 
 	session := aigentic.NewSession(context.Background())
-	session.Trace = aigentic.NewTrace()
 
 	coordinator := NewMemoryPersistenceAgent(model)
 	coordinator.Session = session

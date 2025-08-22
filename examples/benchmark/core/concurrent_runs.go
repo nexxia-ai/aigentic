@@ -15,7 +15,7 @@ func RunConcurrentRuns(model *ai.Model) (BenchResult, error) {
 		Model:        model,
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
-		AgentTools:   []aigentic.AgentTool{NewSecretNumberTool()},
+		AgentTools:   []aigentic.AgentTool{NewCompanyNameTool()},
 		Trace:        aigentic.NewTrace(),
 	}
 

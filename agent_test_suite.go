@@ -105,8 +105,8 @@ func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
 	})
 }
 
-// NewSecretNumberTool returns an AgentTool struct for testing
-func NewSecretNumberTool() AgentTool {
+// NewLookupCompanyNumberTool returns an AgentTool struct for testing
+func NewLookupCompanyNumberTool(counter *int) AgentTool {
 	return AgentTool{
 		Name:        "lookup_company_name",
 		Description: "A tool that looks up the name of a company based on a company number",
@@ -121,6 +121,7 @@ func NewSecretNumberTool() AgentTool {
 			"required": []string{"company_number"},
 		},
 		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
+			*counter++
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Nexxia"}},
 				Error:   false,
@@ -755,13 +756,13 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 }
 
 func TestConcurrentRuns(t *testing.T, model *ai.Model) {
+	counter := 0
 	agent := Agent{
 		Model:        model,
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
-		AgentTools:   []AgentTool{NewSecretNumberTool()},
+		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
 		Trace:        NewTrace(),
-		// LogLevel:     slog.LevelDebug,
 	}
 
 	// Define multiple sequential runs
@@ -845,6 +846,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		assert.NotContains(t, response, "Error:", "Run %d should not contain error", i+1)
 	}
 
+	assert.Equal(t, counter, 1, "Should have made 1 tool call")
 	t.Logf("All %d parallel runs completed successfully", len(runs))
 }
 
@@ -967,13 +969,14 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
+	counter := 0
 	agent := Agent{
 		Session:      session,
 		Model:        model,
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible.",
 		Stream:       true,
-		AgentTools:   []AgentTool{NewSecretNumberTool()},
+		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
 	}
 
 	message := "tell me the name of the company with the number 150. Use tools. "
@@ -999,19 +1002,21 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 	assert.NotEmpty(t, finalContent)
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
+	assert.Equal(t, counter, 1, "Should have made 1 tool call")
 }
 
 func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
+	counter := 0
 	agent := Agent{
 		Session:      session,
 		Model:        model,
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Use the lookup tool to find company information when asked.",
 		Stream:       true,
-		AgentTools:   []AgentTool{NewSecretNumberTool()},
+		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
 	}
 
 	message := "What company has the number 150?"
@@ -1040,19 +1045,21 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 	assert.GreaterOrEqual(t, toolCalls, 1, "Should have made at least one tool call")
+	assert.Equal(t, counter, 1, "Should have made 1 tool call")
 }
 
 func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
 	session.Trace = NewTrace()
 
+	counter := 0
 	// Sub-agents
 	lookupCompany := Agent{
 		Model:        model,
 		Name:         "lookup_company",
 		Description:  "This agent allows you to look up a company name by company number. Please provide the request as 'lookup the company name for xxx'",
 		Instructions: "Use tools to look up the company name. Return exactly 'COMPANY: <name>' and nothing else.",
-		AgentTools:   []AgentTool{NewSecretNumberTool()},
+		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
 	}
 
 	lookupSupplier := Agent{
@@ -1151,4 +1158,5 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Contains(t, finalContent, "Phoenix")
+	assert.Equal(t, counter, 2, "Should have made 2 tool calls")
 }

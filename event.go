@@ -1,6 +1,10 @@
 package aigentic
 
-import "github.com/nexxia-ai/aigentic/ai"
+import (
+	"time"
+
+	"github.com/nexxia-ai/aigentic/ai"
+)
 
 type Event interface {
 	ID() string
@@ -21,7 +25,6 @@ type ContentEvent struct {
 	AgentName string
 	SessionID string
 	Content   string
-	IsChunk   bool
 }
 
 func (e *ContentEvent) ID() string { return e.RunID }
@@ -78,3 +81,27 @@ type ApprovalEvent struct {
 }
 
 func (e *ApprovalEvent) ID() string { return e.RunID }
+
+type EvalEvent struct {
+	RunID     string
+	EventID   string
+	AgentName string
+	SessionID string
+	CallID    string
+	Sequence  int
+	Timestamp time.Time
+	Duration  time.Duration
+
+	// LLM Call Data
+	Messages []ai.Message
+	Tools    []ai.Tool
+	Response ai.AIMessage
+	Error    error
+
+	// Metadata
+	ModelName string
+	TokensIn  int
+	TokensOut int
+}
+
+func (e *EvalEvent) ID() string { return e.RunID }

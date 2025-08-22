@@ -69,7 +69,7 @@ func RunStreamingWithTools(model *ai.Model) (BenchResult, error) {
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible.",
 		Stream:       true,
-		AgentTools:   []aigentic.AgentTool{NewSecretNumberTool()},
+		AgentTools:   []aigentic.AgentTool{NewCompanyNameTool()},
 		Trace:        aigentic.NewTrace(),
 	}
 

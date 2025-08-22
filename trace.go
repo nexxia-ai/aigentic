@@ -123,7 +123,7 @@ func NewTrace(config ...TraceConfig) *Trace {
 		RetentionDuration: cfg.RetentionDuration,
 		MaxTraceFiles:     cfg.MaxTraceFiles,
 	}
-	slog.Info("Trace file location", "file", filename)
+	slog.Debug("Trace file location", "file", filename)
 
 	t.Cleanup() // remove old entries
 

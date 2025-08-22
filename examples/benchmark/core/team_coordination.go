@@ -14,7 +14,7 @@ func NewTeamCoordinationAgent(model *ai.Model) aigentic.Agent {
 	// Subagents
 	lookup := aigentic.Agent{
 		Model:        model,
-		Name:         "lookup",
+		Name:         "agent_lookup_company_by_name",
 		Description:  "Lookup company details by name. Return either 'COMPANY_ID: <id>; NAME: <name>' or 'NOT_FOUND' only.",
 		Instructions: "Use tools to perform the lookup and return the canonical format only.",
 		AgentTools:   []aigentic.AgentTool{NewLookupCompanyByNameTool()},
@@ -22,7 +22,7 @@ func NewTeamCoordinationAgent(model *ai.Model) aigentic.Agent {
 
 	companyCreator := aigentic.Agent{
 		Model:        model,
-		Name:         "company_creator",
+		Name:         "agent_create_company",
 		Description:  "Create a new company by name and return 'COMPANY_ID: <id>; NAME: <name>' only.",
 		Instructions: "Use tools to create the company and return the canonical format only.",
 		AgentTools:   []aigentic.AgentTool{NewCreateCompanyTool()},
@@ -30,7 +30,7 @@ func NewTeamCoordinationAgent(model *ai.Model) aigentic.Agent {
 
 	invoiceCreator := aigentic.Agent{
 		Model:        model,
-		Name:         "invoice_creator",
+		Name:         "agent_create_invoice",
 		Description:  "Create an invoice for a given company_id and amount. Return 'INVOICE_ID: <id>; AMOUNT: <amount>' only.",
 		Instructions: "Use tools to create the invoice and return the canonical format only.",
 		AgentTools:   []aigentic.AgentTool{NewCreateInvoiceTool()},
@@ -49,6 +49,7 @@ func NewTeamCoordinationAgent(model *ai.Model) aigentic.Agent {
 		Agents: []aigentic.Agent{lookup, companyCreator, invoiceCreator},
 		Trace:  aigentic.NewTrace(),
 		Memory: aigentic.NewMemory(),
+		// LogLevel: slog.LevelDebug,
 	}
 
 	return coordinator
@@ -59,7 +60,6 @@ func RunTeamCoordination(model *ai.Model) (BenchResult, error) {
 	start := time.Now()
 
 	session := aigentic.NewSession(context.Background())
-	session.Trace = aigentic.NewTrace()
 
 	coordinator := NewTeamCoordinationAgent(model)
 	coordinator.Session = session

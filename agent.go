@@ -38,10 +38,10 @@ type Agent struct {
 	Stream              bool
 	Documents           []*Document
 	DocumentReferences  []*Document
-	parentAgent         *Agent
 	Trace               *Trace
 	LogLevel            slog.Level
-	MaxLLMCalls         int // Maximum number of LLM calls (0 = unlimited)
+	MaxLLMCalls         int  // Maximum number of LLM calls (0 = unlimited)
+	EnableEvaluation    bool // Enable evaluation events
 }
 
 // Start starts a new agent run.

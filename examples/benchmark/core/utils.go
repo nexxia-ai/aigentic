@@ -55,8 +55,8 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// NewSecretNumberTool creates a test tool for company lookup
-func NewSecretNumberTool() aigentic.AgentTool {
+// NewCompanyNameTool creates a test tool for company lookup
+func NewCompanyNameTool() aigentic.AgentTool {
 	return aigentic.AgentTool{
 		Name:        "lookup_company_name",
 		Description: "A tool that looks up the name of a company based on a company number",

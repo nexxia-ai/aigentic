@@ -96,7 +96,8 @@ func (r *AgentRun) start() {
 func (r *AgentRun) stop() {
 	close(r.eventQueue)
 	close(r.actionQueue)
-	if r.trace != nil {
+	// Only close trace if this is not a sub-agent (sub-agents share trace with parent)
+	if r.trace != nil && r.parentRun == nil {
 		r.trace.Close()
 	}
 }
@@ -134,8 +135,25 @@ func (r *AgentRun) addTools() []AgentTool {
 				subRun.trace = r.trace
 				subRun.Logger = r.Logger.With("sub-agent", aa.Name)
 				subRun.parentRun = r
+
+				// Add sub-agent start marker to trace
+				if r.trace != nil {
+					r.trace.LLMCall("sub-agent:"+aa.Name, aa.Name, []ai.Message{
+						ai.UserMessage{Role: ai.UserRole, Content: fmt.Sprintf("Sub-agent '%s' called with input: %s", aa.Name, input)},
+					})
+				}
+
 				subRun.start()
 				content, err := subRun.Wait(0)
+
+				// Add sub-agent end marker to trace
+				if r.trace != nil {
+					if err != nil {
+						r.trace.RecordError(fmt.Errorf("sub-agent %s error: %v", aa.Name, err))
+					}
+					r.trace.FinishLLMInteraction("sub-agent:"+aa.Name, aa.Name)
+				}
+
 				if err != nil {
 					return &ai.ToolResult{
 						Content: []ai.ToolContent{{
@@ -328,19 +346,6 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 	}
 	r.queueEvent(event)
 
-	// msgs := []ai.Message{
-	// 	ai.SystemMessage{Role: ai.SystemRole, Content: r.createSystemPrompt()},
-	// }
-
-	// userMsgs := r.createUserMsg(message)
-	// msgs = append(msgs, userMsgs...)
-
-	// // always send msgHistory
-	// // even when memory is not including history, the msgHistory only contains
-	// // the last assistant and tool responses if this is a tool response action.
-	// // the agent will only keep the last assistant and tool responses if the memory is not including history.
-	// msgs = append(msgs, r.msgHistory...)
-
 	var err error
 	msgs := []ai.Message{}
 	msgs, err = r.contextManager.BuildPrompt(r.session.Context, r.msgHistory, tools)
@@ -359,6 +364,10 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		r.Logger.Debug("calling sub-agent LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
 	}
 
+	// Capture timing for evaluation
+	callStart := time.Now()
+	callID := uuid.New().String()
+
 	var respMsg ai.AIMessage
 
 	switch r.agent.Stream {
@@ -368,10 +377,54 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 			r.handleAIMessage(chunk, true) // isChunk is true
 			return nil
 		})
+
+		// Emit evaluation event if enabled - BEFORE clearing content
+		if r.agent.EnableEvaluation {
+			evalEvent := &EvalEvent{
+				RunID:     r.id,
+				EventID:   callID,
+				AgentName: r.agent.Name,
+				SessionID: r.session.ID,
+				CallID:    callID,
+				Sequence:  r.llmCallCount,
+				Timestamp: callStart,
+				Duration:  time.Since(callStart),
+				Messages:  msgs,
+				Tools:     tools,
+				Response:  respMsg, // Contains full content from streaming
+				Error:     err,
+				ModelName: r.model.ModelName,
+			}
+
+			r.queueEvent(evalEvent)
+		}
+
+		// Clear content to prevent duplication
 		respMsg.Content = ""
 		respMsg.Think = ""
 	default:
 		respMsg, err = r.model.Call(r.session.Context, msgs, tools)
+
+		// Emit evaluation event if enabled
+		if r.agent.EnableEvaluation {
+			evalEvent := &EvalEvent{
+				RunID:     r.id,
+				EventID:   callID,
+				AgentName: r.agent.Name,
+				SessionID: r.session.ID,
+				CallID:    callID,
+				Sequence:  r.llmCallCount,
+				Timestamp: callStart,
+				Duration:  time.Since(callStart),
+				Messages:  msgs,
+				Tools:     tools,
+				Response:  respMsg,
+				Error:     err,
+				ModelName: r.model.ModelName,
+			}
+
+			r.queueEvent(evalEvent)
+		}
 	}
 
 	if err != nil {
@@ -478,7 +531,6 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 				AgentName: r.agent.Name,
 				SessionID: r.session.ID,
 				Content:   action.Group.aiMessage.Content,
-				IsChunk:   true,
 			}
 			r.queueEvent(event)
 		}
@@ -502,19 +554,11 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 
 	// fire content notification
 	if msg.Content != "" {
-		chunk := isChunk
-
-		// Note: a chunk could be included in a tool call
-		//       in this case isChunk is false but we want to notify
-		if len(msg.ToolCalls) > 0 {
-			chunk = true
-		}
 		event := &ContentEvent{
 			RunID:     r.id,
 			AgentName: r.agent.Name,
 			SessionID: r.session.ID,
 			Content:   msg.Content,
-			IsChunk:   chunk,
 		}
 		r.queueEvent(event)
 	}

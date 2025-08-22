@@ -1,6 +1,7 @@
 package aigentic
 
-type Action interface {
+// action defines an agent action used in the internal action loop
+type action interface {
 	Target() string
 }
 
@@ -38,8 +39,3 @@ type stopAction struct {
 }
 
 func (a *stopAction) Target() string { return "" }
-
-type cancelAction struct {
-}
-
-func (a *cancelAction) Target() string { return "" }

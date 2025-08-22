@@ -26,7 +26,7 @@ type AgentRun struct {
 	contextManager ContextManager
 
 	eventQueue       chan Event
-	actionQueue      chan Action
+	actionQueue      chan action
 	pendingApprovals map[string]pendingApproval
 	trace            *Trace
 	userMessage      string
@@ -75,7 +75,7 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		trace:            trace,
 		maxLLMCalls:      maxLLMCalls,
 		eventQueue:       make(chan Event, 100),
-		actionQueue:      make(chan Action, 100),
+		actionQueue:      make(chan action, 100),
 		pendingApprovals: make(map[string]pendingApproval),
 		approvalTimeout:  approvalTimeout,
 		contextManager:   NewBasicContextManager(a, message),
@@ -674,7 +674,7 @@ func (r *AgentRun) queueEvent(event Event) {
 	}
 }
 
-func (r *AgentRun) queueAction(action Action) {
+func (r *AgentRun) queueAction(action action) {
 	select {
 	case r.actionQueue <- action:
 		// queued

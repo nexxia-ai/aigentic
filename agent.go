@@ -32,16 +32,29 @@ type Agent struct {
 	Memory *Memory
 
 	// Retries is the number of times to retry the agent if it fails.
-	Retries             int
-	DelayBetweenRetries int
-	ExponentialBackoff  bool
-	Stream              bool
-	Documents           []*Document
-	DocumentReferences  []*Document
-	Trace               *Trace
-	LogLevel            slog.Level
-	MaxLLMCalls         int  // Maximum number of LLM calls (0 = unlimited)
-	EnableEvaluation    bool // Enable evaluation events
+	Retries int
+	Stream  bool
+
+	// Documents contains a list of documents to be embedded in the agent's context.
+	// You must manage the document sizes so they don't exceed the model's context window.
+	Documents []*Document
+
+	// DocumentReferences contains a list of document references to be embedded in the agent's context.
+	// These are used to reference documents that are not embedded in the agent's context.
+	// For example, if you have a document that is too large to embed in the agent's context, you can reference it here.
+	// The document will be fetched from the document store when the agent needs it.
+	DocumentReferences []*Document
+
+	// Trace defines the trace for the agent.
+	// Set "Trace: aigentic.NewTrace()" to create trace files in the default temporary directory under $TMP/traces
+	Trace       *Trace
+	LogLevel    slog.Level
+	MaxLLMCalls int // Maximum number of LLM calls (0 = unlimited)
+
+	// EnableEvaluation is a flag to enable evaluation events.
+	// If true, the agent will generate evaluation events for each llm call and response.
+	// These can be used to evaluate the agent's prompt performance using the eval package.
+	EnableEvaluation bool
 }
 
 // Start starts a new agent run.

@@ -319,7 +319,7 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 	defer run.stop()
 
 	// Collect actions
-	var actions []Action
+	var actions []action
 	go func() {
 		for action := range run.actionQueue {
 			actions = append(actions, action)

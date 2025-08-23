@@ -66,6 +66,10 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		maxLLMCalls = a.MaxLLMCalls
 	}
 
+	if a.ContextManager == nil {
+		a.ContextManager = NewBasicContextManager(a, message)
+	}
+
 	run := &AgentRun{
 		id:               runID,
 		agent:            a,
@@ -78,7 +82,7 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		actionQueue:      make(chan action, 100),
 		pendingApprovals: make(map[string]pendingApproval),
 		approvalTimeout:  approvalTimeout,
-		contextManager:   NewBasicContextManager(a, message),
+		contextManager:   a.ContextManager,
 		Logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 	run.tools = run.addTools()
@@ -366,7 +370,6 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	// Capture timing for evaluation
 	callStart := time.Now()
-	callID := uuid.New().String()
 
 	var respMsg ai.AIMessage
 
@@ -382,10 +385,8 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		if r.agent.EnableEvaluation {
 			evalEvent := &EvalEvent{
 				RunID:     r.id,
-				EventID:   callID,
 				AgentName: r.agent.Name,
 				SessionID: r.session.ID,
-				CallID:    callID,
 				Sequence:  r.llmCallCount,
 				Timestamp: callStart,
 				Duration:  time.Since(callStart),
@@ -409,10 +410,8 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		if r.agent.EnableEvaluation {
 			evalEvent := &EvalEvent{
 				RunID:     r.id,
-				EventID:   callID,
 				AgentName: r.agent.Name,
 				SessionID: r.session.ID,
-				CallID:    callID,
 				Sequence:  r.llmCallCount,
 				Timestamp: callStart,
 				Duration:  time.Since(callStart),

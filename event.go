@@ -121,10 +121,8 @@ func (e *ApprovalEvent) ID() string { return e.RunID }
 // This can be used to evaluate the agent's prompt performance using the eval package.
 type EvalEvent struct {
 	RunID     string
-	EventID   string
 	AgentName string
 	SessionID string
-	CallID    string
 	Sequence  int
 	Timestamp time.Time
 	Duration  time.Duration

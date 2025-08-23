@@ -146,56 +146,88 @@ func (r *BasicContextManager) BuildPrompt(ctx context.Context, messages []ai.Mes
 		msgs = append(msgs, ai.UserMessage{Role: ai.UserRole, Content: userContent})
 	}
 
-	// Add document attachments as separate Resource messages
-	for _, doc := range r.agent.Documents {
-		content, err := doc.Bytes()
-		if err != nil {
-			continue // skip
-		}
-
-		attachmentMsg := ai.ResourceMessage{
-			Role: ai.UserRole,
-			URI:  "",
-			Name: doc.Filename,
-			Body: content,
-			Type: deriveTypeFromMime(doc.MimeType),
-		}
-		msgs = append(msgs, attachmentMsg)
-	}
-
-	// Add attachment references as Resource messages with file:// URI
-	for _, docRef := range r.agent.DocumentReferences {
-		fileID := docRef.ID()
-
-		refMsg := ai.ResourceMessage{
-			Role: ai.UserRole,
-			URI:  fmt.Sprintf("file://%s", fileID),
-			Name: docRef.Filename,
-			Body: nil,
-			Type: deriveTypeFromMime(docRef.MimeType),
-		}
-		msgs = append(msgs, refMsg)
-	}
+	// Add documents using shared function
+	msgs = append(msgs, addDocuments(r.agent)...)
 
 	msgs = append(msgs, r.msgHistory...)
 	return msgs, nil
 }
 
 func (r *BasicContextManager) createToolHistory() string {
+	return createToolHistory(r.msgHistory, r.currentMsg)
+}
+
+func (r *BasicContextManager) createToolHistoryVariables() string {
+	return r.createToolHistory()
+}
+
+func (r *BasicContextManager) createSystemVariables(tools []ai.Tool) map[string]interface{} {
+	toolHistory := r.createToolHistoryVariables()
+	return createSystemVariables(r.agent, tools, toolHistory)
+}
+
+func (r *BasicContextManager) createUserVariables(message string) map[string]interface{} {
+	return createUserVariables(r.agent, message)
+}
+
+// Package-level utility functions for reuse across context managers
+func createSystemVariables(agent Agent, tools []ai.Tool, toolHistory string) map[string]interface{} {
+	var memorySystemPrompt string
+	var hasMemory bool
+	if agent.Memory != nil {
+		memorySystemPrompt = agent.Memory.SystemPrompt()
+		hasMemory = memorySystemPrompt != ""
+	}
+
+	hasToolHistory := strings.TrimSpace(toolHistory) != ""
+
+	return map[string]interface{}{
+		"HasTools":        len(tools) > 0,
+		"Role":            agent.Description,
+		"Instructions":    agent.Instructions,
+		"Memory":          memorySystemPrompt,
+		"Tools":           tools,
+		"ToolHistory":     toolHistory,
+		"HasRole":         agent.Description != "",
+		"HasInstructions": agent.Instructions != "",
+		"HasMemory":       hasMemory,
+		"HasToolHistory":  hasToolHistory,
+	}
+}
+
+func createUserVariables(agent Agent, message string) map[string]interface{} {
+	var memoryContent string
+	var hasMemory bool
+	if agent.Memory != nil {
+		memoryContent = agent.Memory.Content()
+		hasMemory = memoryContent != ""
+	}
+
+	return map[string]interface{}{
+		"Message":            message,
+		"MemoryContent":      memoryContent,
+		"HasMemory":          hasMemory,
+		"HasMessage":         message != "",
+		"Documents":          agent.Documents,
+		"DocumentReferences": agent.DocumentReferences,
+	}
+}
+
+func createToolHistory(msgHistory []ai.Message, currentMsg int) string {
 	msg := ""
 
 	// Create a map to store tool response messages by tool call ID
 	toolResponses := make(map[string]ai.ToolMessage)
 
 	// First pass: collect all tool response messages
-	for _, history := range r.msgHistory[0:r.currentMsg] {
+	for _, history := range msgHistory[0:currentMsg] {
 		if toolMsg, ok := history.(ai.ToolMessage); ok && toolMsg.Role == ai.ToolRole {
 			toolResponses[toolMsg.ToolCallID] = toolMsg
 		}
 	}
 
 	// Second pass: process AI messages with tool calls
-	for _, history := range r.msgHistory[0:r.currentMsg] {
+	for _, history := range msgHistory[0:currentMsg] {
 		if aiMsg, ok := history.(ai.AIMessage); ok && aiMsg.Role == ai.AssistantRole {
 			// Process each tool call in this AI message
 			for _, toolCall := range aiMsg.ToolCalls {
@@ -224,49 +256,39 @@ func (r *BasicContextManager) createToolHistory() string {
 	return msg
 }
 
-func (r *BasicContextManager) createToolHistoryVariables() string {
-	return r.createToolHistory()
-}
+func addDocuments(agent Agent) []ai.Message {
+	var msgs []ai.Message
 
-func (r *BasicContextManager) createSystemVariables(tools []ai.Tool) map[string]interface{} {
-	var memorySystemPrompt string
-	var hasMemory bool
-	if r.agent.Memory != nil {
-		memorySystemPrompt = r.agent.Memory.SystemPrompt()
-		hasMemory = memorySystemPrompt != ""
+	// Add document attachments as separate Resource messages
+	for _, doc := range agent.Documents {
+		content, err := doc.Bytes()
+		if err != nil {
+			continue // skip
+		}
+
+		attachmentMsg := ai.ResourceMessage{
+			Role: ai.UserRole,
+			URI:  "",
+			Name: doc.Filename,
+			Body: content,
+			Type: deriveTypeFromMime(doc.MimeType),
+		}
+		msgs = append(msgs, attachmentMsg)
 	}
 
-	toolHistory := r.createToolHistoryVariables()
-	hasToolHistory := strings.TrimSpace(toolHistory) != ""
+	// Add attachment references as Resource messages with file:// URI
+	for _, docRef := range agent.DocumentReferences {
+		fileID := docRef.ID()
 
-	return map[string]interface{}{
-		"HasTools":        len(tools) > 0,
-		"Role":            r.agent.Description,
-		"Instructions":    r.agent.Instructions,
-		"Memory":          memorySystemPrompt,
-		"Tools":           tools,
-		"ToolHistory":     toolHistory,
-		"HasRole":         r.agent.Description != "",
-		"HasInstructions": r.agent.Instructions != "",
-		"HasMemory":       hasMemory,
-		"HasToolHistory":  hasToolHistory,
-	}
-}
-
-func (r *BasicContextManager) createUserVariables(message string) map[string]interface{} {
-	var memoryContent string
-	var hasMemory bool
-	if r.agent.Memory != nil {
-		memoryContent = r.agent.Memory.Content()
-		hasMemory = memoryContent != ""
+		refMsg := ai.ResourceMessage{
+			Role: ai.UserRole,
+			URI:  fmt.Sprintf("file://%s", fileID),
+			Name: docRef.Filename,
+			Body: nil,
+			Type: deriveTypeFromMime(docRef.MimeType),
+		}
+		msgs = append(msgs, refMsg)
 	}
 
-	return map[string]interface{}{
-		"Message":            message,
-		"MemoryContent":      memoryContent,
-		"HasMemory":          hasMemory,
-		"HasMessage":         message != "",
-		"Documents":          r.agent.Documents,
-		"DocumentReferences": r.agent.DocumentReferences,
-	}
+	return msgs
 }

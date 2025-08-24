@@ -28,7 +28,8 @@ var capabilities = []Capability{
 	{Name: "ToolIntegration", RunFunction: core.RunToolIntegration},
 	{Name: "TeamCoordination", RunFunction: core.RunTeamCoordination},
 	{Name: "FileAttachments", RunFunction: core.RunFileAttachmentsAgent},
-	{Name: "MultiAgentChain", RunFunction: core.RunMultiAgentChain, EvalFunction: core.RunMultiAgentEvaluation},
+	{Name: "MultiAgentChain", RunFunction: core.RunMultiAgentChain},
+	{Name: "MultiAgentVariations", RunFunction: core.RunMultiAgentVariationsWrapper},
 	{Name: "ConcurrentRuns", RunFunction: core.RunConcurrentRuns},
 	{Name: "Streaming", RunFunction: core.RunStreaming},
 	{Name: "StreamingWithTools", RunFunction: core.RunStreamingWithTools},
@@ -105,6 +106,7 @@ func main() {
 		fmt.Println("  go run main.go gpt-4o-mini gemma3:12b")
 		fmt.Println("  go run main.go -test \"SimpleAgent,ToolIntegration\" qwen gpt-4o")
 		fmt.Println("  go run main.go -eval -test \"MultiAgentChain\" gpt-4o-mini")
+		fmt.Println("  go run main.go -eval -test \"MultiAgentContextManager\" gpt-4o-mini")
 		os.Exit(1)
 	}
 

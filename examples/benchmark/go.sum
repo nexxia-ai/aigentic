@@ -81,8 +81,8 @@ github.com/mailru/easyjson v0.7.7 h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0
 github.com/mailru/easyjson v0.7.7/go.mod h1:xzfreul335JAWq5oZzymOObrkdz5UnU4kGfJJLY9Nlc=
 github.com/mark3labs/mcp-go v0.37.0 h1:BywvZLPRT6Zx6mMG/MJfxLSZQkTGIcJSEGKsvr4DsoQ=
 github.com/mark3labs/mcp-go v0.37.0/go.mod h1:T7tUa2jO6MavG+3P25Oy/jR7iCeJPHImCZHRymCn39g=
-github.com/nexxia-ai/aigentic v0.4.0 h1:QsqSrfB37FYsBWgf71UJu2rNtWbbmMzRHDDI/ufVpeU=
-github.com/nexxia-ai/aigentic v0.4.0/go.mod h1:spQV1iIXHGQb9TA3uZ7X3hhbiF2DZ2s/BfpDmujDp9A=
+github.com/nexxia-ai/aigentic v0.4.1-0.20250824033137-821113f5179e h1:PIpCJoudPNa3jMP71D/EOthaVpTCT6rTBM2k+UX/m5Q=
+github.com/nexxia-ai/aigentic v0.4.1-0.20250824033137-821113f5179e/go.mod h1:spQV1iIXHGQb9TA3uZ7X3hhbiF2DZ2s/BfpDmujDp9A=
 github.com/nexxia-ai/aigentic-google v0.2.0 h1:h7Ofz852XND6h3AK8Rdw2MAOIsPZ6nl8Vo9X2m6qewA=
 github.com/nexxia-ai/aigentic-google v0.2.0/go.mod h1:jMNAqsGrxKOp5XDoAWEJouzf9zxeNiS1DA+vgbxtpG8=
 github.com/nexxia-ai/aigentic-ollama v0.1.0 h1:QCAc/kRjMBjK8ua5OFaZkrfF1HKfD0EJFxz/MmN/qoI=

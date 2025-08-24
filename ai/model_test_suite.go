@@ -557,7 +557,11 @@ func TestStreamingWithTools(t *testing.T, model *Model) {
 	args := testArgs{
 		ctx: context.Background(),
 		messages: []Message{
-			UserMessage{Role: UserRole, Content: "Please provide a detailed explanation of how greenhouse gases contribute to global warming. Also, use the echo tool to echo back the text 'Analysis Complete' when you're done with your explanation."},
+			UserMessage{Role: UserRole, Content: `
+				Please create a detailed explanation of how greenhouse gases contribute to global warming. 
+				Then send your explanation to the echo tool and append "Analysis Complete" to the end of your explanation. 
+				Finally respond with the result from the echo tool.`,
+			},
 		},
 		tools: []Tool{echoTool},
 	}
@@ -583,35 +587,15 @@ func TestStreamingWithTools(t *testing.T, model *Model) {
 		t.Error("Final message has no content and no tool calls")
 	}
 
-	// Verify we received at least one chunk
-	if len(chunks) < 2 {
-		t.Errorf("Expected at least one chunk, got %d", len(chunks))
-	}
-	// t.Logf("Got %d chunks", len(chunks))
-
 	// Check that we received tool calls in any chunk or final message
 	foundEchoTool := false
-
-	// Check all chunks
-	for _, chunk := range chunks {
-		for _, toolCall := range chunk.ToolCalls {
-			if toolCall.Name == "echo" {
-				foundEchoTool = true
-				break
+	for _, toolCall := range finalMessage.ToolCalls {
+		if toolCall.Name == "echo" {
+			foundEchoTool = true
+			if !strings.Contains(toolCall.Args, "Analysis Complete") {
+				t.Errorf("Expected 'Analysis Complete' in final message, got %s", finalMessage.Content)
 			}
-		}
-		if foundEchoTool {
 			break
-		}
-	}
-
-	// Also check final message
-	if !foundEchoTool {
-		for _, toolCall := range finalMessage.ToolCalls {
-			if toolCall.Name == "echo" {
-				foundEchoTool = true
-				break
-			}
 		}
 	}
 

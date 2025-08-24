@@ -40,6 +40,7 @@ type Trace struct {
 	file              traceWriter   // File to write traces to (or io.Discard if file creation fails)
 	RetentionDuration time.Duration // How long to keep traces
 	MaxTraceFiles     int           // Maximum number of files to keep
+	fileInitialized   bool          // Whether the file has been created and opened
 }
 
 // traceWriter interface for writing trace data
@@ -67,6 +68,30 @@ func (d *discardWriter) Close() error {
 func newTraceID() string {
 	now := time.Now()
 	return now.Format("20060102150405") + fmt.Sprintf("%09d", now.Nanosecond())
+}
+
+// ensureFileInitialized creates and opens the trace file if it hasn't been initialized yet
+func (t *Trace) ensureFileInitialized() error {
+	if t.fileInitialized {
+		return nil
+	}
+
+	var file traceWriter
+	osFile, err := os.OpenFile(t.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		slog.Error("Failed to open trace file, using io.Discard", "file", t.filename, "error", err)
+		// Use io.Discard wrapped in a traceWriter when file creation fails
+		file = &discardWriter{}
+	} else {
+		// Write initial header to the file
+		fmt.Fprintf(osFile, "trace for sessionID: %s\n", t.SessionID)
+		file = osFile
+	}
+
+	t.file = file
+	t.fileInitialized = true
+	slog.Debug("Trace file initialized", "file", t.filename)
+	return nil
 }
 
 // NewTrace creates a new Trace instance with default cleanup settings.
@@ -104,26 +129,17 @@ func NewTrace(config ...TraceConfig) *Trace {
 
 	filename := filepath.Join(cfg.Directory, fmt.Sprintf("trace-%s.txt", cfg.SessionID))
 
-	var file traceWriter
-	osFile, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		slog.Error("Failed to open trace file, using io.Discard", "file", filename, "error", err)
-		// Use io.Discard wrapped in a traceWriter when file creation fails
-		file = &discardWriter{}
-	} else {
-		file = osFile
-	}
-
 	t := &Trace{
 		SessionID:         cfg.SessionID,
 		StartTime:         time.Now(),
 		filename:          filename,
-		file:              file,
+		file:              nil, // File will be created on first write
 		directory:         cfg.Directory,
 		RetentionDuration: cfg.RetentionDuration,
 		MaxTraceFiles:     cfg.MaxTraceFiles,
+		fileInitialized:   false,
 	}
-	slog.Debug("Trace file location", "file", filename)
+	slog.Debug("Trace file will be created at", "file", filename)
 
 	t.Cleanup() // remove old entries
 
@@ -198,8 +214,8 @@ func (t *Trace) Cleanup() {
 
 // LLMCall records the initial interaction with the LLM (model and messages).
 func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) error {
-	if t == nil {
-		return nil
+	if err := t.ensureFileInitialized(); err != nil {
+		return err
 	}
 
 	traceSync.Lock()
@@ -285,6 +301,10 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 
 // LLMAIResponse records the LLM's response, any tool calls made during the response, and any thinking process.
 func (t *Trace) LLMAIResponse(agentName string, msg ai.AIMessage) {
+	if err := t.ensureFileInitialized(); err != nil {
+		return
+	}
+
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
@@ -311,7 +331,7 @@ func (t *Trace) logMessageContent(contentType, content string) {
 
 // FinishLLMInteraction adds a closing line to mark the end of an LLM interaction
 func (t *Trace) FinishLLMInteraction(modelName, agentName string) {
-	if t == nil {
+	if err := t.ensureFileInitialized(); err != nil {
 		return
 	}
 
@@ -322,9 +342,6 @@ func (t *Trace) FinishLLMInteraction(modelName, agentName string) {
 }
 func (t *Trace) logAIMessage(msg ai.AIMessage) {
 	t.logMessageContent("content", msg.Content)
-	if msg.Think != "" {
-		t.logMessageContent("thinking", msg.Think)
-	}
 	if len(msg.ToolCalls) > 0 {
 		for _, tc := range msg.ToolCalls {
 			fmt.Fprintf(t.file, " tool request:\n")
@@ -337,8 +354,8 @@ func (t *Trace) logAIMessage(msg ai.AIMessage) {
 
 // LLMToolResponse records a single tool call response.
 func (t *Trace) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content string) error {
-	if t == nil {
-		return nil
+	if err := t.ensureFileInitialized(); err != nil {
+		return err
 	}
 
 	traceSync.Lock()
@@ -362,8 +379,8 @@ func (t *Trace) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content
 
 // RecordError records an error that occurred during the interaction.
 func (t *Trace) RecordError(err error) error {
-	if t == nil {
-		return nil
+	if err := t.ensureFileInitialized(); err != nil {
+		return err
 	}
 
 	traceSync.Lock()
@@ -376,12 +393,13 @@ func (t *Trace) RecordError(err error) error {
 
 // End ends the trace and saves the trace information to a file.
 func (t *Trace) Close() error {
-	if t == nil {
-		return nil
-	}
-
 	traceSync.Lock()
 	defer traceSync.Unlock()
+
+	// If file was never initialized, there's nothing to close
+	if !t.fileInitialized {
+		return nil
+	}
 
 	t.EndTime = time.Now()
 	fmt.Fprintf(t.file, "End Time: %s\n", t.EndTime.Format(time.RFC3339))

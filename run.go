@@ -134,8 +134,8 @@ func (r *AgentRun) addTools() []AgentTool {
 				if v, ok := validationResult.Values.(map[string]any)["input"].(string); ok {
 					input = v
 				}
+				aa.Session = r.session
 				subRun := newAgentRun(aa, input)
-				subRun.session = r.session
 				subRun.trace = r.trace
 				subRun.Logger = r.Logger.With("sub-agent", aa.Name)
 				subRun.parentRun = r
@@ -351,7 +351,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 	r.queueEvent(event)
 
 	var err error
-	msgs := []ai.Message{}
+	var msgs []ai.Message
 	msgs, err = r.contextManager.BuildPrompt(r.session.Context, r.msgHistory, tools)
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})

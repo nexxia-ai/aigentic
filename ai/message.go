@@ -30,13 +30,12 @@ type ToolCall struct {
 }
 
 type AIMessage struct {
-	Role            MessageRole
-	Content         string
-	Think           string
-	OriginalContent string
-	ToolCalls       []ToolCall
-	Extra           map[string]any
-	Response        Response
+	Role      MessageRole
+	Content   string
+	Think     string
+	ToolCalls []ToolCall
+	Extra     map[string]any
+	Response  Response
 }
 
 func (m AIMessage) Value() (MessageRole, string) {

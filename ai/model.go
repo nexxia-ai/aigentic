@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -45,12 +44,11 @@ func (e StatusError) Error() string {
 	return fmt.Sprintf("status: %s, code: %d, error: %s", e.Status, e.StatusCode, e.ErrorMessage)
 }
 
-// Model represents a generic model container that uses function variables for provider-specific logic
+// Model represents a generic model container that uses closures for provider-specific logic
 type Model struct {
 	ModelName string
 	APIKey    string
 	BaseURL   string
-	client    *http.Client
 
 	// callFunc is the implementation for each provider
 	callFunc          func(ctx context.Context, model *Model, messages []Message, tools []Tool) (AIMessage, error)
@@ -70,7 +68,7 @@ type Model struct {
 	RecordFilename string // If set, record responses to this file
 
 	// Retry configuration
-	MaxRetries *int // Maximum number of retry attempts (nil = use default, 0 = no retry, default = 3)
+	MaxRetries *int // Maximum number of retry attempts (nil = use default, 1 = no retry, default = 10)
 }
 
 // calculateBackoffDelay calculates the delay for the next retry with exponential backoff and jitter
@@ -94,13 +92,11 @@ func (m *Model) calculateBackoffDelay(attempt int) time.Duration {
 func (m *Model) callWithRetry(ctx context.Context, messages []Message, tools []Tool) (AIMessage, error) {
 	var lastErr error
 
-	// Initialize MaxRetries with default value if not set
 	maxAttempts := defaultMaxRetries
 	if m.MaxRetries != nil {
 		maxAttempts = *m.MaxRetries
 	}
 
-	// Treat MaxRetries = 0 same as MaxRetries = 1 (one attempt)
 	if maxAttempts == 0 {
 		maxAttempts = 1
 	}
@@ -126,7 +122,6 @@ func (m *Model) callWithRetry(ctx context.Context, messages []Message, tools []T
 			return response, err
 		}
 
-		// If this is the last attempt, don't retry
 		if attempt == maxAttempts-1 {
 			break
 		}
@@ -155,13 +150,11 @@ func (m *Model) Call(ctx context.Context, messages []Message, tools []Tool) (AIM
 func (m *Model) streamWithRetry(ctx context.Context, messages []Message, tools []Tool, chunkFunction func(AIMessage) error) (AIMessage, error) {
 	var lastErr error
 
-	// Initialize MaxRetries with default value if not set
 	maxAttempts := defaultMaxRetries
 	if m.MaxRetries != nil {
 		maxAttempts = *m.MaxRetries
 	}
 
-	// Treat MaxRetries = 0 same as MaxRetries = 1 (one attempt)
 	if maxAttempts == 0 {
 		maxAttempts = 1
 	}
@@ -181,7 +174,6 @@ func (m *Model) streamWithRetry(ctx context.Context, messages []Message, tools [
 			return response, err
 		}
 
-		// If this is the last attempt, don't retry
 		if attempt == maxAttempts-1 {
 			break
 		}
@@ -298,31 +290,26 @@ func ExtractThinkTags(content string) (cleanedContent string, thinkPart string) 
 
 // recordAIMessage records an AI response to the specified file
 func (m *Model) recordAIMessage(response AIMessage, err error) {
-	// Create the recorded response structure
 	recorded := RecordedResponse{
 		AIMessage: response,
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
-	// Set error message if there was an error
 	if err != nil {
 		recorded.Error = err.Error()
 	}
 
-	// Marshal to JSON (compact format for JSONL)
 	jsonData, marshalErr := json.Marshal(recorded)
 	if marshalErr != nil {
 		return // Silently fail if we can't marshal
 	}
 
-	// Open file for appending (create if doesn't exist)
 	file, openErr := os.OpenFile(m.RecordFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if openErr != nil {
 		return // Silently fail if we can't open file
 	}
 	defer file.Close()
 
-	// Write the JSON record followed by a newline
 	file.Write(jsonData)
 	file.WriteString("\n")
 }

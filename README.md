@@ -314,6 +314,3 @@ The framework handles the complexity of agent orchestration while providing a si
 
 ---
 
-## License
-
-This project is licensed under the Functional Source License. https://fsl.software/

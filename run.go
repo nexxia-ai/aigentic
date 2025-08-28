@@ -581,14 +581,14 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 
 	// Optimisation for single save_memory tool call. There is no need to respond to the tool call.
 	// Simply save to memory and rerun the current message.
-	if len(msg.ToolCalls) == 1 && msg.ToolCalls[0].Name == "save_memory" {
-		var args map[string]interface{}
-		if err := json.Unmarshal([]byte(msg.ToolCalls[0].Args), &args); err == nil {
-			r.agent.Memory.Tool.Execute(r, args)
-			r.queueAction(&llmCallAction{Message: r.userMessage})
-			return
-		}
-	}
+	// if len(msg.ToolCalls) == 1 && msg.ToolCalls[0].Name == "save_memory" {
+	// 	var args map[string]interface{}
+	// 	if err := json.Unmarshal([]byte(msg.ToolCalls[0].Args), &args); err == nil {
+	// 		r.agent.Memory.Tool.Execute(r, args)
+	// 		r.queueAction(&llmCallAction{Message: r.userMessage})
+	// 		return
+	// 	}
+	// }
 
 	// reset history slice each time so that we only keep the last assistant msg and tool responses (if any)
 	r.msgHistory = []ai.Message{msg}

@@ -3,7 +3,7 @@ module streaming-example
 go 1.24.3
 
 require (
-	github.com/nexxia-ai/aigentic v0.5.2
+	github.com/nexxia-ai/aigentic v0.5.1-0.20250828125057-7146ecb9d9b9
 	github.com/nexxia-ai/aigentic-openai v0.2.2
 )
 

@@ -23,8 +23,8 @@ github.com/mark3labs/mcp-go v0.37.0 h1:BywvZLPRT6Zx6mMG/MJfxLSZQkTGIcJSEGKsvr4Ds
 github.com/mark3labs/mcp-go v0.37.0/go.mod h1:T7tUa2jO6MavG+3P25Oy/jR7iCeJPHImCZHRymCn39g=
 github.com/nexxia-ai/aigentic v0.5.1 h1:re/T3AlRpXDDDbKPkTb8OaSH1FZhHhkQSC/Ga80m93I=
 github.com/nexxia-ai/aigentic v0.5.1/go.mod h1:spQV1iIXHGQb9TA3uZ7X3hhbiF2DZ2s/BfpDmujDp9A=
-github.com/nexxia-ai/aigentic-ollama v0.1.0 h1:QCAc/kRjMBjK8ua5OFaZkrfF1HKfD0EJFxz/MmN/qoI=
-github.com/nexxia-ai/aigentic-ollama v0.1.0/go.mod h1:UlzjDfvgpktJagShUmUSqKW6C3BLAnyjeQVn4Nd5OJc=
+github.com/nexxia-ai/aigentic-ollama v0.2.0 h1:/lSOw9NDpmC8u3xcwJ4Nkbhri7Yoc+ceZ5yLdbjJCz4=
+github.com/nexxia-ai/aigentic-ollama v0.2.0/go.mod h1:X1lSzydEP5yzHpa15I1CElGVVBv37MS0FPeI6NFInCk=
 github.com/nexxia-ai/aigentic-openai v0.3.0 h1:PO8QZQGRuJMrUh+h/QlCL0j1OZc8Y75ypK9ImlwLGnE=
 github.com/nexxia-ai/aigentic-openai v0.3.0/go.mod h1:CeGvHrubE1v3NlWq2KUYCn3Q/W0HzfxpKfToc5/Kx9o=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

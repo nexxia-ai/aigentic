@@ -6,33 +6,32 @@ aigentic is a production-ready Go framework for building AI-powered applications
 
 aigentic provides a declarative solution where you declare agents and their capabilities, then run them with a simple, clean API.
 
+## How It Works
+
+aigentic uses a declarative architecture where you define agent configurations as data structures rather than implementing orchestration logic. You specify an agent's role, capabilities, tools, and instructions, then the framework handles the execution pipeline.
+
+The core architecture is event-driven, with agents emitting events during execution that you can consume for real-time monitoring and control. When you declare an agent, the framework creates an execution context that manages LLM interactions, tool calls, and multi-agent coordination.
+
+The event system provides hooks into the execution lifecycle: content generation, thinking processes, tool executions, and error handling. This allows you to build reactive applications that can respond to execution state changes, implement approval workflows, or provide real-time UI updates.
+
+For multi-agent systems, agents can be composed as tools within other agents, enabling hierarchical delegation patterns. The framework automatically handles the routing and coordination between agents, while maintaining the event stream for monitoring and debugging.
+
+The declarative approach means you focus on agent configuration and event handling rather than implementing conversation management, tool orchestration, or LLM integration details.
+
 ---
-
-## Why aigentic?
-
-- **Declarative Agent Design**: Define agents and let the framework handle execution
-- **Multi-Provider Support**: OpenAI, Ollama, Google Gemini, etc with unified interface  
-- **Production Ready**: Built-in retries, rate limiting, tracing, and error handling
-- **Real-time Streaming**: Live content generation with event-driven architecture
-- **Multi-Agent Orchestration**: Teams of specialized agents working together
-- **Document Processing**: Native support for PDFs, images, and multi-modal content
-- **Tool Integration**: Extensible tool system with approval workflows
-- **Context Management**: Plugable context manager
-- **Built in evaluations**: Run A/B evaluations using your Agent to identify the better prompt for accuracy and relevance
-- **Type Safety**: Full Go type safety with comprehensive error handling
 
 ## Key Features
 
 - **🤖 Simple Agent Creation** - Declarative agent configuration
 - **🔄 Streaming Responses** - Real-time content generation with chunked delivery
-- **🛠️ Tool Integration** - Custom tools with validation and approval workflows
+- **🛠️ Tool Integration** - Custom tools (including MCP) with validation and approval workflows
 - **📄 Document Support** - Multi-modal document processing (PDF, images, text)
 - **👥 Multi-Agent Teams** - Coordinated agent collaboration
 - **💾 Persistent Memory** - Context retention across sessions
 - **🔍 Built-in Tracing** - Comprehensive execution monitoring
 - **⚡ Event-Driven** - Real-time progress updates and user interaction
 - **🔒 Human-in-the-Loop** - Approval workflows for sensitive operations
-- **🎯 Provider Agnostic** - Support for OpenAI, Ollama, Google Gemini, and others.
+- **🎯 Provider Agnostic** - Support for OpenAI, Ollama, Google Gemini, and others
 
 ---
 
@@ -70,6 +69,8 @@ func main() {
 
 ### Streaming Agent
 
+For interactive applications, streaming UI updates, and human-in-the-loop workflows, use the advanced event system.
+
 ```go
 func main() {
     agent := aigentic.Agent{
@@ -81,9 +82,7 @@ func main() {
     }
     
     run, err := agent.Start("Explain quantum computing in simple terms")
-    if err != nil {
-        log.Fatal(err)
-    }
+    ... error checking removed
     
     // Process real-time events
     for event := range run.Next() {
@@ -143,7 +142,37 @@ func main() {
 }
 ```
 
+To enable approval for tools, simply set the RequireApproval field in the AgentTool. This will generate a ApprovalEvent in the main workflow.
+
+```go
+    calculatorTool := aigentic.AgentTool {
+        ...,
+        RequireApproval: true
+    }
+
+    run, err := agent.Start("call the tool with value 43")
+    ... error checking removed
+    
+    // Process real-time events
+    for event := range run.Next() {
+        switch e := event.(type) {
+        case *aigentic.ContentEvent:
+            fmt.Print(e.Content) // Stream content as it generates
+        case *aigentic.ThinkingEvent:
+            fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
+        case *aigentic.ApprovalEvent:
+            approved := yourUIApprovalFlow(e)
+            run.Approve(e.ID, approved) // true - approved, false - rejected
+        case *aigentic.ErrorEvent:
+            fmt.Printf("\n❌ Error: %v\n", e.Err)
+        }
+    }
+```
+
 ### Document Usage
+
+Native document support. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents.
+
 
 ```go
 func main() {
@@ -160,6 +189,17 @@ func main() {
 
     response, _ := agent.Execute("What are the main points in this document?")
     fmt.Println(response)
+}
+```
+
+If you have several documents, it is best to send the reference only by setting the
+DocumentReferences field instead. This way the LLM will decide what to retrieve and when.
+
+```go
+agent := aigentic.Agent{
+    ...
+    DocumentReferences: []*aigentic.Document{doc},
+    ...
 }
 ```
 
@@ -203,6 +243,8 @@ func main() {
 
 ## Advanced Features
 
+This covers the essential features. The framework includes many more advanced capabilities like MCP integration, sophisticated event handling, and production-ready observability features.
+
 ### Memory and Sessions (coming soon)
 
 ```go
@@ -244,21 +286,24 @@ run, _ := agent.Start("Send a follow-up email to john@example.com")
 for event := range run.Next() {
     if approvalEvent, ok := event.(*aigentic.ApprovalEvent); ok {
         approved := showApprovalDialog(approvalEvent) // Your UI
-        run.Approve(approvalEvent.ApprovalID, approved)
+        run.Approve(approvalEvent.ID, approved)
     }
 }
 ```
 
 ### Tracing and Logging
 
+All interactions are automatically logged if you set the Trace field.
+Traces are saved to <tmp_dir>/traces/ 
+
 ```go
 agent := aigentic.Agent{
     Model: openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Trace: aigentic.NewTrace(),
-    LogLevel: slog.LevelDebug,
+    Trace: aigentic.NewTrace(), // for prompt debugging
+    LogLevel: slog.LevelDebug,  // for execution flow debugging 
 }
 
-// All interactions are automatically logged to ./traces/
+// All interactions are automatically traced
 response, _ := agent.Execute("Complex reasoning task")
 ```
 
@@ -273,12 +318,9 @@ go get github.com/nexxia-ai/aigentic-ollama    # For Ollama support
 go get github.com/nexxia-ai/aigentic-google    # For Google Gemini support
 ```
 
-**Note**: This module uses private repositories:
-```bash
-export GOPRIVATE="github.com/nexxia-ai/**"
-```
-
 ## Provider Setup
+
+Choose the model provider and set parameters if need be.
 
 ### OpenAI
 ```go
@@ -298,19 +340,9 @@ import gemini "github.com/nexxia-ai/aigentic-google"
 model := gemini.NewGeminiModel("gemini-pro", "your-api-key")
 ```
 
----
+### Model Configuration
+```go
+model = model.WithTemperature(0.7).WithTopP(0.9).WithMaxTokens(2000)
+```
 
-## Architecture
-
-aigentic uses an event-driven architecture that enables:
-
-- **Real-time UI Updates**: Stream content as it generates
-- **Progress Tracking**: Monitor agent execution in detail  
-- **Human Interaction**: Pause for approvals and user input
-- **Error Handling**: Graceful failure recovery
-- **Concurrent Execution**: Parallel agent operations
-
-The framework handles the complexity of agent orchestration while providing a simple, declarative API for developers.
-
----
 

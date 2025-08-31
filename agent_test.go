@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -118,12 +119,12 @@ func TestAgentToolCalling(t *testing.T) {
 func TestAgentFileAttachment(t *testing.T) {
 	receivedMessages := []ai.Message{}
 
-	doc1 := NewInMemoryDocument("", "test.txt", []byte("This is a text file content"), nil)
-	doc2 := NewInMemoryDocument("", "test.png", []byte("fake image data"), nil)
+	doc1 := document.NewInMemoryDocument("", "test.txt", []byte("This is a text file content"), nil)
+	doc2 := document.NewInMemoryDocument("", "test.png", []byte("fake image data"), nil)
 	agent := Agent{
 		Name:        "test-attachment-agent",
 		Description: "A test agent that handles file attachments",
-		Documents: []*Document{
+		Documents: []*document.Document{
 			doc1,
 			doc2,
 		},

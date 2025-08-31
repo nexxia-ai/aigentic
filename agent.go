@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 // Agent is the main declarative type for an agent.
@@ -37,13 +38,13 @@ type Agent struct {
 
 	// Documents contains a list of documents to be embedded in the agent's context.
 	// You must manage the document sizes so they don't exceed the model's context window.
-	Documents []*Document
+	Documents []*document.Document
 
 	// DocumentReferences contains a list of document references to be embedded in the agent's context.
 	// These are used to reference documents that are not embedded in the agent's context.
 	// For example, if you have a document that is too large to embed in the agent's context, you can reference it here.
 	// The document will be fetched from the document store when the agent needs it.
-	DocumentReferences []*Document
+	DocumentReferences []*document.Document
 
 	// Trace defines the trace for the agent.
 	// Set "Trace: aigentic.NewTrace()" to create trace files in the default temporary directory under $TMP/traces

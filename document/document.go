@@ -1,4 +1,4 @@
-package aigentic
+package document
 
 import (
 	"context"
@@ -97,8 +97,8 @@ func NewInMemoryDocument(id, filename string, data []byte, srcDoc *Document) *Do
 	}
 }
 
-// deriveTypeFromMime derives the resource type from MIME type
-func deriveTypeFromMime(mimeType string) string {
+// DeriveTypeFromMime derives the resource type from MIME type
+func DeriveTypeFromMime(mimeType string) string {
 	switch {
 	case strings.HasPrefix(mimeType, "image/"):
 		return "image"

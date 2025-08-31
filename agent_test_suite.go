@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -281,7 +282,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 		message       string
 		expectedError bool
 		validate      func(t *testing.T, content string, run *AgentRun)
-		attachments   []*Document
+		attachments   []*document.Document
 		tools         []ai.Tool
 	}{
 		{
@@ -361,7 +362,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 		name        string
 		message     string
 		validate    func(t *testing.T, content string, run *AgentRun)
-		attachments []*Document
+		attachments []*document.Document
 		tools       []ai.Tool
 	}{
 		{
@@ -440,7 +441,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 		message     string
 		agent       Agent
 		validate    func(t *testing.T, content string, agent Agent)
-		attachments []*Document
+		attachments []*document.Document
 		tools       []ai.Tool
 	}{
 		{
@@ -448,7 +449,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			message:     "tell me the name of the company with the number 150. Use tools.",
 			agent:       newAgent(),
 			tools:       []ai.Tool{NewSecretNumberToolLegacy()},
-			attachments: []*Document{},
+			attachments: []*document.Document{},
 			validate: func(t *testing.T, content string, agent Agent) {
 				assert.NotEmpty(t, content)
 				assert.Contains(t, content, "Nexxia")
@@ -646,27 +647,27 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 	// Define test cases
 	testCases := []struct {
 		name        string
-		attachments []*Document
+		attachments []*document.Document
 		description string
 	}{
 		{
 			name: "text file",
-			attachments: []*Document{
-				NewInMemoryDocument("", "sample.txt", []byte("This is a test text file with some sample content for analysis."), nil),
+			attachments: []*document.Document{
+				document.NewInMemoryDocument("", "sample.txt", []byte("This is a test text file with some sample content for analysis."), nil),
 			},
 			description: "You are a helpful assistant that analyzes text files and provides insights.",
 		},
 		{
 			name: "PDF file",
-			attachments: []*Document{
-				NewInMemoryDocument("", "sample.pdf", []byte("%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Test PDF Content) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000204 00000 n \ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n297\n%%EOF"), nil),
+			attachments: []*document.Document{
+				document.NewInMemoryDocument("", "sample.pdf", []byte("%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Test PDF Content) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000204 00000 n \ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n297\n%%EOF"), nil),
 			},
 			description: "You are a helpful assistant that analyzes PDF files and provides insights.",
 		},
 		{
 			name: "image file",
-			attachments: []*Document{
-				NewInMemoryDocument("", "sample.png", []byte("fake-image-data-for-testing"), nil),
+			attachments: []*document.Document{
+				document.NewInMemoryDocument("", "sample.png", []byte("fake-image-data-for-testing"), nil),
 			},
 			description: "You are a helpful assistant that analyzes images and provides insights.",
 		},

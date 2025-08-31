@@ -5,18 +5,19 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 func RunFileAttachmentsAgent(model *ai.Model) (BenchResult, error) {
 	start := time.Now()
 
-	doc := aigentic.NewInMemoryDocument("", "sample.txt", []byte("This is a test text file with some sample content for analysis. The content includes information about artificial intelligence and machine learning."), nil)
+	doc := document.NewInMemoryDocument("", "sample.txt", []byte("This is a test text file with some sample content for analysis. The content includes information about artificial intelligence and machine learning."), nil)
 
 	agent := aigentic.Agent{
 		Model:        model,
 		Description:  "You are a helpful assistant that analyzes text files and provides insights.",
 		Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
-		Documents:    []*aigentic.Document{doc},
+		Documents:    []*document.Document{doc},
 		Trace:        aigentic.NewTrace(),
 	}
 

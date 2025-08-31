@@ -10,6 +10,7 @@ import (
 	ollama "github.com/nexxia-ai/aigentic-ollama"
 	openai "github.com/nexxia-ai/aigentic-openai"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/utils"
 )
 
@@ -41,13 +42,13 @@ var simpleAgent = aigentic.Agent{
 }
 
 // attachmentAgent demonstrates an agent that accepts file attachments
-var doc = aigentic.NewInMemoryDocument("", "sample.txt", []byte("This is a sample text file with some information about artificial intelligence."), nil)
+var doc = document.NewInMemoryDocument("", "sample.txt", []byte("This is a sample text file with some information about artificial intelligence."), nil)
 var attachmentAgent = aigentic.Agent{
 	Model:        model,
 	Name:         "AttachmentAgent",
 	Description:  "An agent that can analyze and work with file attachments",
 	Instructions: "You can analyze images and documents. Describe what you see and provide insights about the content.",
-	Documents:    []*aigentic.Document{doc},
+	Documents:    []*document.Document{doc},
 }
 
 // multiAgent demonstrates a multi-agent system that can delegate tasks to other agents

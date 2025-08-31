@@ -9,6 +9,7 @@ import (
 	"text/template"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 type ContextManager interface {
@@ -271,7 +272,7 @@ func addDocuments(agent Agent) []ai.Message {
 			URI:  "",
 			Name: doc.Filename,
 			Body: content,
-			Type: deriveTypeFromMime(doc.MimeType),
+			Type: document.DeriveTypeFromMime(doc.MimeType),
 		}
 		msgs = append(msgs, attachmentMsg)
 	}
@@ -285,7 +286,7 @@ func addDocuments(agent Agent) []ai.Message {
 			URI:  fmt.Sprintf("file://%s", fileID),
 			Name: docRef.Filename,
 			Body: nil,
-			Type: deriveTypeFromMime(docRef.MimeType),
+			Type: document.DeriveTypeFromMime(docRef.MimeType),
 		}
 		msgs = append(msgs, refMsg)
 	}

@@ -1,10 +1,8 @@
 package aigentic
 
-import "github.com/nexxia-ai/aigentic/ai"
-
 // Retriever interface defines the contract for all retrievers
 type Retriever interface {
-	ToTool() ai.Tool
+	ToTool() AgentTool
 }
 
 // Embedder interface defines the contract for text embedding

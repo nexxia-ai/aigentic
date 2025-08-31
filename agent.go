@@ -61,6 +61,8 @@ type Agent struct {
 	// If true, the agent will generate evaluation events for each llm call and response.
 	// These can be used to evaluate the agent's prompt performance using the eval package.
 	EnableEvaluation bool
+
+	Retrievers []Retriever
 }
 
 // Start starts a new agent run.

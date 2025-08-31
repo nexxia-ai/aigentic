@@ -179,6 +179,11 @@ func (r *AgentRun) addTools() []AgentTool {
 		tools = append(tools, agentTool)
 	}
 
+	// Retriever tools
+	for _, retriever := range r.agent.Retrievers {
+		tools = append(tools, retriever.ToTool())
+	}
+
 	// Add memory tool
 	if r.agent.Memory != nil {
 		tools = append(tools, r.agent.Memory.Tool)

@@ -3,9 +3,9 @@ module showcase
 go 1.24.3
 
 require (
-	github.com/nexxia-ai/aigentic v0.5.1
+	github.com/nexxia-ai/aigentic v0.6.0
 	github.com/nexxia-ai/aigentic-ollama v0.2.0
-	github.com/nexxia-ai/aigentic-openai v0.3.0
+	github.com/nexxia-ai/aigentic-openai v0.3.1
 )
 
 require (

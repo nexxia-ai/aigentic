@@ -3,6 +3,7 @@ package aigentic
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -397,4 +398,142 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 	}
 
 	assert.Equal(t, expectedToolResponses, actualToolResponses, "Tool response messages should have correct tool call IDs, tool names, and content that match the original requests")
+}
+
+func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
+	session := NewSession(context.Background())
+	session.Trace = NewTrace()
+
+	callCount := 0
+
+	// Static dummy model with predictable responses based on call count
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
+
+		// First call: coordinator makes a tool call to child agent
+		if callCount == 1 {
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "I'll delegate this to my child agent for detailed information.",
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_child_agent",
+						Type: "function",
+						Name: "child_agent",
+						Args: `{"input": "Tell me about artificial intelligence and its applications"}`,
+					},
+				},
+			}, nil
+		}
+
+		// Second call: child agent provides detailed response
+		if callCount == 2 {
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Artificial Intelligence (AI) is a transformative technology that enables machines to perform tasks typically requiring human intelligence. AI applications span across multiple domains including healthcare, finance, transportation, and entertainment. Key technologies include machine learning, natural language processing, computer vision, and robotics.",
+			}, nil
+		}
+
+		// Third call: coordinator provides final summary
+		if callCount == 3 {
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "## AI Summary\n\nBased on the detailed analysis from my child agent, Artificial Intelligence represents a revolutionary technology with broad applications across industries. The key areas include machine learning, NLP, computer vision, and robotics, making it a cornerstone of modern technological advancement.",
+			}, nil
+		}
+
+		// Fallback response
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Processing your request...",
+		}, nil
+	})
+
+	// Child agent that provides streaming responses
+	childAgent := Agent{
+		Model:        model,
+		Name:         "child_agent",
+		Description:  "A child agent that provides detailed information about topics.",
+		Instructions: "Provide detailed responses about the requested topic.",
+		// Stream:       true, // Should inherit from parent
+	}
+
+	// Coordinator agent that calls the child agent
+	coordinator := Agent{
+		Session:     session,
+		Model:       model,
+		Name:        "coordinator",
+		Description: "A coordinator that delegates tasks to child agents.",
+		Instructions: `
+		1. Create a brief summary about the topic
+		2. Call the sub agent to provide detailed information about the topic
+		3. Return the summary and the detailed information in markdown format`,
+		Agents: []Agent{childAgent},
+		Stream: true,
+		Trace:  NewTrace(),
+		Memory: NewMemory(),
+	}
+
+	message := "Tell me about artificial intelligence and its applications"
+	run, err := coordinator.Start(message)
+	if err != nil {
+		t.Fatalf("Agent run failed: %v", err)
+	}
+
+	var coordinatorChunks []string
+	var childAgentChunks []string
+	var toolCalls []string
+
+	for ev := range run.Next() {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			// Check if this is from the coordinator or child agent
+			switch e.AgentName {
+			case "coordinator":
+				assert.True(t, e.RunID == run.ID(), "Content event have a different RunID from the coordinator")
+				coordinatorChunks = append(coordinatorChunks, e.Content)
+			case "child_agent":
+				assert.True(t, e.RunID != run.ID(), "Content event have a different RunID from the child agent")
+				childAgentChunks = append(childAgentChunks, e.Content)
+			default:
+				// For unknown agent names, we'll still collect the content
+				t.Logf("Received content from unknown agent: %s", e.AgentName)
+			}
+		case *ToolEvent:
+			toolCalls = append(toolCalls, e.ToolName)
+		case *ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
+		case *ErrorEvent:
+			t.Fatalf("Agent error: %v", e.Err)
+		}
+	}
+
+	// Validate that we received streaming chunks from both agents
+	assert.Greater(t, len(coordinatorChunks), 1, "Should have received streaming chunks from coordinator")
+	assert.Greater(t, len(childAgentChunks), 1, "Should have received streaming chunks from child agent")
+
+	// Validate that child agent was called
+	childAgentCalled := false
+	for _, toolCall := range toolCalls {
+		if toolCall == "child_agent" {
+			childAgentCalled = true
+			break
+		}
+	}
+	assert.True(t, childAgentCalled, "Child agent should have been called")
+
+	// Validate final content
+	finalCoordinatorContent := strings.Join(coordinatorChunks, "")
+	finalChildAgentContent := strings.Join(childAgentChunks, "")
+
+	assert.NotEmpty(t, finalCoordinatorContent, "Coordinator should have produced content")
+	assert.NotEmpty(t, finalChildAgentContent, "Child agent should have produced content")
+
+	// Validate content quality
+	assert.Contains(t, strings.ToLower(finalCoordinatorContent), "delegate", "Coordinator should mention delegation")
+	assert.Contains(t, strings.ToLower(finalChildAgentContent), "artificial intelligence", "Child agent should mention AI")
+
+	t.Logf("Coordinator content: %s", finalCoordinatorContent)
+	t.Logf("Child agent content: %s", finalChildAgentContent)
+
 }

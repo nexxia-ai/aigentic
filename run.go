@@ -135,6 +135,10 @@ func (r *AgentRun) addTools() []AgentTool {
 					input = v
 				}
 				aa.Session = r.session
+				// Inherit Stream setting from parent if child agent doesn't have it explicitly set
+				if !aa.Stream && r.agent.Stream {
+					aa.Stream = true
+				}
 				subRun := newAgentRun(aa, input)
 				subRun.trace = r.trace
 				subRun.Logger = r.Logger.With("sub-agent", aa.Name)

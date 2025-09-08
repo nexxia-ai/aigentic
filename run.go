@@ -386,7 +386,6 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 			return nil
 		})
 
-		// Emit evaluation event if enabled - BEFORE clearing content
 		if r.agent.EnableEvaluation {
 			evalEvent := &EvalEvent{
 				RunID:     r.id,
@@ -397,17 +396,13 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 				Duration:  time.Since(callStart),
 				Messages:  msgs,
 				Tools:     tools,
-				Response:  respMsg, // Contains full content from streaming
+				Response:  respMsg,
 				Error:     err,
 				ModelName: r.model.ModelName,
 			}
-
 			r.queueEvent(evalEvent)
 		}
 
-		// Clear content to prevent duplication
-		respMsg.Content = ""
-		respMsg.Think = ""
 	default:
 		respMsg, err = r.model.Call(r.session.Context, msgs, tools)
 
@@ -546,25 +541,28 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 // handleAIMessage handles the response from the LLM, whether it's a complete message or a chunk
 func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 
-	if msg.Think != "" {
-		event := &ThinkingEvent{
-			RunID:     r.id,
-			AgentName: r.agent.Name,
-			SessionID: r.session.ID,
-			Thought:   msg.Think,
+	// only fire events if not streaming or if this is a chunk in streaming.
+	// do not fire event if this is the last chunk (streaming) to prevent duplicate content
+	if !r.agent.Stream || isChunk {
+		if msg.Think != "" {
+			event := &ThinkingEvent{
+				RunID:     r.id,
+				AgentName: r.agent.Name,
+				SessionID: r.session.ID,
+				Thought:   msg.Think,
+			}
+			r.queueEvent(event)
 		}
-		r.queueEvent(event)
-	}
 
-	// fire content notification
-	if msg.Content != "" {
-		event := &ContentEvent{
-			RunID:     r.id,
-			AgentName: r.agent.Name,
-			SessionID: r.session.ID,
-			Content:   msg.Content,
+		if msg.Content != "" {
+			event := &ContentEvent{
+				RunID:     r.id,
+				AgentName: r.agent.Name,
+				SessionID: r.session.ID,
+				Content:   msg.Content,
+			}
+			r.queueEvent(event)
 		}
-		r.queueEvent(event)
 	}
 
 	// return if this is a chunk (streaming) and there are no tool calls

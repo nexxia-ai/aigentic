@@ -11,6 +11,7 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/memory"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -530,7 +531,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
 		Trace:  NewTrace(),
-		Memory: NewMemory(),
+		Memory: memory.NewMemory(),
 		// LogLevel: slog.LevelDebug,
 	}
 
@@ -805,7 +806,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 	// Now wait for all runs to complete (parallel waiting)
 	responses := make([]string, len(agentRuns))
 	for i, agentRun := range agentRuns {
-		t.Logf("Waiting for run %d to complete", i+1)
+		// t.Logf("Waiting for run %d to complete", i+1)
 
 		response, err := agentRun.Wait(0)
 		if err != nil {
@@ -813,7 +814,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		}
 
 		responses[i] = response
-		t.Logf("Run %d completed with response: %s", i+1, response)
+		// t.Logf("Run %d completed with response: %s", i+1, response)
 	}
 
 	// Verify all responses
@@ -834,8 +835,8 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 
 	// Log which run actually got the tool call response for debugging
 	if toolCallRunIndex >= 0 {
-		t.Logf("Tool call response found in run %d: '%s' (expected tool call: %v)",
-			toolCallRunIndex+1, runs[toolCallRunIndex].name, runs[toolCallRunIndex].expectsTool)
+		// t.Logf("Tool call response found in run %d: '%s' (expected tool call: %v)",
+		// toolCallRunIndex+1, runs[toolCallRunIndex].name, runs[toolCallRunIndex].expectsTool)
 	}
 
 	// For now, just verify that we found a tool call response, regardless of which run it was in
@@ -848,7 +849,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 	}
 
 	assert.Equal(t, counter, 1, "Should have made 1 tool call")
-	t.Logf("All %d parallel runs completed successfully", len(runs))
+	// t.Logf("All %d parallel runs completed successfully", len(runs))
 }
 
 func TestBasicStreaming(t *testing.T, model *ai.Model) {
@@ -1077,24 +1078,27 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		Model:       model,
 		Name:        "coordinator",
 		Description: "You are a coordinator that executes a plan and saves the results to memory. ",
-		Instructions: "1) First analyse the plan and identify tasks" +
-			"2) Execute the plan by executing each task in the order specified. " +
-			"3) Keep track of the tasks you have already executed to avoid repeating the same task. Save the tasks you have executed to memory." +
-			"4) When saving memory, include the current memory content and append the new result so both are present. " +
-			"5) Return only the memory content (no commentary). " +
-			"Do not make up information. You must use the tools to get the information.",
+		Instructions: "EXECUTE TASKS SEQUENTIALLY - ONE AT A TIME:\n" +
+			"1) Analyze the plan and identify each task step\n" +
+			"2) Execute tasks ONE AT A TIME in the exact order specified - DO NOT make parallel calls\n" +
+			"3) After each task completion, immediately save the result to memory before proceeding to the next task\n" +
+			"4) NEVER repeat or duplicate tool calls - each task should be executed only once\n" +
+			"5) Track completed tasks to avoid repetition\n" +
+			"6) When saving memory, include all previous memory content plus the new result\n" +
+			"7) After all tasks are complete, return only the final memory content (no commentary)\n" +
+			"CRITICAL: Execute step 1, then step 2, then step 3, etc. - NEVER execute multiple steps simultaneously.",
 		Agents: []Agent{lookupCompany, lookupSupplier},
 		Trace:  NewTrace(),
-		Memory: NewMemory(),
+		Memory: memory.NewMemory(),
 	}
 
 	run, err := coordinator.Start(
 		"Execute the following plan: " +
 			"1) Call 'lookup_company' with input 'Look up company 150'. " +
-			"2) Save the result to memory using save_memory. " +
+			"2) Save the result to run memory. " +
 			"3) Call 'lookup_company_supplier' with input 'Look up supplier 200'. " +
-			"4) Save the result to memory again, including previous memory content. " +
-			"5) When you have the company and the supplier details, then respond with exactly the full content of ContextMemory.md (no extra text).",
+			"4) Save the result to run memory again, keeping the previous memory content. " +
+			"5) When you have the company and the supplier details, then respond with exactly the full content of the run memory (no extra text).",
 	)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
@@ -1122,6 +1126,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 				}
 			}
 			if e.ToolName == "lookup_company_supplier" {
+				counter++
 				if v, ok := args["input"].(string); ok {
 					supplierToolInput = v
 				}
@@ -1159,5 +1164,5 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Contains(t, finalContent, "Phoenix")
-	assert.Equal(t, counter, 2, "Should have made 2 tool calls")
+	assert.Equal(t, 2, counter, "Should have made 2 tool calls")
 }

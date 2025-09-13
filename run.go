@@ -188,9 +188,12 @@ func (r *AgentRun) addTools() []AgentTool {
 		tools = append(tools, retriever.ToTool())
 	}
 
-	// Add memory tool
+	// Add memory tools
 	if r.agent.Memory != nil {
-		tools = append(tools, r.agent.Memory.Tool)
+		memoryTools := r.agent.Memory.GetTools()
+		for _, tool := range memoryTools {
+			tools = append(tools, WrapTool(tool))
+		}
 	}
 
 	// make sure all tools have a validation and execute function
@@ -298,6 +301,14 @@ func (r *AgentRun) runStopAction(act *stopAction) {
 		}
 		r.queueEvent(event)
 	}
+
+	// Clear run memory at the end of each agent run
+	if r.agent.Memory != nil {
+		if err := r.agent.Memory.ClearRunMemory(); err != nil {
+			r.Logger.Error("failed to clear run memory", "error", err)
+		}
+	}
+
 	r.stop()
 }
 

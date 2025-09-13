@@ -77,10 +77,10 @@ You have already used the following tools:
 
 {{end}}`
 
-const DefaultUserTemplate = `{{if .HasMemory}}This is the content of the memory file (called ContextMemory.md):
-<ContextMemory.md>
+const DefaultUserTemplate = `{{if .HasMemory}}This is the content of the run memory:
+<run_memory>
 {{.MemoryContent}}
-</ContextMemory.md>
+</run_memory>
 
 {{end}}{{if .HasMessage}}Please answer the following request or task:
 {{.Message}} 
@@ -200,7 +200,7 @@ func createUserVariables(agent Agent, message string) map[string]interface{} {
 	var memoryContent string
 	var hasMemory bool
 	if agent.Memory != nil {
-		memoryContent = agent.Memory.Content()
+		memoryContent = agent.Memory.GetRunMemoryContent()
 		hasMemory = memoryContent != ""
 	}
 

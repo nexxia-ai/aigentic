@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/memory"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -869,7 +870,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
 		Trace:  NewTrace(),
-		Memory: NewMemory(),
+		Memory: memory.NewMemory(),
 	}
 
 	// Now run the same test logic as TestTeamCoordination

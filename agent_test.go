@@ -8,6 +8,7 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/memory"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -471,7 +472,7 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 		Agents: []Agent{childAgent},
 		Stream: true,
 		Trace:  NewTrace(),
-		Memory: NewMemory(),
+		Memory: memory.NewMemory(),
 	}
 
 	message := "Tell me about artificial intelligence and its applications"

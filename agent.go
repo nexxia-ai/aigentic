@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/memory"
 )
 
 // Agent is the main declarative type for an agent.
@@ -30,7 +31,7 @@ type Agent struct {
 	// IncludeHistory is a flag to include the message history in the prompt.
 	IncludeHistory bool
 
-	Memory *Memory
+	Memory *memory.Memory
 
 	// Retries is the number of times to retry the agent if it fails.
 	Retries int

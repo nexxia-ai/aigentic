@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
@@ -30,9 +32,9 @@ type AgentRun struct {
 	pendingApprovals map[string]pendingApproval
 	trace            *Trace
 	userMessage      string
-	parentRun        *AgentRun // pointer toparent if this is a sub-agent
+	parentRun        *AgentRun // pointer to parent if this is a sub-agent
 	Logger           *slog.Logger
-	maxLLMCalls      int // maximum number of LLM calls
+	maxLLMCalls      int // maximum number of LLM calls (defaults to 20 when unset)
 	llmCallCount     int // number of LLM calls made
 	approvalTimeout  time.Duration
 }
@@ -61,6 +63,7 @@ func newAgentRun(a Agent, message string) *AgentRun {
 	if a.Trace != nil {
 		trace = a.Trace
 	}
+	// Apply a conservative default to prevent runaway tool/LLM loops.
 	maxLLMCalls := 20
 	if a.MaxLLMCalls != 0 {
 		maxLLMCalls = a.MaxLLMCalls
@@ -481,18 +484,20 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		if r.trace != nil {
 			r.trace.RecordError(err)
 		}
-		r.queueAction(&toolResponseAction{
-			request:  act,
-			response: fmt.Sprintf("tool execution error: %v", err),
-		})
+		errMsg := fmt.Sprintf("tool execution error: %v", err)
+		r.queueAction(&toolResponseAction{request: act, response: errMsg})
 		return
 	}
-	content := ""
-	if result != nil {
-		for _, c := range result.Content {
-			if s, ok := c.Content.(string); ok {
-				content += s
-			}
+
+	response := formatToolResponse(result)
+
+	if result != nil && result.Error {
+		toolErr := fmt.Errorf("tool %s reported error", act.ToolName)
+		if response != "" {
+			toolErr = fmt.Errorf("tool %s reported error: %s", act.ToolName, response)
+		}
+		if r.trace != nil {
+			r.trace.RecordError(toolErr)
 		}
 	}
 
@@ -504,10 +509,52 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 			Type: "function",
 			Name: act.ToolName,
 			Args: string(argsJSON),
-		}, content)
+		}, response)
 	}
 
-	r.queueAction(&toolResponseAction{request: act, response: content})
+	r.queueAction(&toolResponseAction{request: act, response: response})
+}
+
+func formatToolResponse(result *ai.ToolResult) string {
+	if result == nil || len(result.Content) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(result.Content))
+	for _, item := range result.Content {
+		segment := stringifyToolContent(item.Content)
+		if segment == "" {
+			continue
+		}
+		if item.Type != "" && item.Type != "text" {
+			segment = fmt.Sprintf("[%s] %s", item.Type, segment)
+		}
+		parts = append(parts, segment)
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+func stringifyToolContent(content any) string {
+	switch v := content.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case []byte:
+		if utf8.Valid(v) {
+			return string(v)
+		}
+		return fmt.Sprintf("0x%x", v)
+	case fmt.Stringer:
+		return v.String()
+	default:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return string(encoded)
+	}
 }
 
 func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string) {

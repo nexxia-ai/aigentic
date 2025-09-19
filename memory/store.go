@@ -158,11 +158,6 @@ func (s *FileStore) Get(compartment MemoryCompartment, id string) (*MemoryEntry,
 	for _, entry := range entries {
 		if entry.ID == id {
 			entry.UpdateAccess()
-
-			if err := s.saveData(s.getDataCopy()); err != nil {
-				return nil, fmt.Errorf("failed to persist memory data: %w", err)
-			}
-
 			return entry, nil
 		}
 	}

@@ -151,13 +151,18 @@ func (s *FileStore) Save(compartment MemoryCompartment, entry *MemoryEntry) erro
 
 // Get retrieves a memory entry by ID
 func (s *FileStore) Get(compartment MemoryCompartment, id string) (*MemoryEntry, error) {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 
 	entries := s.data[compartment]
 	for _, entry := range entries {
 		if entry.ID == id {
 			entry.UpdateAccess()
+
+			if err := s.saveData(s.getDataCopy()); err != nil {
+				return nil, fmt.Errorf("failed to persist memory data: %w", err)
+			}
+
 			return entry, nil
 		}
 	}

@@ -593,7 +593,7 @@ func TestStreamingWithTools(t *testing.T, model *Model) {
 		if toolCall.Name == "echo" {
 			foundEchoTool = true
 			if !strings.Contains(toolCall.Args, "Analysis Complete") {
-				t.Errorf("Expected 'Analysis Complete' in final message, got %s", finalMessage.Content)
+				t.Errorf("Expected 'Analysis Complete' in tool call args, got %s", toolCall.Args)
 			}
 			break
 		}

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -56,21 +57,26 @@ TIPS:
 )
 
 func NewReadFileTool() *ai.Tool {
-	return &ai.Tool{
-		Name:        ReadFileToolName,
-		Description: readFileDescription,
-		InputSchema: map[string]interface{}{
-			"file_name": map[string]interface{}{
-				"type":        "string",
-				"description": "The name of the file to read",
-			},
-			"store_name": map[string]interface{}{
-				"type":        "string",
-				"description": "The name of the store where the file is located",
-			},
-		},
-		Execute: readFileExecute,
+	type ReadFileInput struct {
+		FileName  string `json:"file_name" description:"The name of the file to read"`
+		StoreName string `json:"store_name" description:"The name of the store where the file is located"`
 	}
+
+	return ai.NewTool(
+		ReadFileToolName,
+		readFileDescription,
+		func(ctx context.Context, input ReadFileInput) (string, error) {
+			args := map[string]interface{}{
+				"file_name":  input.FileName,
+				"store_name": input.StoreName,
+			}
+			result, err := readFileExecute(args)
+			if err != nil {
+				return "", err
+			}
+			return result.Content[0].Content.(string), nil
+		},
+	)
 }
 
 func readFileExecute(args map[string]interface{}) (*ai.ToolResult, error) {

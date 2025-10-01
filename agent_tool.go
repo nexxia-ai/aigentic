@@ -81,3 +81,32 @@ func WrapTool(tool ai.Tool) AgentTool {
 		},
 	}
 }
+
+// NewTool creates an AgentTool with auto-generated JSON schema from a typed function.
+// The input parameter T must be a struct with json tags for schema generation.
+//
+// Example:
+//
+//	type CalculatorInput struct {
+//	    Expression string `json:"expression" description:"Mathematical expression to evaluate"`
+//	}
+//
+//	tool := aigentic.NewTool(
+//	    "calculator",
+//	    "Performs mathematical calculations",
+//	    func(ctx context.Context, run *AgentRun, input CalculatorInput) (string, error) {
+//	        return evaluateExpression(input.Expression), nil
+//	    },
+//	)
+func NewTool[T any](name, description string, fn func(*AgentRun, T) (string, error)) AgentTool {
+	baseTool := ai.NewTool(name, description, func(ctx any, input T) (string, error) {
+		run, ok := ctx.(*AgentRun)
+		if !ok {
+			// If context is not an AgentRun, create a minimal one
+			run = &AgentRun{}
+		}
+		return fn(run, input)
+	})
+
+	return WrapTool(*baseTool)
+}

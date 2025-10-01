@@ -109,27 +109,18 @@ func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
 
 // NewLookupCompanyNumberTool returns an AgentTool struct for testing
 func NewLookupCompanyNumberTool(counter *int) AgentTool {
-	return AgentTool{
-		Name:        "lookup_company_name",
-		Description: "A tool that looks up the name of a company based on a company number",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"company_number": map[string]interface{}{
-					"type":        "string",
-					"description": "The company number to lookup",
-				},
-			},
-			"required": []string{"company_number"},
-		},
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-			*counter++
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{Type: "text", Content: "Nexxia"}},
-				Error:   false,
-			}, nil
-		},
+	type LookupCompanyNumberInput struct {
+		CompanyNumber string `json:"company_number" description:"The company number to lookup"`
 	}
+
+	return NewTool(
+		"lookup_company_name",
+		"A tool that looks up the name of a company based on a company number",
+		func(run *AgentRun, input LookupCompanyNumberInput) (string, error) {
+			*counter++
+			return "Nexxia", nil
+		},
+	)
 }
 
 // NewSecretNumberToolLegacy returns an ai.Tool struct for testing (legacy compatibility)
@@ -158,118 +149,78 @@ func NewSecretNumberToolLegacy() ai.Tool {
 
 // NewSecretSupplierTool returns an AgentTool struct for testing supplier lookup
 func NewSecretSupplierTool() AgentTool {
-	return AgentTool{
-		Name:        "lookup_supplier_name",
-		Description: "A tool that looks up the name of a supplier based on a supplier number",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"supplier_number": map[string]interface{}{
-					"type":        "string",
-					"description": "The supplier number to lookup",
-				},
-			},
-			"required": []string{"supplier_number"},
-		},
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{Type: "text", Content: "Phoenix"}},
-				Error:   false,
-			}, nil
-		},
+	type LookupSupplierInput struct {
+		SupplierNumber string `json:"supplier_number" description:"The supplier number to lookup"`
 	}
+
+	return NewTool(
+		"lookup_supplier_name",
+		"A tool that looks up the name of a supplier based on a supplier number",
+		func(run *AgentRun, input LookupSupplierInput) (string, error) {
+			return "Phoenix", nil
+		},
+	)
 }
 
 // NewLookupCompanyByNameTool simulates looking up a company by name and returning an ID or not found
 func NewLookupCompanyByNameTool() AgentTool {
-	return AgentTool{
-		Name:        "lookup_company_id",
-		Description: "Lookup a company ID by its name. Returns 'COMPANY_ID: <id>; NAME: <name>' if found, otherwise 'NOT_FOUND'",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"name": map[string]interface{}{
-					"type":        "string",
-					"description": "The company name to lookup",
-				},
-			},
-			"required": []string{"name"},
-		},
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-			name, _ := args["name"].(string)
+	type LookupCompanyByNameInput struct {
+		Name string `json:"name" description:"The company name to lookup"`
+	}
+
+	return NewTool(
+		"lookup_company_id",
+		"Lookup a company ID by its name. Returns 'COMPANY_ID: <id>; NAME: <name>' if found, otherwise 'NOT_FOUND'",
+		func(run *AgentRun, input LookupCompanyByNameInput) (string, error) {
 			content := "NOT_FOUND"
-			if strings.EqualFold(strings.TrimSpace(name), "Nexxia") {
+			if strings.EqualFold(strings.TrimSpace(input.Name), "Nexxia") {
 				content = "COMPANY_ID: COMP-001; NAME: Nexxia"
 			}
-			return &ai.ToolResult{Content: []ai.ToolContent{{Type: "text", Content: content}}}, nil
+			return content, nil
 		},
-	}
+	)
 }
 
 // NewCreateCompanyTool simulates creating a company, returning a deterministic ID for testing
 func NewCreateCompanyTool() AgentTool {
-	return AgentTool{
-		Name:        "create_company",
-		Description: "Create a new company by name. Returns 'COMPANY_ID: <id>; NAME: <name>'",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"name": map[string]interface{}{
-					"type":        "string",
-					"description": "The company name to create",
-				},
-			},
-			"required": []string{"name"},
-		},
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-			name, _ := args["name"].(string)
+	type CreateCompanyInput struct {
+		Name string `json:"name" description:"The company name to create"`
+	}
+
+	return NewTool(
+		"create_company",
+		"Create a new company by name. Returns 'COMPANY_ID: <id>; NAME: <name>'",
+		func(run *AgentRun, input CreateCompanyInput) (string, error) {
 			// Deterministic ID derived from name for test stability
 			id := "COMP-NEW-001"
-			if strings.EqualFold(strings.TrimSpace(name), "Contoso") {
+			if strings.EqualFold(strings.TrimSpace(input.Name), "Contoso") {
 				id = "COMP-CONTOSO-001"
 			}
-			if strings.EqualFold(strings.TrimSpace(name), "Nexxia") {
+			if strings.EqualFold(strings.TrimSpace(input.Name), "Nexxia") {
 				id = "COMP-001"
 			}
-			content := fmt.Sprintf("COMPANY_ID: %s; NAME: %s", id, strings.TrimSpace(name))
-			return &ai.ToolResult{Content: []ai.ToolContent{{Type: "text", Content: content}}}, nil
+			content := fmt.Sprintf("COMPANY_ID: %s; NAME: %s", id, strings.TrimSpace(input.Name))
+			return content, nil
 		},
-	}
+	)
 }
 
 // NewCreateInvoiceTool simulates creating an invoice for a company ID and amount
 func NewCreateInvoiceTool() AgentTool {
-	return AgentTool{
-		Name:        "create_invoice",
-		Description: "Create an invoice for a company. Returns 'INVOICE_ID: <id>; AMOUNT: <amount>'",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"company_id": map[string]interface{}{
-					"type":        "string",
-					"description": "The company ID to invoice",
-				},
-				"amount": map[string]interface{}{
-					"type":        "number",
-					"description": "The invoice amount",
-				},
-			},
-			"required": []string{"company_id", "amount"},
-		},
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-			amountStr := ""
-			switch v := args["amount"].(type) {
-			case float64:
-				amountStr = fmt.Sprintf("%.0f", v)
-			case string:
-				amountStr = v
-			default:
-				amountStr = "0"
-			}
-			content := fmt.Sprintf("INVOICE_ID: INV-1001; AMOUNT: %s", amountStr)
-			return &ai.ToolResult{Content: []ai.ToolContent{{Type: "text", Content: content}}}, nil
-		},
+	type CreateInvoiceInput struct {
+		CompanyID string  `json:"company_id" description:"The company ID to invoice"`
+		Amount    float64 `json:"amount" description:"The invoice amount"`
 	}
+
+	return NewTool(
+		"create_invoice",
+		"Create an invoice for a company. Returns 'INVOICE_ID: <id>; AMOUNT: <amount>'",
+		func(run *AgentRun, input CreateInvoiceInput) (string, error) {
+			amountStr := fmt.Sprintf("%.0f", input.Amount)
+			content := fmt.Sprintf("INVOICE_ID: INV-1001; AMOUNT: %s", amountStr)
+			return content, nil
+		},
+	)
 }
 
 // Individual test functions that can be reused

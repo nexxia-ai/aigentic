@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -56,25 +57,28 @@ TIPS:
 )
 
 func NewWriteFileTool() *ai.Tool {
-	return &ai.Tool{
-		Name:        WriteFileToolName,
-		Description: writeFileDescription,
-		InputSchema: map[string]interface{}{
-			"file_name": map[string]interface{}{
-				"type":        "string",
-				"description": "The name of the file to write",
-			},
-			"store_name": map[string]interface{}{
-				"type":        "string",
-				"description": "The name of the store where the file should be written",
-			},
-			"content": map[string]interface{}{
-				"type":        "string",
-				"description": "The content to write to the file (use base64 encoding for binary files)",
-			},
-		},
-		Execute: writeFileExecute,
+	type WriteFileInput struct {
+		FileName  string `json:"file_name" description:"The name of the file to write"`
+		StoreName string `json:"store_name" description:"The name of the store where the file should be written"`
+		Content   string `json:"content" description:"The content to write to the file (use base64 encoding for binary files)"`
 	}
+
+	return ai.NewTool(
+		WriteFileToolName,
+		writeFileDescription,
+		func(ctx context.Context, input WriteFileInput) (string, error) {
+			args := map[string]interface{}{
+				"file_name":  input.FileName,
+				"store_name": input.StoreName,
+				"content":    input.Content,
+			}
+			result, err := writeFileExecute(args)
+			if err != nil {
+				return "", err
+			}
+			return result.Content[0].Content.(string), nil
+		},
+	)
 }
 
 func writeFileExecute(args map[string]interface{}) (*ai.ToolResult, error) {

@@ -37,7 +37,11 @@ The declarative approach means you focus on agent configuration and event handli
 
 ## Quick Start
 
+**→ [View Complete Runnable Examples](https://github.com/nexxia-ai/aigentic-examples)** – Learn by doing with real-world use cases
+
 ### Simple Agent
+
+[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/simple)
 
 ```go
 package main
@@ -67,7 +71,14 @@ func main() {
 }
 ```
 
+**Run this example:**
+```bash
+go run github.com/nexxia-ai/aigentic-examples/simple@latest
+```
+
 ### Streaming Agent
+
+[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/streaming)
 
 For interactive applications, streaming UI updates, and human-in-the-loop workflows, use the advanced event system.
 
@@ -98,7 +109,14 @@ func main() {
 }
 ```
 
+**Run this example:**
+```bash
+go run github.com/nexxia-ai/aigentic-examples/streaming@latest
+```
+
 ### Tool Integration
+
+[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/tools)
 
 ```go
 func main() {
@@ -142,6 +160,15 @@ func main() {
 }
 ```
 
+**Run this example:**
+```bash
+go run github.com/nexxia-ai/aigentic-examples/tools@latest
+```
+
+### Human-in-the-Loop Approval
+
+[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/approval)
+
 To enable approval for tools, simply set the RequireApproval field in the AgentTool. This will generate a ApprovalEvent in the main workflow.
 
 ```go
@@ -169,7 +196,14 @@ To enable approval for tools, simply set the RequireApproval field in the AgentT
     }
 ```
 
+**Run this example:**
+```bash
+go run github.com/nexxia-ai/aigentic-examples/approval@latest
+```
+
 ### Document Usage
+
+[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/documents)
 
 Native document support. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents.
 
@@ -203,7 +237,14 @@ agent := aigentic.Agent{
 }
 ```
 
+**Run this example:**
+```bash
+go run github.com/nexxia-ai/aigentic-examples/documents@latest
+```
+
 ### Multi-Agent Setup
+
+[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/multi-agent)
 
 ```go
 func main() {
@@ -239,13 +280,20 @@ func main() {
 }
 ```
 
+**Run this example:**
+```bash
+go run github.com/nexxia-ai/aigentic-examples/multi-agent@latest
+```
+
 ---
 
 ## Advanced Features
 
-This covers the essential features. The framework includes many more advanced capabilities like MCP integration, sophisticated event handling, and production-ready observability features.
+**→ [Explore all examples](https://github.com/nexxia-ai/aigentic-examples)** for MCP integration, memory systems, document processing, and production-ready patterns.
 
-### Memory and Sessions (coming soon)
+### Memory and Sessions
+
+[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/memory)
 
 ```go
 session := aigentic.NewSession(context.Background())
@@ -263,35 +311,17 @@ agent.Execute("My name is John and I'm a software engineer")
 agent.Execute("What did I tell you about my profession?")
 ```
 
-### Human-in-the-Loop Workflows
-
-```go
-approvalTool := aigentic.AgentTool{
-    Name:            "send_email",
-    Description:     "Sends an email to recipients", 
-    RequireApproval: true, // Human approval required
-    Execute: func(run *aigentic.AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-        return sendEmail(args["recipient"], args["subject"], args["body"])
-    },
-}
-
-agent := aigentic.Agent{
-    Model:      openai.NewModel("gpt-4o-mini", "your-api-key"),
-    AgentTools: []aigentic.AgentTool{approvalTool},
-}
-
-run, _ := agent.Start("Send a follow-up email to john@example.com")
-
-// Monitor for approval requests
-for event := range run.Next() {
-    if approvalEvent, ok := event.(*aigentic.ApprovalEvent); ok {
-        approved := showApprovalDialog(approvalEvent) // Your UI
-        run.Approve(approvalEvent.ID, approved)
-    }
-}
+**Run this example:**
+```bash
+go run github.com/nexxia-ai/aigentic-examples/memory@latest
 ```
 
-### Tracing and Logging
+**Run this example:**
+```bash
+go run github.com/nexxia-ai/aigentic-examples/production@latest
+```
+
+### Tracing and Debugging
 
 All interactions are automatically logged if you set the Trace field.
 Traces are saved to <tmp_dir>/traces/ 

@@ -217,26 +217,17 @@ func TestDummyLLMCallLimit(t *testing.T) {
 	model := ai.NewDummyModel(replayFunc)
 
 	// Create a tool that always returns a response
-	tool := ai.Tool{
-		Name:        "lookup_company_name",
-		Description: "A tool that looks up the name of a company based on a company number",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"company_number": map[string]interface{}{
-					"type":        "string",
-					"description": "The company number to lookup",
-				},
-			},
-			"required": []string{"company_number"},
-		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{Type: "text", Content: "Nexxia"}},
-				Error:   false,
-			}, nil
-		},
+	type LookupCompanyInput struct {
+		CompanyNumber string `json:"company_number" description:"The company number to lookup"`
 	}
+
+	tool := ai.NewTool(
+		"lookup_company_name",
+		"A tool that looks up the name of a company based on a company number",
+		func(ctx context.Context, input LookupCompanyInput) (string, error) {
+			return "Nexxia", nil
+		},
+	)
 
 	// Test agent with LLM call limit
 	agent := Agent{
@@ -245,7 +236,7 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Always use the lookup_company_name tool to get information.",
 		MaxLLMCalls:  3, // Limit to 3 LLM calls
-		AgentTools:   []AgentTool{WrapTool(tool)},
+		AgentTools:   []AgentTool{WrapTool(*tool)},
 		Trace:        NewTrace(),
 		// LogLevel:     slog.LevelDebug,
 	}
@@ -406,28 +397,19 @@ func TestDummyStreaming(t *testing.T) {
 }
 
 func getApprovalTool() AgentTool {
-	return AgentTool{
-		Name:            "test_approval_tool",
-		Description:     "A test tool that requires approval",
-		RequireApproval: true,
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"action": map[string]interface{}{
-					"type":        "string",
-					"description": "The action to perform",
-				},
-			},
-			"required": []string{"action"},
-		},
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-			action, _ := args["action"].(string)
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{Type: "text", Content: "Tool executed: " + action}},
-				Error:   false,
-			}, nil
-		},
+	type ApprovalToolInput struct {
+		Action string `json:"action" description:"The action to perform"`
 	}
+
+	approvalTool := NewTool(
+		"test_approval_tool",
+		"A test tool that requires approval",
+		func(run *AgentRun, input ApprovalToolInput) (string, error) {
+			return "Tool executed: " + input.Action, nil
+		},
+	)
+	approvalTool.RequireApproval = true
+	return approvalTool
 }
 
 func getApprovalTestData() []ai.RecordedResponse {

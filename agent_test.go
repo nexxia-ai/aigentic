@@ -51,37 +51,25 @@ func TestAgentToolCalling(t *testing.T) {
 	toolArgs := make(map[string]interface{})
 	callCount := 0
 
-	testTool := ai.Tool{
-		Name:        "test_tool",
-		Description: "A test tool that records when it's called",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "The message to process",
-				},
-			},
-			"required": []string{"message"},
-		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
-			toolCalled = true
-			toolArgs = args
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{
-					Type:    "text",
-					Content: "Tool executed successfully with message: " + args["message"].(string),
-				}},
-				Error: false,
-			}, nil
-		},
+	type TestToolInput struct {
+		Message string `json:"message" description:"The message to process"`
 	}
+
+	testTool := ai.NewTool(
+		"test_tool",
+		"A test tool that records when it's called",
+		func(ctx context.Context, input TestToolInput) (string, error) {
+			toolCalled = true
+			toolArgs = map[string]interface{}{"message": input.Message}
+			return "Tool executed successfully with message: " + input.Message, nil
+		},
+	)
 
 	agent := Agent{
 		Name:        "test-tool-agent",
 		Description: "A test agent that uses tools",
 		Trace:       NewTrace(),
-		AgentTools:  []AgentTool{WrapTool(testTool)},
+		AgentTools:  []AgentTool{WrapTool(*testTool)},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -244,66 +232,35 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 	callCount := 0
 
 	// Create a test tool that will be called multiple times
-	testTool1 := ai.Tool{
-		Name:        "lookup_company",
-		Description: "A test tool for looking up companies",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"input": map[string]interface{}{
-					"type":        "string",
-					"description": "The input to lookup",
-				},
-			},
-			"required": []string{"input"},
-		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
-			tool1Called++
-			input := args["input"].(string)
-			if input == "Look up company 150" {
-				return &ai.ToolResult{
-					Content: []ai.ToolContent{{
-						Type:    "text",
-						Content: "COMPANY: Nexxia",
-					}},
-					Error: false,
-				}, nil
-			}
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{
-					Type:    "text",
-					Content: "SUPPLIER: Phoenix",
-				}},
-				Error: false,
-			}, nil
-		},
+	type LookupToolInput struct {
+		Input string `json:"input" description:"The input to lookup"`
 	}
 
+	testTool1 := ai.NewTool(
+		"lookup_company",
+		"A test tool for looking up companies",
+		func(ctx context.Context, input LookupToolInput) (string, error) {
+			tool1Called++
+			if input.Input == "Look up company 150" {
+				return "COMPANY: Nexxia", nil
+			}
+			return "SUPPLIER: Phoenix", nil
+		},
+	)
+
 	// Create a second test tool
-	testTool2 := ai.Tool{
-		Name:        "save_memory",
-		Description: "A test tool for saving to memory",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"content": map[string]interface{}{
-					"type":        "string",
-					"description": "The content to save",
-				},
-			},
-			"required": []string{"content"},
-		},
-		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
-			tool2Called++
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{
-					Type:    "text",
-					Content: "memory saved successfully",
-				}},
-				Error: false,
-			}, nil
-		},
+	type SaveMemoryInput struct {
+		Content string `json:"content" description:"The content to save"`
 	}
+
+	testTool2 := ai.NewTool(
+		"save_memory",
+		"A test tool for saving to memory",
+		func(ctx context.Context, input SaveMemoryInput) (string, error) {
+			tool2Called++
+			return "memory saved successfully", nil
+		},
+	)
 
 	// Track tool response events to verify all are properly handled
 	var receivedToolMessages []ai.ToolMessage
@@ -311,7 +268,7 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 	agent := Agent{
 		Name:        "test-multi-tool-agent",
 		Description: "A test agent that makes multiple tool calls including same tool with different inputs",
-		AgentTools:  []AgentTool{WrapTool(testTool1), WrapTool(testTool2)},
+		AgentTools:  []AgentTool{WrapTool(*testTool1), WrapTool(*testTool2)},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 

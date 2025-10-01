@@ -114,7 +114,7 @@ func (m *Model) callWithRetry(ctx context.Context, messages []Message, tools []T
 		lastErr = err
 
 		// Check if this is a temporary error
-		if err != ErrTemporary {
+		if !errors.Is(err, ErrTemporary) {
 			// Non-retryable error - return immediately
 			if m.RecordFilename != "" {
 				m.recordAIMessage(response, err)
@@ -169,7 +169,7 @@ func (m *Model) streamWithRetry(ctx context.Context, messages []Message, tools [
 		lastErr = err
 
 		// Check if this is a temporary error
-		if err != ErrTemporary {
+		if !errors.Is(err, ErrTemporary) {
 			// Non-retryable error - return immediately
 			return response, err
 		}

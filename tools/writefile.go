@@ -1,22 +1,14 @@
 package tools
 
 import (
-	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic"
 )
-
-type WriteFileParams struct {
-	FileName  string `json:"file_name"`
-	StoreName string `json:"store_name"`
-	Content   string `json:"content"`
-}
 
 const (
 	WriteFileToolName    = "write_file"
@@ -56,146 +48,70 @@ TIPS:
 - Binary files should be provided with base64 encoding for proper handling`
 )
 
-func NewWriteFileTool() *ai.Tool {
+func NewWriteFileTool() aigentic.AgentTool {
 	type WriteFileInput struct {
 		FileName  string `json:"file_name" description:"The name of the file to write"`
 		StoreName string `json:"store_name" description:"The name of the store where the file should be written"`
 		Content   string `json:"content" description:"The content to write to the file (use base64 encoding for binary files)"`
 	}
 
-	return ai.NewTool(
+	return aigentic.NewTool(
 		WriteFileToolName,
 		writeFileDescription,
-		func(ctx context.Context, input WriteFileInput) (string, error) {
-			args := map[string]interface{}{
-				"file_name":  input.FileName,
-				"store_name": input.StoreName,
-				"content":    input.Content,
-			}
-			result, err := writeFileExecute(args)
-			if err != nil {
-				return "", err
-			}
-			return result.Content[0].Content.(string), nil
+		func(run *aigentic.AgentRun, input WriteFileInput) (string, error) {
+			return writeFile(input.FileName, input.StoreName, input.Content)
 		},
 	)
 }
 
-func writeFileExecute(args map[string]interface{}) (*ai.ToolResult, error) {
-	// Parse parameters
-	jsonData, err := json.Marshal(args)
-	if err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error marshaling parameters: %v", err),
-			}},
-			Error: true,
-		}, nil
-	}
-
-	var params WriteFileParams
-	if err := json.Unmarshal(jsonData, &params); err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error parsing parameters: %v", err),
-			}},
-			Error: true,
-		}, nil
-	}
-
+// writeFile writes content to a file in the specified store
+func writeFile(fileName, storeName, content string) (string, error) {
 	// Validate required parameters
-	if params.FileName == "" {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: "file_name is required",
-			}},
-			Error: true,
-		}, nil
+	if fileName == "" {
+		return "", fmt.Errorf("file_name is required")
 	}
 
-	if params.StoreName == "" {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: "store_name is required",
-			}},
-			Error: true,
-		}, nil
+	if storeName == "" {
+		return "", fmt.Errorf("store_name is required")
 	}
 
 	// Construct file path based on store name
-	filePath := filepath.Join(params.StoreName, params.FileName)
+	filePath := filepath.Join(storeName, fileName)
 
 	// Ensure the store directory exists
 	storeDir := filepath.Dir(filePath)
 	if err := os.MkdirAll(storeDir, 0755); err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error creating store directory: %v", err),
-			}},
-			Error: true,
-		}, nil
+		return "", fmt.Errorf("error creating store directory: %v", err)
 	}
 
 	// Determine if content is base64-encoded binary
 	var fileContent []byte
-	if strings.HasPrefix(params.Content, "[BINARY FILE - Base64 Encoded]") {
+	fileType := "text"
+
+	if strings.HasPrefix(content, "[BINARY FILE - Base64 Encoded]") {
 		// Extract base64 content after the header
-		lines := strings.Split(params.Content, "\n")
+		lines := strings.Split(content, "\n")
 		if len(lines) < 2 {
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{
-					Type:    "text",
-					Content: "Invalid base64 content format",
-				}},
-				Error: true,
-			}, nil
+			return "", fmt.Errorf("invalid base64 content format")
 		}
 
 		base64Content := strings.Join(lines[1:], "\n")
 		decoded, err := base64.StdEncoding.DecodeString(base64Content)
 		if err != nil {
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{
-					Type:    "text",
-					Content: fmt.Sprintf("Error decoding base64 content: %v", err),
-				}},
-				Error: true,
-			}, nil
+			return "", fmt.Errorf("error decoding base64 content: %v", err)
 		}
 		fileContent = decoded
+		fileType = "binary"
 	} else {
 		// Regular text content
-		fileContent = []byte(params.Content)
+		fileContent = []byte(content)
 	}
 
 	// Write file content
-	err = os.WriteFile(filePath, fileContent, 0644)
-	if err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error writing file: %v", err),
-			}},
-			Error: true,
-		}, nil
+	if err := os.WriteFile(filePath, fileContent, 0644); err != nil {
+		return "", fmt.Errorf("error writing file: %v", err)
 	}
 
 	// Return success message
-	fileType := "text"
-	if strings.HasPrefix(params.Content, "[BINARY FILE - Base64 Encoded]") {
-		fileType = "binary"
-	}
-
-	return &ai.ToolResult{
-		Content: []ai.ToolContent{{
-			Type:    "text",
-			Content: fmt.Sprintf("Successfully wrote %s file: %s in store: %s", fileType, params.FileName, params.StoreName),
-		}},
-		Error: false,
-	}, nil
+	return fmt.Sprintf("Successfully wrote %s file: %s in store: %s", fileType, fileName, storeName), nil
 }

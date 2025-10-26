@@ -1,21 +1,14 @@
 package tools
 
 import (
-	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"unicode/utf8"
 
-	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic"
 )
-
-type ReadFileParams struct {
-	FileName  string `json:"file_name"`
-	StoreName string `json:"store_name"`
-}
 
 const (
 	ReadFileToolName    = "read_file"
@@ -56,140 +49,62 @@ TIPS:
 - Binary files will be automatically detected and base64-encoded for transmission`
 )
 
-func NewReadFileTool() *ai.Tool {
+func NewReadFileTool() aigentic.AgentTool {
 	type ReadFileInput struct {
 		FileName  string `json:"file_name" description:"The name of the file to read"`
 		StoreName string `json:"store_name" description:"The name of the store where the file is located"`
 	}
 
-	return ai.NewTool(
+	return aigentic.NewTool(
 		ReadFileToolName,
 		readFileDescription,
-		func(ctx context.Context, input ReadFileInput) (string, error) {
-			args := map[string]interface{}{
-				"file_name":  input.FileName,
-				"store_name": input.StoreName,
-			}
-			result, err := readFileExecute(args)
-			if err != nil {
-				return "", err
-			}
-			return result.Content[0].Content.(string), nil
+		func(run *aigentic.AgentRun, input ReadFileInput) (string, error) {
+			return readFile(input.FileName, input.StoreName)
 		},
 	)
 }
 
-func readFileExecute(args map[string]interface{}) (*ai.ToolResult, error) {
-	// Parse parameters
-	jsonData, err := json.Marshal(args)
-	if err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error marshaling parameters: %v", err),
-			}},
-			Error: true,
-		}, nil
-	}
-
-	var params ReadFileParams
-	if err := json.Unmarshal(jsonData, &params); err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error parsing parameters: %v", err),
-			}},
-			Error: true,
-		}, nil
-	}
-
+// readFile reads a file from the specified store and returns its content
+func readFile(fileName, storeName string) (string, error) {
 	// Validate required parameters
-	if params.FileName == "" {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: "file_name is required",
-			}},
-			Error: true,
-		}, nil
+	if fileName == "" {
+		return "", fmt.Errorf("file_name is required")
 	}
 
-	if params.StoreName == "" {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: "store_name is required",
-			}},
-			Error: true,
-		}, nil
+	if storeName == "" {
+		return "", fmt.Errorf("store_name is required")
 	}
 
 	// Construct file path based on store name
-	filePath := filepath.Join(params.StoreName, params.FileName)
+	filePath := filepath.Join(storeName, fileName)
 
 	// Check if file exists
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{
-					Type:    "text",
-					Content: fmt.Sprintf("File not found: %s in store: %s", params.FileName, params.StoreName),
-				}},
-				Error: true,
-			}, nil
+			return "", fmt.Errorf("file not found: %s in store: %s", fileName, storeName)
 		}
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error accessing file: %v", err),
-			}},
-			Error: true,
-		}, nil
+		return "", fmt.Errorf("error accessing file: %v", err)
 	}
 
 	// Check if it's a directory
 	if fileInfo.IsDir() {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Path is a directory, not a file: %s", filePath),
-			}},
-			Error: true,
-		}, nil
+		return "", fmt.Errorf("path is a directory, not a file: %s", filePath)
 	}
 
 	// Read file content
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("Error reading file: %v", err),
-			}},
-			Error: true,
-		}, nil
+		return "", fmt.Errorf("error reading file: %v", err)
 	}
 
 	// Check if content is valid UTF-8 (text file)
 	if utf8.Valid(content) {
 		// Return as text content
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: string(content),
-			}},
-			Error: false,
-		}, nil
-	} else {
-		// Binary file - encode as base64
-		base64Content := base64.StdEncoding.EncodeToString(content)
-		return &ai.ToolResult{
-			Content: []ai.ToolContent{{
-				Type:    "text",
-				Content: fmt.Sprintf("[BINARY FILE - Base64 Encoded]\n%s", base64Content),
-			}},
-			Error: false,
-		}, nil
+		return string(content), nil
 	}
+
+	// Binary file - encode as base64
+	base64Content := base64.StdEncoding.EncodeToString(content)
+	return fmt.Sprintf("[BINARY FILE - Base64 Encoded]\n%s", base64Content), nil
 }

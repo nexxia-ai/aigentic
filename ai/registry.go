@@ -18,7 +18,8 @@ var (
 type ModelFactoryFunc func(modelName, apiKey string, baseURL ...string) *Model
 
 type ModelInfo struct {
-	ModelName   string
+	Model       string
+	BaseURL     string
 	DisplayName string
 	Family      string
 	NewModel    ModelFactoryFunc
@@ -37,15 +38,15 @@ func init() {
 	}
 }
 
-func RegisterModel(provider string, info ModelInfo) error {
+func RegisterModel(provider, modelName string, info ModelInfo) error {
 	if provider == "" {
 		return ErrEmptyProviderName
 	}
-	if info.ModelName == "" {
+	if modelName == "" {
 		return ErrEmptyModelName
 	}
 
-	identifier := fmt.Sprintf("%s/%s", provider, info.ModelName)
+	identifier := fmt.Sprintf("%s/%s", provider, modelName)
 
 	defaultRegistry.mu.Lock()
 	defer defaultRegistry.mu.Unlock()
@@ -54,17 +55,18 @@ func RegisterModel(provider string, info ModelInfo) error {
 		return fmt.Errorf("%w: %s", ErrModelAlreadyExists, identifier)
 	}
 
+	info.Model = identifier
 	defaultRegistry.models[identifier] = info
 	return nil
 }
 
-func New(identifier, apiKey string, baseURL ...string) (*Model, error) {
+func New(identifier, apiKey string) (*Model, error) {
 	if identifier == "" {
 		return nil, ErrInvalidIdentifier
 	}
 
-	parts := strings.Split(identifier, "/")
-	if len(parts) != 2 {
+	parts := strings.SplitN(identifier, "/", 2)
+	if len(parts) < 2 {
 		return nil, ErrInvalidIdentifier
 	}
 
@@ -83,7 +85,7 @@ func New(identifier, apiKey string, baseURL ...string) (*Model, error) {
 		return nil, fmt.Errorf("%w: %s", ErrModelNotFound, identifier)
 	}
 
-	return info.NewModel(modelName, apiKey, baseURL...), nil
+	return info.NewModel(modelName, apiKey, info.BaseURL), nil
 }
 
 func Models() []ModelInfo {

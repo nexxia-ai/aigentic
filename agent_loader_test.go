@@ -165,3 +165,50 @@ agents:
 		t.Fatalf("expected error for invalid log level, got nil")
 	}
 }
+
+func TestInstantiateAgents_TraceEnabled(t *testing.T) {
+	yaml := `
+tools:
+  t:
+    command: x
+    args: [y]
+
+agents:
+  - name: with_trace
+    model_name: gpt-4
+    enable_trace: true
+    tools: ["t"]
+  - name: no_trace
+    model_name: gpt-4
+    enable_trace: false
+    tools: ["t"]
+`
+	cfg, err := DecodeConfigYAML(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	modelResolver := func(s string) (*ai.Model, error) { return &ai.Model{ModelName: s}, nil }
+	toolResolver := func(name string, sc ai.ServerConfig) ([]AgentTool, error) { return []AgentTool{}, nil }
+
+	agents, err := cfg.InstantiateAgents(modelResolver, toolResolver)
+	if err != nil {
+		t.Fatalf("unexpected instantiate error: %v", err)
+	}
+
+	a1, ok := agents["with_trace"]
+	if !ok {
+		t.Fatalf("with_trace not found")
+	}
+	if a1.Trace == nil {
+		t.Errorf("expected trace to be set for with_trace")
+	}
+
+	a2, ok := agents["no_trace"]
+	if !ok {
+		t.Fatalf("no_trace not found")
+	}
+	if a2.Trace != nil {
+		t.Errorf("expected trace to be nil for no_trace agent")
+	}
+}

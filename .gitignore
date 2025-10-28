@@ -6,3 +6,4 @@ mem.out
 examples/mcp/news.md
 **/memory.json
 .claude/settings.local.json
+cmd/.claude/settings.local.json

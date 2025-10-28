@@ -23,6 +23,7 @@ type AgentConfig struct {
 	LogLevel         string   `yaml:"log_level" json:"log_level"`
 	MaxLLMCalls      int      `yaml:"max_llm_calls" json:"max_llm_calls"`
 	EnableEvaluation bool     `yaml:"enable_evaluation" json:"enable_evaluation"`
+	EnableTrace      bool     `yaml:"enable_trace" json:"enable_trace"`
 	Tools            []string `yaml:"tools" json:"tools"`
 	Agents           []string `yaml:"agents" json:"agents"`
 }
@@ -140,6 +141,10 @@ func (cfg *ConfigFile) InstantiateAgents(
 			a.LogLevel = slog.LevelError
 		default:
 			// leave zero value if empty/unknown; validateConfig covers invalid
+		}
+		// Configure tracing if enabled
+		if ac.EnableTrace {
+			a.Trace = NewTrace()
 		}
 		// Attach tools from tool servers listed by name using resolver
 		for _, tname := range ac.Tools {

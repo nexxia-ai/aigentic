@@ -22,6 +22,9 @@ type AgentRun struct {
 	session *Session
 	model   *ai.Model
 
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+
 	tools      []AgentTool
 	msgHistory []ai.Message
 
@@ -47,12 +50,19 @@ func (r *AgentRun) Session() *Session {
 	return r.session
 }
 
+func (r *AgentRun) Cancel() {
+	if r.cancelFunc != nil {
+		r.cancelFunc()
+	}
+}
+
 func newAgentRun(a Agent, message string) *AgentRun {
 	runID := uuid.New().String()
 	session := a.Session
 	if session == nil {
 		session = NewSession(context.Background())
 	}
+	runCtx, cancelFunc := context.WithCancel(session.Context)
 	model := a.Model
 	if model == nil {
 		model = ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
@@ -78,6 +88,8 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		agent:            a,
 		model:            model,
 		session:          session,
+		ctx:              runCtx,
+		cancelFunc:       cancelFunc,
 		userMessage:      message,
 		trace:            trace,
 		maxLLMCalls:      maxLLMCalls,
@@ -101,6 +113,9 @@ func (r *AgentRun) start() {
 }
 
 func (r *AgentRun) stop() {
+	if r.cancelFunc != nil {
+		r.cancelFunc()
+	}
 	close(r.eventQueue)
 	close(r.actionQueue)
 	// Only close trace if this is not a sub-agent (sub-agents share trace with parent)
@@ -286,8 +301,8 @@ func (r *AgentRun) processLoop() {
 		case <-ticker.C:
 			r.checkApprovalTimeouts()
 
-		case <-r.session.Context.Done():
-			r.runStopAction(&stopAction{Error: fmt.Errorf("session context cancelled")})
+		case <-r.ctx.Done():
+			r.runStopAction(&stopAction{Error: fmt.Errorf("run context cancelled")})
 			return
 		}
 	}
@@ -375,7 +390,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	var err error
 	var msgs []ai.Message
-	msgs, err = r.contextManager.BuildPrompt(r.session.Context, r.msgHistory, tools)
+	msgs, err = r.contextManager.BuildPrompt(r.ctx, r.msgHistory, tools)
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
 		return
@@ -398,7 +413,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	switch r.agent.Stream {
 	case true:
-		respMsg, err = r.model.Stream(r.session.Context, msgs, tools, func(chunk ai.AIMessage) error {
+		respMsg, err = r.model.Stream(r.ctx, msgs, tools, func(chunk ai.AIMessage) error {
 			// Handle each chunk as a non-final message
 			r.handleAIMessage(chunk, true) // isChunk is true
 			return nil
@@ -422,7 +437,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		}
 
 	default:
-		respMsg, err = r.model.Call(r.session.Context, msgs, tools)
+		respMsg, err = r.model.Call(r.ctx, msgs, tools)
 
 		// Emit evaluation event if enabled
 		if r.agent.EnableEvaluation {

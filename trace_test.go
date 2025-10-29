@@ -40,7 +40,7 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	}
 
 	// Read the trace file content
-	content, err := os.ReadFile(trace.filename)
+	content, err := os.ReadFile(trace.Filepath)
 	if err != nil {
 		t.Fatalf("Failed to read trace file: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 	}
 
 	// Read the trace file content
-	content, err := os.ReadFile(trace.filename)
+	content, err := os.ReadFile(trace.Filepath)
 	if err != nil {
 		t.Fatalf("Failed to read trace file: %v", err)
 	}

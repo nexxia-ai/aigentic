@@ -36,7 +36,7 @@ type Trace struct {
 	StartTime         time.Time     // Start time of the trace
 	EndTime           time.Time     // End time of the trace
 	directory         string        // Path to the trace directory
-	filename          string        // Path to the trace file
+	Filepath          string        // Path to the trace file
 	file              traceWriter   // File to write traces to (or io.Discard if file creation fails)
 	RetentionDuration time.Duration // How long to keep traces
 	MaxTraceFiles     int           // Maximum number of files to keep
@@ -77,9 +77,9 @@ func (t *Trace) ensureFileInitialized() error {
 	}
 
 	var file traceWriter
-	osFile, err := os.OpenFile(t.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	osFile, err := os.OpenFile(t.Filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		slog.Error("Failed to open trace file, using io.Discard", "file", t.filename, "error", err)
+		slog.Error("Failed to open trace file, using io.Discard", "file", t.Filepath, "error", err)
 		// Use io.Discard wrapped in a traceWriter when file creation fails
 		file = &discardWriter{}
 	} else {
@@ -90,7 +90,7 @@ func (t *Trace) ensureFileInitialized() error {
 
 	t.file = file
 	t.fileInitialized = true
-	slog.Debug("Trace file initialized", "file", t.filename)
+	slog.Debug("Trace file initialized", "file", t.Filepath)
 	return nil
 }
 
@@ -132,7 +132,7 @@ func NewTrace(config ...TraceConfig) *Trace {
 	t := &Trace{
 		SessionID:         cfg.SessionID,
 		StartTime:         time.Now(),
-		filename:          filename,
+		Filepath:          filename,
 		file:              nil, // File will be created on first write
 		directory:         cfg.Directory,
 		RetentionDuration: cfg.RetentionDuration,

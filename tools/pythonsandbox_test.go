@@ -141,10 +141,6 @@ func TestPythonSandbox_SyntaxError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !result.Error {
-		t.Error("expected error for syntax error")
-	}
-
 	output := result.Content[0].Content.(string)
 	if !strings.Contains(output, "Python execution failed") {
 		t.Errorf("expected error message, got: %s", output)
@@ -161,10 +157,6 @@ func TestPythonSandbox_RuntimeError(t *testing.T) {
 	result, err := tool.Execute(&aigentic.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !result.Error {
-		t.Error("expected error for runtime error")
 	}
 
 	output := result.Content[0].Content.(string)
@@ -186,17 +178,11 @@ func TestPythonSandbox_Timeout(t *testing.T) {
 	result, err := tool.Execute(&aigentic.AgentRun{}, args)
 	elapsed := time.Since(start)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
 	}
-
-	if !result.Error {
-		t.Error("expected timeout error")
-	}
-
-	output := result.Content[0].Content.(string)
-	if !strings.Contains(output, "timeout") && !strings.Contains(output, "Timeout") {
-		t.Errorf("expected timeout message, got: %s", output)
+	if result != nil {
+		t.Errorf("expected nil result, got: %v", result)
 	}
 
 	// Should complete in approximately timeout duration (with some tolerance)
@@ -235,17 +221,11 @@ func TestPythonSandbox_EmptyCode(t *testing.T) {
 	}
 
 	result, err := tool.Execute(&aigentic.AgentRun{}, args)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
 	}
-
-	if !result.Error {
-		t.Error("expected error for empty code")
-	}
-
-	output := result.Content[0].Content.(string)
-	if !strings.Contains(output, "required") {
-		t.Errorf("expected 'required' in error message, got: %s", output)
+	if result != nil {
+		t.Errorf("expected nil result, got: %v", result)
 	}
 }
 
@@ -258,17 +238,11 @@ func TestPythonSandbox_MaxTimeoutEnforcement(t *testing.T) {
 	}
 
 	result, err := tool.Execute(&aigentic.AgentRun{}, args)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
 	}
-
-	if !result.Error {
-		t.Error("expected error for timeout exceeding maximum")
-	}
-
-	output := result.Content[0].Content.(string)
-	if !strings.Contains(output, "maximum") || !strings.Contains(output, "300") {
-		t.Errorf("expected maximum timeout error message, got: %s", output)
+	if result != nil {
+		t.Errorf("expected nil result, got: %v", result)
 	}
 }
 

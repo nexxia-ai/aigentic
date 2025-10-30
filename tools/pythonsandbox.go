@@ -81,17 +81,14 @@ func NewPythonSandboxTool() aigentic.AgentTool {
 
 // executePython validates parameters and executes Python code
 func executePython(code string, timeout int) (string, error) {
-	// Validate required parameters
 	if code == "" {
 		return "", fmt.Errorf("code is required")
 	}
 
-	// Set default timeout if not specified
 	if timeout == 0 {
 		timeout = defaultTimeout
 	}
 
-	// Enforce maximum timeout
 	if timeout > maxTimeout {
 		return "", fmt.Errorf("timeout exceeds maximum allowed value of %d seconds", maxTimeout)
 	}
@@ -145,31 +142,13 @@ func executePythonCode(code string, timeoutSec int) (string, error) {
 	stdoutStr := stdout.String()
 	stderrStr := stderr.String()
 
-	// If execution failed
-	if err != nil {
-		// Format error output
-		var output strings.Builder
-		output.WriteString("Python execution failed:\n\n")
-
-		if stderrStr != "" {
-			output.WriteString("STDERR:\n")
-			output.WriteString(stderrStr)
-			output.WriteString("\n")
-		}
-
-		if stdoutStr != "" {
-			output.WriteString("STDOUT:\n")
-			output.WriteString(stdoutStr)
-			output.WriteString("\n")
-		}
-
-		output.WriteString(fmt.Sprintf("Exit error: %v", err))
-
-		return "", fmt.Errorf("%s", output.String())
-	}
-
-	// Success - format output
 	var output strings.Builder
+
+	// If execution failed; add a header to the output
+	if err != nil {
+		output.WriteString("Python execution failed:\n\n")
+		output.WriteString(fmt.Sprintf("Exit error: %v", err))
+	}
 
 	if stdoutStr != "" {
 		output.WriteString(stdoutStr)

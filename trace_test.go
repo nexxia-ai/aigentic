@@ -8,6 +8,18 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
+// createTestAgentRun creates a minimal AgentRun for testing
+func createTestAgentRun(agentName, modelName string) *AgentRun {
+	return &AgentRun{
+		agent: Agent{
+			Name: agentName,
+		},
+		model: &ai.Model{
+			ModelName: modelName,
+		},
+	}
+}
+
 func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	// Create a temporary trace file
 	tempDir := t.TempDir()
@@ -15,6 +27,9 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	// Create trace with custom directory
 	trace := NewTrace(TraceConfig{Directory: tempDir})
 	defer trace.Close()
+
+	// Create test AgentRun
+	run := createTestAgentRun("test-agent", "test-model")
 
 	// Create test messages including a ResourceMessage
 	messages := []ai.Message{
@@ -33,10 +48,10 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 		},
 	}
 
-	// Call LLMCall
-	err := trace.LLMCall("test-model", "test-agent", messages)
+	// Call BeforeCall (implements Interceptor)
+	_, _, err := trace.BeforeCall(run, messages, nil)
 	if err != nil {
-		t.Fatalf("LLMCall failed: %v", err)
+		t.Fatalf("BeforeCall failed: %v", err)
 	}
 
 	// Read the trace file content
@@ -73,6 +88,9 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 	trace := NewTrace(TraceConfig{Directory: tempDir})
 	defer trace.Close()
 
+	// Create test AgentRun
+	run := createTestAgentRun("test-agent", "test-model")
+
 	// Create a ResourceMessage with content
 	messages := []ai.Message{
 		ai.ResourceMessage{
@@ -83,10 +101,10 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 		},
 	}
 
-	// Call LLMCall
-	err := trace.LLMCall("test-model", "test-agent", messages)
+	// Call BeforeCall (implements Interceptor)
+	_, _, err := trace.BeforeCall(run, messages, nil)
 	if err != nil {
-		t.Fatalf("LLMCall failed: %v", err)
+		t.Fatalf("BeforeCall failed: %v", err)
 	}
 
 	// Read the trace file content

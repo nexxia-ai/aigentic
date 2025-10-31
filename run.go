@@ -29,6 +29,7 @@ type AgentRun struct {
 	msgHistory []ai.Message
 
 	contextManager ContextManager
+	interceptors   []Interceptor
 
 	eventQueue       chan Event
 	actionQueue      chan action
@@ -73,6 +74,12 @@ func newAgentRun(a Agent, message string) *AgentRun {
 	if a.Trace != nil {
 		trace = a.Trace
 	}
+	// Build interceptor chain: copy from agent, add trace if set
+	interceptors := make([]Interceptor, len(a.Interceptors))
+	copy(interceptors, a.Interceptors)
+	if trace != nil {
+		interceptors = append(interceptors, trace)
+	}
 	// Apply a conservative default to prevent runaway tool/LLM loops.
 	maxLLMCalls := 20
 	if a.MaxLLMCalls != 0 {
@@ -92,6 +99,7 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		cancelFunc:       cancelFunc,
 		userMessage:      message,
 		trace:            trace,
+		interceptors:     interceptors,
 		maxLLMCalls:      maxLLMCalls,
 		eventQueue:       make(chan Event, 100),
 		actionQueue:      make(chan action, 100),
@@ -162,22 +170,12 @@ func (r *AgentRun) addTools() []AgentTool {
 				subRun.Logger = r.Logger.With("sub-agent", aa.Name)
 				subRun.parentRun = r
 
-				// Add sub-agent start marker to trace
-				if r.trace != nil {
-					r.trace.LLMCall("sub-agent:"+aa.Name, aa.Name, []ai.Message{
-						ai.UserMessage{Role: ai.UserRole, Content: fmt.Sprintf("Sub-agent '%s' called with input: %s", aa.Name, input)},
-					})
-				}
-
 				subRun.start()
 				content, err := subRun.Wait(0)
 
-				// Add sub-agent end marker to trace
-				if r.trace != nil {
-					if err != nil {
-						r.trace.RecordError(fmt.Errorf("sub-agent %s error: %v", aa.Name, err))
-					}
-					r.trace.FinishLLMInteraction("sub-agent:"+aa.Name, aa.Name)
+				// Record sub-agent errors to trace
+				if r.trace != nil && err != nil {
+					r.trace.RecordError(fmt.Errorf("sub-agent %s error: %v", aa.Name, err))
 				}
 
 				if err != nil {
@@ -396,14 +394,21 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		return
 	}
 
-	if r.trace != nil {
-		r.trace.LLMCall(r.model.ModelName, r.agent.Name, msgs)
+	// Chain BeforeCall interceptors
+	currentMsgs := msgs
+	currentTools := tools
+	for _, interceptor := range r.interceptors {
+		currentMsgs, currentTools, err = interceptor.BeforeCall(r, currentMsgs, currentTools)
+		if err != nil {
+			r.queueAction(&stopAction{Error: fmt.Errorf("interceptor rejected: %w", err)})
+			return
+		}
 	}
 
 	if r.parentRun == nil {
-		r.Logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
+		r.Logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(currentMsgs), "tools", len(currentTools))
 	} else {
-		r.Logger.Debug("calling sub-agent LLM", "model", r.model.ModelName, "messages", len(msgs), "tools", len(tools))
+		r.Logger.Debug("calling sub-agent LLM", "model", r.model.ModelName, "messages", len(currentMsgs), "tools", len(currentTools))
 	}
 
 	// Capture timing for evaluation
@@ -413,7 +418,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	switch r.agent.Stream {
 	case true:
-		respMsg, err = r.model.Stream(r.ctx, msgs, tools, func(chunk ai.AIMessage) error {
+		respMsg, err = r.model.Stream(r.ctx, currentMsgs, currentTools, func(chunk ai.AIMessage) error {
 			// Handle each chunk as a non-final message
 			r.handleAIMessage(chunk, true) // isChunk is true
 			return nil
@@ -427,8 +432,8 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 				Sequence:  r.llmCallCount,
 				Timestamp: callStart,
 				Duration:  time.Since(callStart),
-				Messages:  msgs,
-				Tools:     tools,
+				Messages:  currentMsgs,
+				Tools:     currentTools,
 				Response:  respMsg,
 				Error:     err,
 				ModelName: r.model.ModelName,
@@ -437,7 +442,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		}
 
 	default:
-		respMsg, err = r.model.Call(r.ctx, msgs, tools)
+		respMsg, err = r.model.Call(r.ctx, currentMsgs, currentTools)
 
 		// Emit evaluation event if enabled
 		if r.agent.EnableEvaluation {
@@ -448,8 +453,8 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 				Sequence:  r.llmCallCount,
 				Timestamp: callStart,
 				Duration:  time.Since(callStart),
-				Messages:  msgs,
-				Tools:     tools,
+				Messages:  currentMsgs,
+				Tools:     currentTools,
 				Response:  respMsg,
 				Error:     err,
 				ModelName: r.model.ModelName,
@@ -467,7 +472,17 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		return
 	}
 
-	r.handleAIMessage(respMsg, false)
+	// Chain AfterCall interceptors
+	currentResp := respMsg
+	for _, interceptor := range r.interceptors {
+		currentResp, err = interceptor.AfterCall(r, currentMsgs, currentResp)
+		if err != nil {
+			r.queueAction(&stopAction{Error: fmt.Errorf("interceptor error: %w", err)})
+			return
+		}
+	}
+
+	r.handleAIMessage(currentResp, false)
 }
 
 func (r *AgentRun) runToolCallAction(act *toolCallAction) {
@@ -494,7 +509,19 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	r.queueEvent(toolEvent) // send after adding to the map
 
 	r.Logger.Debug("calling tool", "tool", act.ToolName, "args", act.ValidationResult)
-	result, err := tool.call(r, act.ValidationResult)
+
+	currentValidationResult := act.ValidationResult
+	var err error
+	for _, interceptor := range r.interceptors {
+		currentValidationResult, err = interceptor.BeforeToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult)
+		if err != nil {
+			errMsg := fmt.Sprintf("interceptor rejected tool call: %v", err)
+			r.queueAction(&toolResponseAction{request: act, response: errMsg})
+			return
+		}
+	}
+
+	result, err := tool.call(r, currentValidationResult)
 	if err != nil {
 		if r.trace != nil {
 			r.trace.RecordError(err)
@@ -504,9 +531,22 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		return
 	}
 
-	response := formatToolResponse(result)
+	currentResult := result
+	for _, interceptor := range r.interceptors {
+		currentResult, err = interceptor.AfterToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult, currentResult)
+		if err != nil {
+			errMsg := fmt.Sprintf("interceptor error after tool call: %v", err)
+			if r.trace != nil {
+				r.trace.RecordError(err)
+			}
+			r.queueAction(&toolResponseAction{request: act, response: errMsg})
+			return
+		}
+	}
 
-	if result != nil && result.Error {
+	response := formatToolResponse(currentResult)
+
+	if currentResult != nil && currentResult.Error {
 		toolErr := fmt.Errorf("tool %s reported error", act.ToolName)
 		if response != "" {
 			toolErr = fmt.Errorf("tool %s reported error: %s", act.ToolName, response)
@@ -514,17 +554,6 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		if r.trace != nil {
 			r.trace.RecordError(toolErr)
 		}
-	}
-
-	if r.trace != nil {
-		// Convert tool args to JSON string for tracing
-		argsJSON, _ := json.Marshal(act.ValidationResult)
-		r.trace.LLMToolResponse(r.agent.Name, &ai.ToolCall{
-			ID:   act.ToolCallID,
-			Type: "function",
-			Name: act.ToolName,
-			Args: string(argsJSON),
-		}, response)
 	}
 
 	r.queueAction(&toolResponseAction{request: act, response: response})
@@ -649,10 +678,6 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 
 	// this not a chunk, which means the model Call/Stream is complete
 	// add to history and fire tool calls
-	if r.trace != nil {
-		r.trace.LLMAIResponse(r.agent.Name, msg)
-	}
-
 	if len(msg.ToolCalls) == 0 {
 		r.msgHistory = append(r.msgHistory, msg)
 		r.queueAction(&stopAction{Error: nil})

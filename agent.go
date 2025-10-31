@@ -51,6 +51,9 @@ type Agent struct {
 	// Set "Trace: aigentic.NewTrace()" to create trace files in the default temporary directory under $TMP/traces
 	Trace *Trace
 
+	// Interceptors chain allows inspection and modification of model calls
+	Interceptors []Interceptor
+
 	// ContextManager defines the context manager for the agent.
 	// If set, this context manager will be used instead of the default BasicContextManager.
 	// Set "ContextManager: aigentic.NewEnhancedSystemContextManager(agent, message)" to use a custom context manager.

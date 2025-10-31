@@ -1,6 +1,7 @@
 package aigentic
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -31,6 +32,7 @@ type TraceConfig struct {
 }
 
 // Trace stores the execution trace of an LLM.
+// Trace implements Interceptor for automatic tracing via interceptors.
 type Trace struct {
 	SessionID         string        // Unique session ID for the entire interaction
 	StartTime         time.Time     // Start time of the trace
@@ -212,16 +214,17 @@ func (t *Trace) Cleanup() {
 	}
 }
 
-// LLMCall records the initial interaction with the LLM (model and messages).
-func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) error {
+// BeforeCall implements Interceptor - records LLM call before invocation
+func (t *Trace) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
 	if err := t.ensureFileInitialized(); err != nil {
-		return err
+		return messages, tools, err
 	}
 
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(t.file, "\n====> [%s] Start %s (%s) sessionID: %s\n", time.Now().Format("15:04:05"), agentName, modelName, t.SessionID)
+	fmt.Fprintf(t.file, "\n====> [%s] Start %s (%s) sessionID: %s\n", time.Now().Format("15:04:05"),
+		run.agent.Name, run.model.ModelName, t.SessionID)
 
 	for _, message := range messages {
 		role, _ := message.Value()
@@ -296,21 +299,103 @@ func (t *Trace) LLMCall(modelName, agentName string, messages []ai.Message) erro
 	}
 
 	t.file.Sync()
-	return nil
+	return messages, tools, nil
 }
 
-// LLMAIResponse records the LLM's response, any tool calls made during the response, and any thinking process.
-func (t *Trace) LLMAIResponse(agentName string, msg ai.AIMessage) {
+// AfterCall implements Interceptor - records LLM response after invocation
+func (t *Trace) AfterCall(run *AgentRun, request []ai.Message, response ai.AIMessage) (ai.AIMessage, error) {
 	if err := t.ensureFileInitialized(); err != nil {
-		return
+		return response, err
 	}
 
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(t.file, "⬇️  assistant: role=%s\n", msg.Role) // Role might vary by provider
-	t.logAIMessage(msg)
+	fmt.Fprintf(t.file, "⬇️  assistant: role=%s\n", response.Role) // Role might vary by provider
+	t.logAIMessage(response)
 	t.file.Sync()
+
+	fmt.Fprintf(t.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), run.agent.Name)
+
+	return response, nil
+}
+
+// BeforeToolCall implements Interceptor - records tool call before execution
+func (t *Trace) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult) (ValidationResult, error) {
+	if err := t.ensureFileInitialized(); err != nil {
+		return validationResult, err
+	}
+
+	traceSync.Lock()
+	defer traceSync.Unlock()
+
+	fmt.Fprintf(t.file, "\n---- Tool START: %s (callID=%s) agent=%s\n", toolName, toolCallID, run.agent.Name)
+
+	argsJSON, _ := json.Marshal(validationResult)
+	fmt.Fprintf(t.file, " args: %s\n", string(argsJSON))
+	t.file.Sync()
+
+	return validationResult, nil
+}
+
+// AfterToolCall implements Interceptor - records tool call after execution
+func (t *Trace) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
+	if err := t.ensureFileInitialized(); err != nil {
+		return result, err
+	}
+
+	traceSync.Lock()
+	defer traceSync.Unlock()
+
+	response := ""
+	if result != nil {
+		if len(result.Content) > 0 {
+			parts := make([]string, 0, len(result.Content))
+			for _, item := range result.Content {
+				segment := ""
+				switch v := item.Content.(type) {
+				case string:
+					segment = v
+				case []byte:
+					if len(v) > 0 {
+						segment = string(v)
+					}
+				default:
+					encoded, err := json.Marshal(v)
+					if err == nil {
+						segment = string(encoded)
+					}
+				}
+				if segment != "" {
+					if item.Type != "" && item.Type != "text" {
+						segment = fmt.Sprintf("[%s] %s", item.Type, segment)
+					}
+					parts = append(parts, segment)
+				}
+			}
+			response = strings.Join(parts, "\n")
+		}
+		if result.Error {
+			response = fmt.Sprintf("ERROR: %s", response)
+		}
+	}
+
+	fmt.Fprintf(t.file, " result: %s\n", response)
+	fmt.Fprintf(t.file, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
+
+	argsJSON, _ := json.Marshal(validationResult)
+	fmt.Fprintf(t.file, "🛠️️  %s tool response:\n", run.agent.Name)
+	fmt.Fprintf(t.file, "   • %s(%s)\n", toolName, string(argsJSON))
+
+	lines := strings.Split(response, "\n")
+	for _, line := range lines {
+		if line != "" {
+			fmt.Fprintf(t.file, "     %s\n", line)
+		}
+	}
+	t.file.Sync()
+
+	return result, nil
 }
 
 // logMessageContent is a helper method to format and log message content
@@ -329,17 +414,6 @@ func (t *Trace) logMessageContent(contentType, content string) {
 	}
 }
 
-// FinishLLMInteraction adds a closing line to mark the end of an LLM interaction
-func (t *Trace) FinishLLMInteraction(modelName, agentName string) {
-	if err := t.ensureFileInitialized(); err != nil {
-		return
-	}
-
-	traceSync.Lock()
-	defer traceSync.Unlock()
-
-	fmt.Fprintf(t.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), agentName)
-}
 func (t *Trace) logAIMessage(msg ai.AIMessage) {
 	t.logMessageContent("content", msg.Content)
 	if len(msg.ToolCalls) > 0 {

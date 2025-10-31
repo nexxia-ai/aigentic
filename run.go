@@ -390,7 +390,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	var err error
 	var msgs []ai.Message
-	msgs, err = r.contextManager.BuildPrompt(r.ctx, r.msgHistory, tools)
+	msgs, err = r.contextManager.BuildPrompt(r, r.msgHistory, tools)
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
 		return

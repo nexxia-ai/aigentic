@@ -34,6 +34,7 @@ type AgentTool struct {
 	Execute         func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) `json:"-"`
 	Validate        func(run *AgentRun, args map[string]interface{}) (ValidationResult, error)
 	NewExecute      func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error)
+	ContextFunctions []ContextFunction
 }
 
 // validateInput is always called before calling the tool

@@ -2,7 +2,6 @@ package aigentic
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -13,7 +12,7 @@ import (
 )
 
 type ContextManager interface {
-	BuildPrompt(context.Context, []ai.Message, []ai.Tool) ([]ai.Message, error)
+	BuildPrompt(*AgentRun, []ai.Message, []ai.Tool) ([]ai.Message, error)
 }
 
 type BasicContextManager struct {
@@ -26,6 +25,36 @@ type BasicContextManager struct {
 }
 
 var _ ContextManager = &BasicContextManager{}
+
+func collectContextFunctions(agent Agent, run *AgentRun) string {
+	var parts []string
+
+	for _, fn := range agent.ContextFunctions {
+		output, err := fn(run)
+		if err != nil {
+			parts = append(parts, fmt.Sprintf("Error in context function: %v", err))
+		} else if output != "" {
+			parts = append(parts, output)
+		}
+	}
+
+	for _, tool := range run.tools {
+		for _, fn := range tool.ContextFunctions {
+			output, err := fn(run)
+			if err != nil {
+				parts = append(parts, fmt.Sprintf("Error in tool context function: %v", err))
+			} else if output != "" {
+				parts = append(parts, output)
+			}
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return strings.Join(parts, "\n\n")
+}
 
 const DefaultSystemTemplate = `
 You are an autonomous agent working to complete a task.
@@ -82,6 +111,10 @@ const DefaultUserTemplate = `{{if .HasMemory}}This is the content of the run mem
 {{.MemoryContent}}
 </run_memory>
 
+{{end}}{{if .HasSessionContext}}<session_context>
+{{.SessionContext}}
+</session_context>
+
 {{end}}{{if .HasMessage}}Please answer the following request or task:
 {{.Message}} 
 
@@ -119,7 +152,7 @@ func (r *BasicContextManager) ParseUserTemplate(templateStr string) error {
 	return nil
 }
 
-func (r *BasicContextManager) BuildPrompt(ctx context.Context, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
+func (r *BasicContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
 	r.currentMsg = len(r.msgHistory)
 	r.msgHistory = append(r.msgHistory, messages...)
 
@@ -135,7 +168,7 @@ func (r *BasicContextManager) BuildPrompt(ctx context.Context, messages []ai.Mes
 	}
 
 	// Generate user prompt using template
-	userVars := r.createUserVariables(r.userMsg)
+	userVars := r.createUserVariables(r.userMsg, run)
 	var userBuf bytes.Buffer
 	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user template: %w", err)
@@ -167,8 +200,8 @@ func (r *BasicContextManager) createSystemVariables(tools []ai.Tool) map[string]
 	return createSystemVariables(r.agent, tools, toolHistory)
 }
 
-func (r *BasicContextManager) createUserVariables(message string) map[string]interface{} {
-	return createUserVariables(r.agent, message)
+func (r *BasicContextManager) createUserVariables(message string, run *AgentRun) map[string]interface{} {
+	return createUserVariables(r.agent, message, run)
 }
 
 // Package-level utility functions for reuse across context managers
@@ -196,13 +229,16 @@ func createSystemVariables(agent Agent, tools []ai.Tool, toolHistory string) map
 	}
 }
 
-func createUserVariables(agent Agent, message string) map[string]interface{} {
+func createUserVariables(agent Agent, message string, run *AgentRun) map[string]interface{} {
 	var memoryContent string
 	var hasMemory bool
 	if agent.Memory != nil {
 		memoryContent = agent.Memory.GetRunMemoryContent()
 		hasMemory = memoryContent != ""
 	}
+
+	sessionContext := collectContextFunctions(agent, run)
+	hasSessionContext := sessionContext != ""
 
 	return map[string]interface{}{
 		"Message":            message,
@@ -211,6 +247,8 @@ func createUserVariables(agent Agent, message string) map[string]interface{} {
 		"HasMessage":         message != "",
 		"Documents":          agent.Documents,
 		"DocumentReferences": agent.DocumentReferences,
+		"SessionContext":     sessionContext,
+		"HasSessionContext":  hasSessionContext,
 	}
 }
 

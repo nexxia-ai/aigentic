@@ -9,6 +9,11 @@ import (
 	"github.com/nexxia-ai/aigentic/memory"
 )
 
+// ContextFunction is a function that provides dynamic context for the agent.
+// It receives the AgentRun and returns a context string to be included in every LLM call.
+// If an error occurs, the error message will be included in the context.
+type ContextFunction func(*AgentRun) (string, error)
+
 // Agent is the main declarative type for an agent.
 type Agent struct {
 	Model      *ai.Model
@@ -68,6 +73,11 @@ type Agent struct {
 	EnableEvaluation bool
 
 	Retrievers []Retriever
+
+	// ContextFunctions contains functions that provide dynamic context for the agent.
+	// These functions are called before each LLM call and their output is included
+	// as a separate user message wrapped in <Session context> tags.
+	ContextFunctions []ContextFunction
 }
 
 // Start starts a new agent run.

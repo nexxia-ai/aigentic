@@ -2,7 +2,6 @@ package aigentic
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"text/template"
 
@@ -51,7 +50,11 @@ You have access to the following tools:
 Analyze the user's request and use the available tools systematically to complete the task. 
 Consider your persistent memory and avoid repeating previous actions unless necessary.`
 
-const EnhancedUserTemplate = `{{if .HasMessage}}{{.Message}}{{end}}`
+const EnhancedUserTemplate = `{{if .HasSessionContext}}<session_context>
+{{.SessionContext}}
+</session_context>
+
+{{end}}{{if .HasMessage}}{{.Message}}{{end}}`
 
 func NewEnhancedSystemContextManager(agent Agent, userMsg string) *EnhancedSystemContextManager {
 	cm := &EnhancedSystemContextManager{agent: agent, userMsg: userMsg}
@@ -64,7 +67,7 @@ func (r *EnhancedSystemContextManager) SetTemplates() {
 	r.UserTemplate = template.Must(template.New("enhanced_user").Parse(EnhancedUserTemplate))
 }
 
-func (r *EnhancedSystemContextManager) BuildPrompt(ctx context.Context, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
+func (r *EnhancedSystemContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
 	r.currentMsg = len(r.msgHistory)
 	r.msgHistory = append(r.msgHistory, messages...)
 
@@ -80,7 +83,7 @@ func (r *EnhancedSystemContextManager) BuildPrompt(ctx context.Context, messages
 	}
 
 	// Generate user prompt using template
-	userVars := r.createUserVariables(r.userMsg)
+	userVars := r.createUserVariables(r.userMsg, run)
 	var userBuf bytes.Buffer
 	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute enhanced user template: %w", err)
@@ -133,6 +136,10 @@ const UserCentricSystemTemplate = `You are an autonomous agent working to comple
 const UserCentricUserTemplate = `{{if .HasMemory}}## CONTEXT FROM MEMORY
 {{.MemoryContent}}
 
+{{end}}{{if .HasSessionContext}}<session_context>
+{{.SessionContext}}
+</session_context>
+
 {{end}}{{if .HasMessage}}## CURRENT REQUEST
 {{.Message}}{{end}}`
 
@@ -147,7 +154,7 @@ func (r *UserCentricMemoryContextManager) SetTemplates() {
 	r.UserTemplate = template.Must(template.New("user_centric_user").Parse(UserCentricUserTemplate))
 }
 
-func (r *UserCentricMemoryContextManager) BuildPrompt(ctx context.Context, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
+func (r *UserCentricMemoryContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
 	r.currentMsg = len(r.msgHistory)
 	r.msgHistory = append(r.msgHistory, messages...)
 
@@ -161,7 +168,7 @@ func (r *UserCentricMemoryContextManager) BuildPrompt(ctx context.Context, messa
 		ai.SystemMessage{Role: ai.SystemRole, Content: systemBuf.String()},
 	}
 
-	userVars := r.createUserVariables(r.userMsg)
+	userVars := r.createUserVariables(r.userMsg, run)
 	var userBuf bytes.Buffer
 	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user centric user template: %w", err)
@@ -198,6 +205,10 @@ const MinimalSystemTemplate = `You are {{.Role}}
 const MinimalUserTemplate = `{{if .HasMemory}}### Memory
 {{.MemoryContent}}
 
+{{end}}{{if .HasSessionContext}}<session_context>
+{{.SessionContext}}
+</session_context>
+
 {{end}}{{if .HasToolHistory}}### Recent Actions
 {{.ToolHistory}}
 
@@ -219,7 +230,7 @@ func (r *MinimalSystemContextManager) SetTemplates() {
 	r.UserTemplate = template.Must(template.New("minimal_user").Parse(MinimalUserTemplate))
 }
 
-func (r *MinimalSystemContextManager) BuildPrompt(ctx context.Context, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
+func (r *MinimalSystemContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
 	r.currentMsg = len(r.msgHistory)
 	r.msgHistory = append(r.msgHistory, messages...)
 
@@ -233,7 +244,7 @@ func (r *MinimalSystemContextManager) BuildPrompt(ctx context.Context, messages 
 		ai.SystemMessage{Role: ai.SystemRole, Content: systemBuf.String()},
 	}
 
-	userVars := r.createUserVariables(r.userMsg)
+	userVars := r.createUserVariables(r.userMsg, run)
 	var userBuf bytes.Buffer
 	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute minimal user template: %w", err)
@@ -292,7 +303,12 @@ const HierarchicalUserTemplate = `# CURRENT TASK
 
 {{if .HasMessage}}{{.Message}}{{end}}
 
-{{if .HasMemory}}
+{{if .HasSessionContext}}
+<session_context>
+{{.SessionContext}}
+</session_context>
+
+{{end}}{{if .HasMemory}}
 # RELEVANT CONTEXT
 {{.MemoryContent}}
 {{end}}`
@@ -308,7 +324,7 @@ func (r *HierarchicalContextManager) SetTemplates() {
 	r.UserTemplate = template.Must(template.New("hierarchical_user").Parse(HierarchicalUserTemplate))
 }
 
-func (r *HierarchicalContextManager) BuildPrompt(ctx context.Context, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
+func (r *HierarchicalContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
 	r.currentMsg = len(r.msgHistory)
 	r.msgHistory = append(r.msgHistory, messages...)
 
@@ -322,7 +338,7 @@ func (r *HierarchicalContextManager) BuildPrompt(ctx context.Context, messages [
 		ai.SystemMessage{Role: ai.SystemRole, Content: systemBuf.String()},
 	}
 
-	userVars := r.createUserVariables(r.userMsg)
+	userVars := r.createUserVariables(r.userMsg, run)
 	var userBuf bytes.Buffer
 	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute hierarchical user template: %w", err)
@@ -343,8 +359,8 @@ func (r *EnhancedSystemContextManager) createSystemVariables(tools []ai.Tool) ma
 	return createSystemVariables(r.agent, tools, r.createToolHistory())
 }
 
-func (r *EnhancedSystemContextManager) createUserVariables(message string) map[string]interface{} {
-	return createUserVariables(r.agent, message)
+func (r *EnhancedSystemContextManager) createUserVariables(message string, run *AgentRun) map[string]interface{} {
+	return createUserVariables(r.agent, message, run)
 }
 
 func (r *EnhancedSystemContextManager) createToolHistory() string {
@@ -359,8 +375,8 @@ func (r *UserCentricMemoryContextManager) createSystemVariables(tools []ai.Tool)
 	return createSystemVariables(r.agent, tools, r.createToolHistory())
 }
 
-func (r *UserCentricMemoryContextManager) createUserVariables(message string) map[string]interface{} {
-	return createUserVariables(r.agent, message)
+func (r *UserCentricMemoryContextManager) createUserVariables(message string, run *AgentRun) map[string]interface{} {
+	return createUserVariables(r.agent, message, run)
 }
 
 func (r *UserCentricMemoryContextManager) createToolHistory() string {
@@ -375,8 +391,8 @@ func (r *MinimalSystemContextManager) createSystemVariables(tools []ai.Tool) map
 	return createSystemVariables(r.agent, tools, r.createToolHistory())
 }
 
-func (r *MinimalSystemContextManager) createUserVariables(message string) map[string]interface{} {
-	return createUserVariables(r.agent, message)
+func (r *MinimalSystemContextManager) createUserVariables(message string, run *AgentRun) map[string]interface{} {
+	return createUserVariables(r.agent, message, run)
 }
 
 func (r *MinimalSystemContextManager) createToolHistory() string {
@@ -391,8 +407,8 @@ func (r *HierarchicalContextManager) createSystemVariables(tools []ai.Tool) map[
 	return createSystemVariables(r.agent, tools, r.createToolHistory())
 }
 
-func (r *HierarchicalContextManager) createUserVariables(message string) map[string]interface{} {
-	return createUserVariables(r.agent, message)
+func (r *HierarchicalContextManager) createUserVariables(message string, run *AgentRun) map[string]interface{} {
+	return createUserVariables(r.agent, message, run)
 }
 
 func (r *HierarchicalContextManager) createToolHistory() string {

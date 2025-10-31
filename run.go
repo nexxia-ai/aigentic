@@ -80,6 +80,8 @@ func newAgentRun(a Agent, message string) *AgentRun {
 	if trace != nil {
 		interceptors = append(interceptors, trace)
 	}
+	// Always add LoggerInterceptor as the last interceptor
+	interceptors = append(interceptors, newLoggerInterceptor())
 	// Apply a conservative default to prevent runaway tool/LLM loops.
 	maxLLMCalls := 20
 	if a.MaxLLMCalls != 0 {
@@ -405,12 +407,6 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		}
 	}
 
-	if r.parentRun == nil {
-		r.Logger.Debug("calling LLM", "model", r.model.ModelName, "messages", len(currentMsgs), "tools", len(currentTools))
-	} else {
-		r.Logger.Debug("calling sub-agent LLM", "model", r.model.ModelName, "messages", len(currentMsgs), "tools", len(currentTools))
-	}
-
 	// Capture timing for evaluation
 	callStart := time.Now()
 
@@ -507,8 +503,6 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		ToolGroup:        act.Group,
 	}
 	r.queueEvent(toolEvent) // send after adding to the map
-
-	r.Logger.Debug("calling tool", "tool", act.ToolName, "args", act.ValidationResult)
 
 	currentValidationResult := act.ValidationResult
 	var err error

@@ -72,7 +72,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 				Description: tt.description,
 				Model:       tt.streamingModel,
 				Stream:      true,
-				Trace:       NewTrace(),
+				Tracer:      NewTracer(),
 			}
 
 			// Create a session
@@ -167,7 +167,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 			}, nil
 		}),
 		Stream: false,
-		Trace:  NewTrace(),
+		Tracer: NewTracer(),
 	}
 
 	// Create a session
@@ -233,7 +233,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 			}, nil
 		}),
 		Stream: true,
-		Trace:  NewTrace(),
+		Tracer: NewTracer(),
 	}
 
 	// Create a session
@@ -307,7 +307,7 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 		}),
 		Stream:      true,
 		MaxLLMCalls: 2,
-		Trace:       NewTrace(),
+		Tracer:      NewTracer(),
 	}
 
 	// Create a session
@@ -409,7 +409,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 		Description: "Test agent with controlled chunking",
 		Model:       streamingModel,
 		Stream:      true,
-		Trace:       NewTrace(),
+		Tracer:      NewTracer(),
 	}
 
 	session := NewSession(context.Background())

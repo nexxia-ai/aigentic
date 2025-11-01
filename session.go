@@ -23,7 +23,6 @@ type Session struct {
 
 	Context    context.Context
 	cancelFunc context.CancelFunc
-	Trace      *Trace
 
 	RunHistory []AgentRun
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
-	"github.com/nexxia-ai/aigentic/memory"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,7 +67,7 @@ func TestAgentToolCalling(t *testing.T) {
 	agent := Agent{
 		Name:        "test-tool-agent",
 		Description: "A test agent that uses tools",
-		Trace:       NewTrace(),
+		Tracer:      NewTracer(),
 		AgentTools:  []AgentTool{WrapTool(*testTool)},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
@@ -360,7 +359,7 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 
 func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	callCount := 0
 
@@ -428,8 +427,7 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 		3. Return the summary and the detailed information in markdown format`,
 		Agents: []Agent{childAgent},
 		Stream: true,
-		Trace:  NewTrace(),
-		Memory: memory.NewMemory(),
+		Tracer: NewTracer(),
 	}
 
 	message := "Tell me about artificial intelligence and its applications"

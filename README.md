@@ -323,14 +323,14 @@ go run github.com/nexxia-ai/aigentic-examples/production@latest
 
 ### Tracing and Debugging
 
-All interactions are automatically logged if you set the Trace field.
+All interactions are automatically logged if you set the Tracer field.
 Traces are saved to <tmp_dir>/traces/ 
 
 ```go
 agent := aigentic.Agent{
     Model: openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Trace: aigentic.NewTrace(), // for prompt debugging
-    LogLevel: slog.LevelDebug,  // for execution flow debugging 
+    Tracer: aigentic.NewTracer(), // for prompt debugging
+    LogLevel: slog.LevelDebug,     // for execution flow debugging 
 }
 
 // All interactions are automatically traced

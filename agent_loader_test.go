@@ -200,15 +200,15 @@ agents:
 	if !ok {
 		t.Fatalf("with_trace not found")
 	}
-	if a1.Trace == nil {
-		t.Errorf("expected trace to be set for with_trace")
+	if a1.Tracer == nil {
+		t.Errorf("expected tracer to be set for with_trace")
 	}
 
 	a2, ok := agents["no_trace"]
 	if !ok {
 		t.Fatalf("no_trace not found")
 	}
-	if a2.Trace != nil {
-		t.Errorf("expected trace to be nil for no_trace agent")
+	if a2.Tracer != nil {
+		t.Errorf("expected tracer to be nil for no_trace agent")
 	}
 }

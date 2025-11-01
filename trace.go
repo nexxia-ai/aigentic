@@ -25,24 +25,27 @@ var (
 )
 
 type TraceConfig struct {
-	SessionID         string
 	Directory         string
 	RetentionDuration time.Duration
 	MaxTraceFiles     int
 }
 
-// Trace stores the execution trace of an LLM.
-// Trace implements Interceptor for automatic tracing via interceptors.
-type Trace struct {
-	SessionID         string        // Unique session ID for the entire interaction
-	StartTime         time.Time     // Start time of the trace
-	EndTime           time.Time     // End time of the trace
-	directory         string        // Path to the trace directory
-	Filepath          string        // Path to the trace file
-	file              traceWriter   // File to write traces to (or io.Discard if file creation fails)
-	RetentionDuration time.Duration // How long to keep traces
-	MaxTraceFiles     int           // Maximum number of files to keep
-	fileInitialized   bool          // Whether the file has been created and opened
+// Tracer is a factory that creates TraceRun instances for agent runs
+type Tracer struct {
+	Directory         string
+	RetentionDuration time.Duration
+	MaxTraceFiles     int
+}
+
+// TraceRun stores the execution trace of an LLM for a single run.
+// TraceRun implements Interceptor for automatic tracing via interceptors.
+type TraceRun struct {
+	tracer    *Tracer
+	runID     string      // Unique ID for this run
+	startTime time.Time   // Start time of the trace
+	endTime   time.Time   // End time of the trace
+	filepath  string      // Path to the trace file
+	file      traceWriter // File to write traces to (or io.Discard if file creation fails)
 }
 
 // traceWriter interface for writing trace data
@@ -67,44 +70,62 @@ func (d *discardWriter) Close() error {
 	return nil
 }
 
-func newTraceID() string {
-	now := time.Now()
-	return now.Format("20060102150405") + fmt.Sprintf("%09d", now.Nanosecond())
-}
-
-// ensureFileInitialized creates and opens the trace file if it hasn't been initialized yet
-func (t *Trace) ensureFileInitialized() error {
-	if t.fileInitialized {
-		return nil
+// NewTraceRun creates a new TraceRun for a specific agent run
+func (tr *Tracer) NewTraceRun(runID string) *TraceRun {
+	directory := tr.Directory
+	if directory == "" {
+		directory = filepath.Join(os.TempDir(), "aigentic-traces")
 	}
 
+	// Create directory if needed
+	os.MkdirAll(directory, 0755)
+
+	// Each run gets unique file based on runID
+	filepath := filepath.Join(directory, fmt.Sprintf("trace-%s.txt", runID))
+
+	traceRun := &TraceRun{
+		tracer:    tr,
+		runID:     runID,
+		startTime: time.Now(),
+		filepath:  filepath,
+	}
+
+	traceRun.cleanup() // Clean old files based on tracer config
+
+	// Open file immediately
 	var file traceWriter
-	osFile, err := os.OpenFile(t.Filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	osFile, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		slog.Error("Failed to open trace file, using io.Discard", "file", t.Filepath, "error", err)
-		// Use io.Discard wrapped in a traceWriter when file creation fails
+		slog.Error("Failed to open trace file, using io.Discard", "file", filepath, "error", err)
 		file = &discardWriter{}
 	} else {
 		// Write initial header to the file
-		fmt.Fprintf(osFile, "trace for sessionID: %s\n", t.SessionID)
+		fmt.Fprintf(osFile, "trace for runID: %s\n", runID)
 		file = osFile
 	}
 
-	t.file = file
-	t.fileInitialized = true
-	slog.Debug("Trace file initialized", "file", t.Filepath)
-	return nil
+	traceRun.file = file
+	return traceRun
 }
 
-// NewTrace creates a new Trace instance with default cleanup settings.
-func NewTrace(config ...TraceConfig) *Trace {
+// Filepath returns the path to the trace file
+func (tr *TraceRun) Filepath() string {
+	return tr.filepath
+}
+
+// RunID returns the unique ID for this trace run
+func (tr *TraceRun) RunID() string {
+	return tr.runID
+}
+
+// NewTracer creates a new Tracer factory with default cleanup settings.
+func NewTracer(config ...TraceConfig) *Tracer {
 	defaultDir := filepath.Join(os.TempDir(), "aigentic-traces")
 
 	cfg := TraceConfig{
 		Directory:         defaultDir,
 		RetentionDuration: defaultRetentionDuration,
 		MaxTraceFiles:     defaultMaxTraceFiles,
-		SessionID:         newTraceID(),
 	}
 
 	if len(config) > 0 {
@@ -117,40 +138,25 @@ func NewTrace(config ...TraceConfig) *Trace {
 		if config[0].MaxTraceFiles > 0 {
 			cfg.MaxTraceFiles = config[0].MaxTraceFiles
 		}
-		if config[0].SessionID != "" {
-			cfg.SessionID = config[0].SessionID
-		}
 	}
 
-	// Create the trace directory if it doesn't exist
-	if _, err := os.Stat(cfg.Directory); os.IsNotExist(err) {
-		if err := os.MkdirAll(cfg.Directory, 0755); err != nil {
-			slog.Error("Failed to create trace directory", "directory", cfg.Directory, "error", err)
-		}
-	}
-
-	filename := filepath.Join(cfg.Directory, fmt.Sprintf("trace-%s.txt", cfg.SessionID))
-
-	t := &Trace{
-		SessionID:         cfg.SessionID,
-		StartTime:         time.Now(),
-		Filepath:          filename,
-		file:              nil, // File will be created on first write
-		directory:         cfg.Directory,
+	t := &Tracer{
+		Directory:         cfg.Directory,
 		RetentionDuration: cfg.RetentionDuration,
 		MaxTraceFiles:     cfg.MaxTraceFiles,
-		fileInitialized:   false,
 	}
-	slog.Debug("Trace file will be created at", "file", filename)
-
-	t.Cleanup() // remove old entries
 
 	return t
 }
 
-// Cleanup removes old trace files based on retention policy
-func (t *Trace) Cleanup() {
-	entries, err := os.ReadDir(t.directory)
+// cleanup removes old trace files based on retention policy
+func (tr *TraceRun) cleanup() {
+	directory := tr.tracer.Directory
+	if directory == "" {
+		directory = filepath.Join(os.TempDir(), "aigentic-traces")
+	}
+
+	entries, err := os.ReadDir(directory)
 	if err != nil {
 		slog.Error("Failed to read trace directory", "error", err)
 		return
@@ -161,14 +167,14 @@ func (t *Trace) Cleanup() {
 		modTime time.Time
 	}
 
-	cutoffTime := time.Now().Add(-t.RetentionDuration)
+	cutoffTime := time.Now().Add(-tr.tracer.RetentionDuration)
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "trace-") || !strings.HasSuffix(entry.Name(), ".txt") {
 			continue
 		}
 
-		filePath := filepath.Join(t.directory, entry.Name())
+		filePath := filepath.Join(directory, entry.Name())
 		info, err := entry.Info()
 		if err != nil {
 			continue
@@ -189,7 +195,7 @@ func (t *Trace) Cleanup() {
 	})
 
 	// Remove files older than retention duration
-	if t.RetentionDuration > 0 {
+	if tr.tracer.RetentionDuration > 0 {
 		for _, file := range traceFiles {
 			if file.modTime.Before(cutoffTime) {
 				if err := os.Remove(file.path); err != nil {
@@ -202,8 +208,8 @@ func (t *Trace) Cleanup() {
 	}
 
 	// If we still have too many files, remove the oldest ones
-	if t.MaxTraceFiles > 0 && len(traceFiles) > t.MaxTraceFiles {
-		filesToRemove := len(traceFiles) - t.MaxTraceFiles
+	if tr.tracer.MaxTraceFiles > 0 && len(traceFiles) > tr.tracer.MaxTraceFiles {
+		filesToRemove := len(traceFiles) - tr.tracer.MaxTraceFiles
 		for i := 0; i < filesToRemove && i < len(traceFiles); i++ {
 			if err := os.Remove(traceFiles[i].path); err != nil {
 				slog.Error("Failed to remove excess trace file", "file", traceFiles[i].path, "error", err)
@@ -215,16 +221,12 @@ func (t *Trace) Cleanup() {
 }
 
 // BeforeCall implements Interceptor - records LLM call before invocation
-func (t *Trace) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
-	if err := t.ensureFileInitialized(); err != nil {
-		return messages, tools, err
-	}
-
+func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(t.file, "\n====> [%s] Start %s (%s) sessionID: %s\n", time.Now().Format("15:04:05"),
-		run.agent.Name, run.model.ModelName, t.SessionID)
+	fmt.Fprintf(tr.file, "\n====> [%s] Start %s (%s) runID: %s\n", time.Now().Format("15:04:05"),
+		run.agent.Name, run.model.ModelName, tr.runID)
 
 	for _, message := range messages {
 		role, _ := message.Value()
@@ -232,20 +234,20 @@ func (t *Trace) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool
 		// Handle each message type specifically
 		switch msg := message.(type) {
 		case ai.UserMessage:
-			fmt.Fprintf(t.file, "⬆️  %s:\n", role)
-			t.logMessageContent("content", msg.Content)
+			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
+			tr.logMessageContent("content", msg.Content)
 		case ai.SystemMessage:
-			fmt.Fprintf(t.file, "⬆️  %s:\n", role)
-			t.logMessageContent("content", msg.Content)
+			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
+			tr.logMessageContent("content", msg.Content)
 		case ai.AIMessage:
-			fmt.Fprintf(t.file, "⬆️  assistant: role=%s\n", msg.Role) // Role might vary by provider
-			t.logAIMessage(msg)
+			fmt.Fprintf(tr.file, "⬆️  assistant: role=%s\n", msg.Role) // Role might vary by provider
+			tr.logAIMessage(msg)
 		case ai.ToolMessage:
-			fmt.Fprintf(t.file, "⬆️  %s:\n", role)
-			fmt.Fprintf(t.file, " tool_call_id: %s\n", msg.ToolCallID)
-			t.logMessageContent("content", msg.Content)
+			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
+			fmt.Fprintf(tr.file, " tool_call_id: %s\n", msg.ToolCallID)
+			tr.logMessageContent("content", msg.Content)
 		case ai.ResourceMessage:
-			fmt.Fprintf(t.file, "⬆️  %s:\n", role)
+			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
 			// Determine if this is a file ID reference or has content
 			var isFileID bool
 			var contentLen int
@@ -271,79 +273,67 @@ func (t *Trace) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool
 
 			// Log the resource type and basic info
 			if isFileID {
-				fmt.Fprintf(t.file, " resource: %s (file ID reference)\n", msg.Name)
+				fmt.Fprintf(tr.file, " resource: %s (file ID reference)\n", msg.Name)
 			} else {
-				fmt.Fprintf(t.file, " resource: %s (content length: %d)\n", msg.Name, contentLen)
+				fmt.Fprintf(tr.file, " resource: %s (content length: %d)\n", msg.Name, contentLen)
 			}
 
 			// Log additional metadata
 			if msg.URI != "" {
-				fmt.Fprintf(t.file, " uri: %s\n", msg.URI)
+				fmt.Fprintf(tr.file, " uri: %s\n", msg.URI)
 			}
 			if msg.MIMEType != "" {
-				fmt.Fprintf(t.file, " mime_type: %s\n", msg.MIMEType)
+				fmt.Fprintf(tr.file, " mime_type: %s\n", msg.MIMEType)
 			}
 			if msg.Description != "" {
-				fmt.Fprintf(t.file, " description: %s\n", msg.Description)
+				fmt.Fprintf(tr.file, " description: %s\n", msg.Description)
 			}
 
 			// Log content preview if available
 			if contentPreview != "" {
-				t.logMessageContent("content_preview", contentPreview)
+				tr.logMessageContent("content_preview", contentPreview)
 			}
 		default:
 			// Fallback for unknown message types
 			_, content := message.Value()
-			t.logMessageContent("content", content)
+			tr.logMessageContent("content", content)
 		}
 	}
 
-	t.file.Sync()
+	tr.file.Sync()
 	return messages, tools, nil
 }
 
 // AfterCall implements Interceptor - records LLM response after invocation
-func (t *Trace) AfterCall(run *AgentRun, request []ai.Message, response ai.AIMessage) (ai.AIMessage, error) {
-	if err := t.ensureFileInitialized(); err != nil {
-		return response, err
-	}
-
+func (tr *TraceRun) AfterCall(run *AgentRun, request []ai.Message, response ai.AIMessage) (ai.AIMessage, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(t.file, "⬇️  assistant: role=%s\n", response.Role) // Role might vary by provider
-	t.logAIMessage(response)
-	t.file.Sync()
+	fmt.Fprintf(tr.file, "⬇️  assistant: role=%s\n", response.Role) // Role might vary by provider
+	tr.logAIMessage(response)
+	tr.file.Sync()
 
-	fmt.Fprintf(t.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), run.agent.Name)
+	fmt.Fprintf(tr.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), run.agent.Name)
 
 	return response, nil
 }
 
 // BeforeToolCall implements Interceptor - records tool call before execution
-func (t *Trace) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult) (ValidationResult, error) {
-	if err := t.ensureFileInitialized(); err != nil {
-		return validationResult, err
-	}
-
+func (tr *TraceRun) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult) (ValidationResult, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(t.file, "\n---- Tool START: %s (callID=%s) agent=%s\n", toolName, toolCallID, run.agent.Name)
+	fmt.Fprintf(tr.file, "\n---- Tool START: %s (callID=%s) agent=%s\n", toolName, toolCallID, run.agent.Name)
 
 	argsJSON, _ := json.Marshal(validationResult)
-	fmt.Fprintf(t.file, " args: %s\n", string(argsJSON))
-	t.file.Sync()
+	fmt.Fprintf(tr.file, " args: %s\n", string(argsJSON))
+	tr.file.Sync()
 
 	return validationResult, nil
 }
 
 // AfterToolCall implements Interceptor - records tool call after execution
-func (t *Trace) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
-	if err := t.ensureFileInitialized(); err != nil {
-		return result, err
-	}
-
+func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
@@ -380,63 +370,59 @@ func (t *Trace) AfterToolCall(run *AgentRun, toolName string, toolCallID string,
 		}
 	}
 
-	fmt.Fprintf(t.file, " result: %s\n", response)
-	fmt.Fprintf(t.file, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
+	fmt.Fprintf(tr.file, " result: %s\n", response)
+	fmt.Fprintf(tr.file, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
 
 	argsJSON, _ := json.Marshal(validationResult)
-	fmt.Fprintf(t.file, "🛠️️  %s tool response:\n", run.agent.Name)
-	fmt.Fprintf(t.file, "   • %s(%s)\n", toolName, string(argsJSON))
+	fmt.Fprintf(tr.file, "🛠️️  %s tool response:\n", run.agent.Name)
+	fmt.Fprintf(tr.file, "   • %s(%s)\n", toolName, string(argsJSON))
 
 	lines := strings.Split(response, "\n")
 	for _, line := range lines {
 		if line != "" {
-			fmt.Fprintf(t.file, "     %s\n", line)
+			fmt.Fprintf(tr.file, "     %s\n", line)
 		}
 	}
-	t.file.Sync()
+	tr.file.Sync()
 
 	return result, nil
 }
 
 // logMessageContent is a helper method to format and log message content
-func (t *Trace) logMessageContent(contentType, content string) {
+func (tr *TraceRun) logMessageContent(contentType, content string) {
 	if content == "" {
-		fmt.Fprintf(t.file, " %s: (empty)\n", contentType)
+		fmt.Fprintf(tr.file, " %s: (empty)\n", contentType)
 		return
 	}
 
-	fmt.Fprintf(t.file, " %s:\n", contentType)
+	fmt.Fprintf(tr.file, " %s:\n", contentType)
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		if line != "" {
-			fmt.Fprintf(t.file, "   %s\n", line)
+			fmt.Fprintf(tr.file, "   %s\n", line)
 		}
 	}
 }
 
-func (t *Trace) logAIMessage(msg ai.AIMessage) {
-	t.logMessageContent("content", msg.Content)
+func (tr *TraceRun) logAIMessage(msg ai.AIMessage) {
+	tr.logMessageContent("content", msg.Content)
 	if len(msg.ToolCalls) > 0 {
 		for _, tc := range msg.ToolCalls {
-			fmt.Fprintf(t.file, " tool request:\n")
-			fmt.Fprintf(t.file, "   tool_call_id: %s\n", tc.ID)
-			fmt.Fprintf(t.file, "   tool_name: %s\n", tc.Name)
-			fmt.Fprintf(t.file, "   tool_args: %s\n", tc.Args)
+			fmt.Fprintf(tr.file, " tool request:\n")
+			fmt.Fprintf(tr.file, "   tool_call_id: %s\n", tc.ID)
+			fmt.Fprintf(tr.file, "   tool_name: %s\n", tc.Name)
+			fmt.Fprintf(tr.file, "   tool_args: %s\n", tc.Args)
 		}
 	}
 }
 
 // LLMToolResponse records a single tool call response.
-func (t *Trace) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content string) error {
-	if err := t.ensureFileInitialized(); err != nil {
-		return err
-	}
-
+func (tr *TraceRun) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content string) error {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(t.file, "🛠️️  %s tool response:\n", agentName)
-	fmt.Fprintf(t.file, "   • %s(%s)\n",
+	fmt.Fprintf(tr.file, "🛠️️  %s tool response:\n", agentName)
+	fmt.Fprintf(tr.file, "   • %s(%s)\n",
 		toolCall.Name,
 		toolCall.Args)
 
@@ -444,39 +430,31 @@ func (t *Trace) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		if line != "" {
-			fmt.Fprintf(t.file, "     %s\n", line)
+			fmt.Fprintf(tr.file, "     %s\n", line)
 		}
 	}
-	t.file.Sync()
+	tr.file.Sync()
 	return nil
 }
 
 // RecordError records an error that occurred during the interaction.
-func (t *Trace) RecordError(err error) error {
-	if err := t.ensureFileInitialized(); err != nil {
-		return err
-	}
-
+func (tr *TraceRun) RecordError(err error) error {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(t.file, "❌ Error: %v\n", err)
-	t.file.Sync()
+	fmt.Fprintf(tr.file, "❌ Error: %v\n", err)
+	tr.file.Sync()
 	return nil
 }
 
 // End ends the trace and saves the trace information to a file.
-func (t *Trace) Close() error {
+func (tr *TraceRun) Close() error {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	// If file was never initialized, there's nothing to close
-	if !t.fileInitialized {
-		return nil
-	}
+	tr.endTime = time.Now()
+	fmt.Fprintf(tr.file, "End Time: %s\n", tr.endTime.Format(time.RFC3339))
+	tr.file.Sync()
 
-	t.EndTime = time.Now()
-	fmt.Fprintf(t.file, "End Time: %s\n", t.EndTime.Format(time.RFC3339))
-
-	return t.file.Close()
+	return tr.file.Close()
 }

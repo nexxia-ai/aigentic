@@ -24,8 +24,9 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	// Create a temporary trace file
 	tempDir := t.TempDir()
 
-	// Create trace with custom directory
-	trace := NewTrace(TraceConfig{Directory: tempDir})
+	// Create tracer with custom directory
+	tracer := NewTracer(TraceConfig{Directory: tempDir})
+	trace := tracer.NewTraceRun("test-run-id")
 	defer trace.Close()
 
 	// Create test AgentRun
@@ -55,7 +56,7 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	}
 
 	// Read the trace file content
-	content, err := os.ReadFile(trace.Filepath)
+	content, err := os.ReadFile(trace.Filepath())
 	if err != nil {
 		t.Fatalf("Failed to read trace file: %v", err)
 	}
@@ -84,8 +85,9 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 	// Create a temporary trace file
 	tempDir := t.TempDir()
 
-	// Create trace with custom directory
-	trace := NewTrace(TraceConfig{Directory: tempDir})
+	// Create tracer with custom directory
+	tracer := NewTracer(TraceConfig{Directory: tempDir})
+	trace := tracer.NewTraceRun("test-run-id")
 	defer trace.Close()
 
 	// Create test AgentRun
@@ -108,7 +110,7 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 	}
 
 	// Read the trace file content
-	content, err := os.ReadFile(trace.Filepath)
+	content, err := os.ReadFile(trace.Filepath())
 	if err != nil {
 		t.Fatalf("Failed to read trace file: %v", err)
 	}

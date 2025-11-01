@@ -11,7 +11,6 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
-	"github.com/nexxia-ai/aigentic/memory"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -226,7 +225,7 @@ func NewCreateInvoiceTool() AgentTool {
 // Individual test functions that can be reused
 func TestBasicAgent(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	tests := []struct {
 		agent         Agent
@@ -299,7 +298,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 
 func TestAgentRun(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	newAgent := func() Agent {
 		return Agent{
@@ -375,7 +374,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 
 func TestToolIntegration(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	newAgent := func() Agent {
 		return Agent{
@@ -442,7 +441,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 
 func TestTeamCoordination(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	// Subagents
 	lookup := Agent{
@@ -481,8 +480,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
-		Trace:  NewTrace(),
-		Memory: memory.NewMemory(),
+		Tracer: NewTracer(),
 		// LogLevel: slog.LevelDebug,
 	}
 
@@ -625,14 +623,14 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 		},
 	}
 
-	tracer := NewTrace()
+	tracer := NewTracer()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := Agent{
 				Model:        model,
 				Description:  tc.description,
 				Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
-				Trace:        tracer,
+				Tracer:       tracer,
 				Documents:    tc.attachments,
 			}
 
@@ -684,7 +682,7 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		Return the final names as received from the last expert. do not add any additional text or commentary.`,
 		Model:  model,
 		Agents: experts,
-		Trace:  NewTrace(),
+		Tracer: NewTracer(),
 	}
 
 	run, err := coordinator.Start("call the names of expert1, expert2 and expert3 and return them in order, do not add any additional text or commentary.")
@@ -715,7 +713,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
 		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
-		Trace:        NewTrace(),
+		Tracer:       NewTracer(),
 	}
 
 	// Define multiple sequential runs
@@ -805,7 +803,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 
 func TestBasicStreaming(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	agent := Agent{
 		Session:      session,
@@ -844,7 +842,7 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 
 func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	agent := Agent{
 		Session:      session,
@@ -882,7 +880,7 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 
 func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	agent := Agent{
 		Session:      session,
@@ -920,7 +918,7 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 
 func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	counter := 0
 	agent := Agent{
@@ -960,7 +958,7 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 
 func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	counter := 0
 	agent := Agent{
@@ -1003,7 +1001,7 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 
 func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	counter := 0
 	// Sub-agents
@@ -1039,8 +1037,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 			"7) After all tasks are complete, return only the final memory content (no commentary)\n" +
 			"CRITICAL: Execute step 1, then step 2, then step 3, etc. - NEVER execute multiple steps simultaneously.",
 		Agents: []Agent{lookupCompany, lookupSupplier},
-		Trace:  NewTrace(),
-		Memory: memory.NewMemory(),
+		Tracer: NewTracer(),
 	}
 
 	run, err := coordinator.Start(

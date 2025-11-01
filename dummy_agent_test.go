@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/memory"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -237,7 +236,7 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		Instructions: "Always use the lookup_company_name tool to get information.",
 		MaxLLMCalls:  3, // Limit to 3 LLM calls
 		AgentTools:   []AgentTool{WrapTool(*tool)},
-		Trace:        NewTrace(),
+		Tracer:       NewTracer(),
 		// LogLevel:     slog.LevelDebug,
 	}
 
@@ -453,7 +452,7 @@ func TestToolApprovalGiven(t *testing.T) {
 		Description:  "Test agent for approval functionality",
 		Instructions: "Use the test_approval_tool when requested.",
 		AgentTools:   []AgentTool{approvalTool},
-		Trace:        NewTrace(),
+		Tracer:       NewTracer(),
 		// LogLevel:     slog.LevelDebug,
 	}
 
@@ -504,7 +503,7 @@ func TestToolApprovalRejected(t *testing.T) {
 		Description:  "Test agent for approval functionality",
 		Instructions: "Use the test_approval_tool when requested.",
 		AgentTools:   []AgentTool{approvalTool},
-		Trace:        NewTrace(),
+		Tracer:       NewTracer(),
 		// LogLevel:     slog.LevelDebug,
 	}
 
@@ -558,7 +557,7 @@ func TestToolApprovalTimeout(t *testing.T) {
 		Description:  "Test agent for approval timeout functionality",
 		Instructions: "Use the test_approval_tool when requested.",
 		AgentTools:   []AgentTool{approvalTool},
-		Trace:        NewTrace(),
+		Tracer:       NewTracer(),
 		// LogLevel:     slog.LevelDebug,
 	}
 
@@ -812,7 +811,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 
 	// Create a custom test that mimics TestTeamCoordination but uses our separate models
 	session := NewSession(context.Background())
-	session.Trace = NewTrace()
+	// Sessions no longer have Trace field
 
 	// Subagents with their own models
 	lookup := Agent{
@@ -851,8 +850,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
-		Trace:  NewTrace(),
-		Memory: memory.NewMemory(),
+		Tracer: NewTracer(),
 	}
 
 	// Now run the same test logic as TestTeamCoordination

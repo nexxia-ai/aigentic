@@ -144,7 +144,7 @@ func (cfg *ConfigFile) InstantiateAgents(
 		}
 		// Configure tracing if enabled
 		if ac.EnableTrace {
-			a.Trace = NewTrace()
+			a.Tracer = NewTracer()
 		}
 		// Attach tools from tool servers listed by name using resolver
 		for _, tname := range ac.Tools {

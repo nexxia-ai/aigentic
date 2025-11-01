@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
-	"github.com/nexxia-ai/aigentic/memory"
 )
 
 // ContextFunction is a function that provides dynamic context for the agent.
@@ -36,8 +35,6 @@ type Agent struct {
 	// IncludeHistory is a flag to include the message history in the prompt.
 	IncludeHistory bool
 
-	Memory *memory.Memory
-
 	// Retries is the number of times to retry the agent if it fails.
 	Retries int
 	Stream  bool
@@ -52,9 +49,10 @@ type Agent struct {
 	// The document will be fetched from the document store when the agent needs it.
 	DocumentReferences []*document.Document
 
-	// Trace defines the trace for the agent.
-	// Set "Trace: aigentic.NewTrace()" to create trace files in the default temporary directory under $TMP/traces
-	Trace *Trace
+	// Tracer defines the trace factory for the agent.
+	// Set "Tracer: aigentic.NewTracer()" to create trace files for each run.
+	// Each run gets its own independent trace file.
+	Tracer *Tracer
 
 	// Interceptors chain allows inspection and modification of model calls
 	Interceptors []Interceptor

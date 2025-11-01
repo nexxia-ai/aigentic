@@ -34,7 +34,7 @@ type AgentRun struct {
 	eventQueue       chan Event
 	actionQueue      chan action
 	pendingApprovals map[string]pendingApproval
-	trace            *Trace
+	trace            *TraceRun
 	userMessage      string
 	parentRun        *AgentRun // pointer to parent if this is a sub-agent
 	Logger           *slog.Logger
@@ -70,15 +70,16 @@ func newAgentRun(a Agent, message string) *AgentRun {
 			return ai.AIMessage{}, fmt.Errorf("agent model is not set")
 		})
 	}
-	trace := session.Trace
-	if a.Trace != nil {
-		trace = a.Trace
+	// Create TraceRun from factory if tracer is set
+	var traceRun *TraceRun
+	if a.Tracer != nil {
+		traceRun = a.Tracer.NewTraceRun(runID)
 	}
 	// Build interceptor chain: copy from agent, add trace if set
 	interceptors := make([]Interceptor, len(a.Interceptors))
 	copy(interceptors, a.Interceptors)
-	if trace != nil {
-		interceptors = append(interceptors, trace)
+	if traceRun != nil {
+		interceptors = append(interceptors, traceRun)
 	}
 	// Always add LoggerInterceptor as the last interceptor
 	interceptors = append(interceptors, newLoggerInterceptor())
@@ -100,7 +101,7 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		ctx:              runCtx,
 		cancelFunc:       cancelFunc,
 		userMessage:      message,
-		trace:            trace,
+		trace:            traceRun,
 		interceptors:     interceptors,
 		maxLLMCalls:      maxLLMCalls,
 		eventQueue:       make(chan Event, 100),
@@ -135,7 +136,7 @@ func (r *AgentRun) stop() {
 }
 
 func (r *AgentRun) addTools() []AgentTool {
-	totalToolsCount := len(r.agent.AgentTools) + len(r.agent.Agents) + 1 // +1 for memory tool
+	totalToolsCount := len(r.agent.AgentTools) + len(r.agent.Agents)
 	tools := make([]AgentTool, 0, totalToolsCount)
 	tools = append(tools, r.agent.AgentTools...)
 
@@ -206,14 +207,6 @@ func (r *AgentRun) addTools() []AgentTool {
 		tools = append(tools, retriever.ToTool())
 	}
 
-	// Add memory tools
-	if r.agent.Memory != nil {
-		memoryTools := r.agent.Memory.GetTools()
-		for _, tool := range memoryTools {
-			tools = append(tools, WrapTool(tool))
-		}
-	}
-
 	// make sure all tools have a validation and execute function
 	for i := range tools {
 		if tools[i].Validate == nil {
@@ -262,6 +255,13 @@ func (r *AgentRun) Approve(approvalID string, approved bool) {
 
 func (r *AgentRun) Next() <-chan Event {
 	return r.eventQueue
+}
+
+func (r *AgentRun) TraceFilepath() string {
+	if r.trace == nil {
+		return ""
+	}
+	return r.trace.Filepath()
 }
 
 // keep it a variable to make it easier to test
@@ -318,13 +318,6 @@ func (r *AgentRun) runStopAction(act *stopAction) {
 			Err:       act.Error,
 		}
 		r.queueEvent(event)
-	}
-
-	// Clear run memory at the end of each agent run
-	if r.agent.Memory != nil {
-		if err := r.agent.Memory.ClearRunMemory(); err != nil {
-			r.Logger.Error("failed to clear run memory", "error", err)
-		}
 	}
 
 	r.stop()
@@ -677,17 +670,6 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		r.queueAction(&stopAction{Error: nil})
 		return
 	}
-
-	// Optimisation for single save_memory tool call. There is no need to respond to the tool call.
-	// Simply save to memory and rerun the current message.
-	// if len(msg.ToolCalls) == 1 && msg.ToolCalls[0].Name == "save_memory" {
-	// 	var args map[string]interface{}
-	// 	if err := json.Unmarshal([]byte(msg.ToolCalls[0].Args), &args); err == nil {
-	// 		r.agent.Memory.Tool.Execute(r, args)
-	// 		r.queueAction(&llmCallAction{Message: r.userMessage})
-	// 		return
-	// 	}
-	// }
 
 	// reset history slice each time so that we only keep the last assistant msg and tool responses (if any)
 	r.msgHistory = []ai.Message{msg}

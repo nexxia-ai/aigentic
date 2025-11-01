@@ -30,11 +30,6 @@ const EnhancedSystemTemplate = `You are an autonomous agent with the following c
 ## INSTRUCTIONS
 {{.Instructions}}
 
-{{end}}{{if .HasMemory}}
-## PERSISTENT MEMORY
-The following information is stored in your persistent memory:
-{{.Memory}}
-
 {{end}}{{if .HasTools}}
 ## AVAILABLE TOOLS
 You have access to the following tools:
@@ -133,10 +128,7 @@ const UserCentricSystemTemplate = `You are an autonomous agent working to comple
 
 {{end}}Focus on the user's current request and utilize your tools systematically.`
 
-const UserCentricUserTemplate = `{{if .HasMemory}}## CONTEXT FROM MEMORY
-{{.MemoryContent}}
-
-{{end}}{{if .HasSessionContext}}<session_context>
+const UserCentricUserTemplate = `{{if .HasSessionContext}}<session_context>
 {{.SessionContext}}
 </session_context>
 
@@ -202,10 +194,7 @@ const MinimalSystemTemplate = `You are {{.Role}}
 
 {{if .HasTools}}Available tools: {{range .Tools}}{{.Name}}{{end}}{{end}}`
 
-const MinimalUserTemplate = `{{if .HasMemory}}### Memory
-{{.MemoryContent}}
-
-{{end}}{{if .HasSessionContext}}<session_context>
+const MinimalUserTemplate = `{{if .HasSessionContext}}<session_context>
 {{.SessionContext}}
 </session_context>
 
@@ -280,9 +269,6 @@ const HierarchicalSystemTemplate = `# AGENT CONFIGURATION
 ## PRIMARY DIRECTIVES
 {{if .HasInstructions}}{{.Instructions}}{{end}}
 
-## KNOWLEDGE BASE
-{{if .HasMemory}}{{.Memory}}{{end}}
-
 ## CAPABILITIES
 {{if .HasTools}}
 {{range .Tools}}
@@ -308,9 +294,6 @@ const HierarchicalUserTemplate = `# CURRENT TASK
 {{.SessionContext}}
 </session_context>
 
-{{end}}{{if .HasMemory}}
-# RELEVANT CONTEXT
-{{.MemoryContent}}
 {{end}}`
 
 func NewHierarchicalContextManager(agent Agent, userMsg string) *HierarchicalContextManager {

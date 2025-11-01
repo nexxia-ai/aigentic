@@ -78,13 +78,6 @@ The user provided the following description of your role:
 </instructions>
 
 {{end}}
-{{if .HasMemory}}
-
-<memory>
-{{.Memory}}
-</memory>
-
-{{end}}
 {{if .HasTools}}
 You have access to the following tools:
 
@@ -106,12 +99,7 @@ You have already used the following tools:
 
 {{end}}`
 
-const DefaultUserTemplate = `{{if .HasMemory}}This is the content of the run memory:
-<run_memory>
-{{.MemoryContent}}
-</run_memory>
-
-{{end}}{{if .HasSessionContext}}<session_context>
+const DefaultUserTemplate = `{{if .HasSessionContext}}<session_context>
 {{.SessionContext}}
 </session_context>
 
@@ -206,44 +194,26 @@ func (r *BasicContextManager) createUserVariables(message string, run *AgentRun)
 
 // Package-level utility functions for reuse across context managers
 func createSystemVariables(agent Agent, tools []ai.Tool, toolHistory string) map[string]interface{} {
-	var memorySystemPrompt string
-	var hasMemory bool
-	if agent.Memory != nil {
-		memorySystemPrompt = agent.Memory.SystemPrompt()
-		hasMemory = memorySystemPrompt != ""
-	}
-
 	hasToolHistory := strings.TrimSpace(toolHistory) != ""
 
 	return map[string]interface{}{
 		"HasTools":        len(tools) > 0,
 		"Role":            agent.Description,
 		"Instructions":    agent.Instructions,
-		"Memory":          memorySystemPrompt,
 		"Tools":           tools,
 		"ToolHistory":     toolHistory,
 		"HasRole":         agent.Description != "",
 		"HasInstructions": agent.Instructions != "",
-		"HasMemory":       hasMemory,
 		"HasToolHistory":  hasToolHistory,
 	}
 }
 
 func createUserVariables(agent Agent, message string, run *AgentRun) map[string]interface{} {
-	var memoryContent string
-	var hasMemory bool
-	if agent.Memory != nil {
-		memoryContent = agent.Memory.GetRunMemoryContent()
-		hasMemory = memoryContent != ""
-	}
-
 	sessionContext := collectContextFunctions(agent, run)
 	hasSessionContext := sessionContext != ""
 
 	return map[string]interface{}{
 		"Message":            message,
-		"MemoryContent":      memoryContent,
-		"HasMemory":          hasMemory,
 		"HasMessage":         message != "",
 		"Documents":          agent.Documents,
 		"DocumentReferences": agent.DocumentReferences,

@@ -31,16 +31,18 @@ type AgentRun struct {
 	contextManager ContextManager
 	interceptors   []Interceptor
 
-	eventQueue       chan Event
-	actionQueue      chan action
-	pendingApprovals map[string]pendingApproval
-	trace            *TraceRun
-	userMessage      string
-	parentRun        *AgentRun // pointer to parent if this is a sub-agent
-	Logger           *slog.Logger
-	maxLLMCalls      int // maximum number of LLM calls (defaults to 20 when unset)
-	llmCallCount     int // number of LLM calls made
-	approvalTimeout  time.Duration
+	eventQueue           chan Event
+	actionQueue          chan action
+	pendingApprovals     map[string]pendingApproval
+	processedToolCallIDs map[string]bool // track tool calls processed from streaming chunks to avoid duplicates
+	currentStreamGroup   *toolCallGroup  // group for current streaming response (shared between chunks and final message)
+	trace                *TraceRun
+	userMessage          string
+	parentRun            *AgentRun // pointer to parent if this is a sub-agent
+	Logger               *slog.Logger
+	maxLLMCalls          int // maximum number of LLM calls (defaults to 20 when unset)
+	llmCallCount         int // number of LLM calls made
+	approvalTimeout      time.Duration
 }
 
 func (r *AgentRun) ID() string {
@@ -94,22 +96,23 @@ func newAgentRun(a Agent, message string) *AgentRun {
 	}
 
 	run := &AgentRun{
-		id:               runID,
-		agent:            a,
-		model:            model,
-		session:          session,
-		ctx:              runCtx,
-		cancelFunc:       cancelFunc,
-		userMessage:      message,
-		trace:            traceRun,
-		interceptors:     interceptors,
-		maxLLMCalls:      maxLLMCalls,
-		eventQueue:       make(chan Event, 100),
-		actionQueue:      make(chan action, 100),
-		pendingApprovals: make(map[string]pendingApproval),
-		approvalTimeout:  approvalTimeout,
-		contextManager:   a.ContextManager,
-		Logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
+		id:                   runID,
+		agent:                a,
+		model:                model,
+		session:              session,
+		ctx:                  runCtx,
+		cancelFunc:           cancelFunc,
+		userMessage:          message,
+		trace:                traceRun,
+		interceptors:         interceptors,
+		maxLLMCalls:          maxLLMCalls,
+		eventQueue:           make(chan Event, 100),
+		actionQueue:          make(chan action, 100),
+		pendingApprovals:     make(map[string]pendingApproval),
+		processedToolCallIDs: make(map[string]bool),
+		approvalTimeout:      approvalTimeout,
+		contextManager:       a.ContextManager,
+		Logger:               slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 	run.tools = run.addTools()
 	return run
@@ -367,6 +370,10 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 	}
 	r.llmCallCount++ // Increment counter
 
+	// Clear processed tool call IDs and stream group for this new LLM call
+	r.processedToolCallIDs = make(map[string]bool)
+	r.currentStreamGroup = nil
+
 	tools := make([]ai.Tool, len(agentTools))
 	for i, agentTool := range agentTools {
 		tools[i] = agentTool.toTool(r)
@@ -597,6 +604,11 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 	}
 	action.Group.responses[action.ToolCallID] = toolMsg
 
+	// Don't check completion if we're still streaming (will be checked when final message arrives)
+	if r.currentStreamGroup != nil && r.currentStreamGroup == action.Group {
+		return
+	}
+
 	// Check if all tool calls in this group are completed
 	if len(action.Group.responses) == len(action.Group.aiMessage.ToolCalls) {
 
@@ -658,8 +670,23 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		}
 	}
 
-	// return if this is a chunk (streaming) and there are no tool calls
-	if isChunk && len(msg.ToolCalls) == 0 {
+	// Process tool calls from chunks immediately for better UX, but track them to avoid duplicates
+	if isChunk {
+		if len(msg.ToolCalls) > 0 {
+			// Initialize stream group if this is the first chunk with tool calls
+			if r.currentStreamGroup == nil {
+				chunkMsg := ai.AIMessage{
+					Role:      msg.Role,
+					ToolCalls: msg.ToolCalls,
+				}
+				r.currentStreamGroup = &toolCallGroup{
+					aiMessage: &chunkMsg,
+					responses: make(map[string]ai.ToolMessage),
+				}
+			}
+			// Process tool calls using the shared group
+			r.processToolCallsFromChunk(msg.ToolCalls)
+		}
 		return
 	}
 
@@ -674,17 +701,134 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 	// reset history slice each time so that we only keep the last assistant msg and tool responses (if any)
 	r.msgHistory = []ai.Message{msg}
 
-	r.groupToolCalls(msg.ToolCalls, msg)
+	// If we have a stream group from chunks, update it with the final message, otherwise create new group
+	if r.currentStreamGroup != nil {
+		r.currentStreamGroup.aiMessage = &msg
+		r.groupToolCalls(msg.ToolCalls, msg, r.currentStreamGroup)
+		// Check if all tool calls in the group are now completed (now that we have the final message)
+		if len(r.currentStreamGroup.responses) == len(r.currentStreamGroup.aiMessage.ToolCalls) {
+			// add all tool responses and queue their events
+			for _, tc := range r.currentStreamGroup.aiMessage.ToolCalls {
+				if response, exists := r.currentStreamGroup.responses[tc.ID]; exists {
+					r.msgHistory = append(r.msgHistory, response)
+					event := &ToolResponseEvent{
+						RunID:      r.id,
+						AgentName:  r.agent.Name,
+						SessionID:  r.session.ID,
+						ToolCallID: response.ToolCallID,
+						ToolName:   response.ToolName,
+						Content:    response.Content,
+					}
+					r.queueEvent(event)
+				}
+			}
+
+			// Notify any content from the AI message
+			if r.currentStreamGroup.aiMessage.Content != "" {
+				event := &ContentEvent{
+					RunID:     r.id,
+					AgentName: r.agent.Name,
+					SessionID: r.session.ID,
+					Content:   r.currentStreamGroup.aiMessage.Content,
+				}
+				r.queueEvent(event)
+			}
+
+			r.queueAction(&llmCallAction{Message: r.userMessage})
+		}
+		r.currentStreamGroup = nil // clear after processing
+	} else {
+		r.groupToolCalls(msg.ToolCalls, msg, nil)
+	}
+}
+
+// processToolCallsFromChunk processes tool calls from a streaming chunk using the shared stream group
+func (r *AgentRun) processToolCallsFromChunk(toolCalls []ai.ToolCall) {
+	for _, tc := range toolCalls {
+		// Skip tool calls that were already processed
+		if r.processedToolCallIDs[tc.ID] {
+			continue
+		}
+		// Mark this tool call as processed
+		r.processedToolCallIDs[tc.ID] = true
+
+		var args map[string]interface{}
+		if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
+			if r.trace != nil {
+				r.trace.RecordError(err)
+			}
+			r.queueAction(&toolResponseAction{request: &toolCallAction{
+				ToolCallID:       tc.ID,
+				ToolName:         tc.Name,
+				ValidationResult: ValidationResult{Values: args},
+				Group:            r.currentStreamGroup},
+				response: fmt.Sprintf("invalid tool parameters: %v", err)})
+			continue
+		}
+
+		tool := r.findTool(tc.Name)
+		if tool == nil {
+			r.queueAction(&toolResponseAction{
+				request:  &toolCallAction{ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: r.currentStreamGroup},
+				response: fmt.Sprintf("tool not found: %s", tc.Name),
+			})
+			continue
+		}
+
+		// run validation
+		values, err := tool.validateInput(r, args)
+		if err != nil {
+			r.queueAction(&toolResponseAction{
+				request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: r.currentStreamGroup},
+				response: fmt.Sprintf("invalid tool parameters: %v", err)})
+			continue
+		}
+
+		if tool.RequireApproval {
+			approvalID := uuid.New().String()
+			r.pendingApprovals[approvalID] = pendingApproval{
+				ApprovalID:       approvalID,
+				Tool:             tool,
+				ToolCallID:       tc.ID,
+				ValidationResult: values,
+				Group:            r.currentStreamGroup,
+				deadline:         time.Now().Add(r.approvalTimeout),
+			}
+			approvalEvent := &ApprovalEvent{
+				RunID:            r.id,
+				ApprovalID:       approvalID,
+				ToolName:         tc.Name,
+				ValidationResult: values,
+			}
+			r.queueEvent(approvalEvent)
+			return
+		}
+
+		r.queueAction(&toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: values, Group: r.currentStreamGroup})
+	}
 }
 
 // groupToolCalls processes a slice of tool calls and queues the appropriate actions
-func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage) {
-	group := &toolCallGroup{
-		aiMessage: &msg,
-		responses: make(map[string]ai.ToolMessage),
+func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, existingGroup *toolCallGroup) {
+	var group *toolCallGroup
+	if existingGroup != nil {
+		group = existingGroup
+		group.aiMessage = &msg
+	} else {
+		group = &toolCallGroup{
+			aiMessage: &msg,
+			responses: make(map[string]ai.ToolMessage),
+		}
 	}
 
 	for _, tc := range toolCalls {
+		// Skip tool calls that were already processed from streaming chunks
+		if r.processedToolCallIDs[tc.ID] {
+			continue
+		}
+		// Mark this tool call as processed
+		r.processedToolCallIDs[tc.ID] = true
+
 		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
 			if r.trace != nil {

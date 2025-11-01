@@ -73,7 +73,7 @@ func newAgentRun(a Agent, message string) *AgentRun {
 	// Create TraceRun from factory if tracer is set
 	var traceRun *TraceRun
 	if a.Tracer != nil {
-		traceRun = a.Tracer.NewTraceRun(runID)
+		traceRun = a.Tracer.NewTraceRun()
 	}
 	// Build interceptor chain: copy from agent, add trace if set
 	interceptors := make([]Interceptor, len(a.Interceptors))

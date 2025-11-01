@@ -26,7 +26,7 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 
 	// Create tracer with custom directory
 	tracer := NewTracer(TraceConfig{Directory: tempDir})
-	trace := tracer.NewTraceRun("test-run-id")
+	trace := tracer.NewTraceRun()
 	defer trace.Close()
 
 	// Create test AgentRun
@@ -87,7 +87,7 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 
 	// Create tracer with custom directory
 	tracer := NewTracer(TraceConfig{Directory: tempDir})
-	trace := tracer.NewTraceRun("test-run-id")
+	trace := tracer.NewTraceRun()
 	defer trace.Close()
 
 	// Create test AgentRun

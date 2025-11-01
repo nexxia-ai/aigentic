@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -32,16 +33,14 @@ type TraceConfig struct {
 
 // Tracer is a factory that creates TraceRun instances for agent runs
 type Tracer struct {
-	Directory         string
-	RetentionDuration time.Duration
-	MaxTraceFiles     int
+	config  TraceConfig
+	counter int64
 }
 
 // TraceRun stores the execution trace of an LLM for a single run.
 // TraceRun implements Interceptor for automatic tracing via interceptors.
 type TraceRun struct {
 	tracer    *Tracer
-	runID     string      // Unique ID for this run
 	startTime time.Time   // Start time of the trace
 	endTime   time.Time   // End time of the trace
 	filepath  string      // Path to the trace file
@@ -70,54 +69,6 @@ func (d *discardWriter) Close() error {
 	return nil
 }
 
-// NewTraceRun creates a new TraceRun for a specific agent run
-func (tr *Tracer) NewTraceRun(runID string) *TraceRun {
-	directory := tr.Directory
-	if directory == "" {
-		directory = filepath.Join(os.TempDir(), "aigentic-traces")
-	}
-
-	// Create directory if needed
-	os.MkdirAll(directory, 0755)
-
-	// Each run gets unique file based on runID
-	filepath := filepath.Join(directory, fmt.Sprintf("trace-%s.txt", runID))
-
-	traceRun := &TraceRun{
-		tracer:    tr,
-		runID:     runID,
-		startTime: time.Now(),
-		filepath:  filepath,
-	}
-
-	traceRun.cleanup() // Clean old files based on tracer config
-
-	// Open file immediately
-	var file traceWriter
-	osFile, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		slog.Error("Failed to open trace file, using io.Discard", "file", filepath, "error", err)
-		file = &discardWriter{}
-	} else {
-		// Write initial header to the file
-		fmt.Fprintf(osFile, "trace for runID: %s\n", runID)
-		file = osFile
-	}
-
-	traceRun.file = file
-	return traceRun
-}
-
-// Filepath returns the path to the trace file
-func (tr *TraceRun) Filepath() string {
-	return tr.filepath
-}
-
-// RunID returns the unique ID for this trace run
-func (tr *TraceRun) RunID() string {
-	return tr.runID
-}
-
 // NewTracer creates a new Tracer factory with default cleanup settings.
 func NewTracer(config ...TraceConfig) *Tracer {
 	defaultDir := filepath.Join(os.TempDir(), "aigentic-traces")
@@ -141,22 +92,48 @@ func NewTracer(config ...TraceConfig) *Tracer {
 	}
 
 	t := &Tracer{
-		Directory:         cfg.Directory,
-		RetentionDuration: cfg.RetentionDuration,
-		MaxTraceFiles:     cfg.MaxTraceFiles,
+		config:  cfg,
+		counter: 0,
 	}
+
+	// Create directory if needed
+	os.MkdirAll(cfg.Directory, 0755)
 
 	return t
 }
 
-// cleanup removes old trace files based on retention policy
-func (tr *TraceRun) cleanup() {
-	directory := tr.tracer.Directory
-	if directory == "" {
-		directory = filepath.Join(os.TempDir(), "aigentic-traces")
+// NewTraceRun creates a new TraceRun for a specific agent run
+func (tr *Tracer) NewTraceRun() *TraceRun {
+
+	// Generate timestamp and counter for unique filename
+	timestamp := time.Now().Format("20060102150405")
+	counter := atomic.AddInt64(&tr.counter, 1)
+	filepath := filepath.Join(tr.config.Directory, fmt.Sprintf("trace-%s.%03d.txt", timestamp, counter))
+
+	tr.cleanup() // Clean old files based on tracer config
+
+	traceRun := &TraceRun{
+		tracer:    tr,
+		startTime: time.Now(),
+		filepath:  filepath,
 	}
 
-	entries, err := os.ReadDir(directory)
+	var file traceWriter
+	osFile, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		slog.Error("Failed to open trace file, using io.Discard", "file", filepath, "error", err)
+		file = &discardWriter{}
+	} else {
+		file = osFile
+	}
+
+	traceRun.file = file
+	return traceRun
+}
+
+// cleanup removes old trace files based on retention policy
+func (tr *Tracer) cleanup() {
+	entries, err := os.ReadDir(tr.config.Directory)
 	if err != nil {
 		slog.Error("Failed to read trace directory", "error", err)
 		return
@@ -167,14 +144,14 @@ func (tr *TraceRun) cleanup() {
 		modTime time.Time
 	}
 
-	cutoffTime := time.Now().Add(-tr.tracer.RetentionDuration)
+	cutoffTime := time.Now().Add(-tr.config.RetentionDuration)
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "trace-") || !strings.HasSuffix(entry.Name(), ".txt") {
 			continue
 		}
 
-		filePath := filepath.Join(directory, entry.Name())
+		filePath := filepath.Join(tr.config.Directory, entry.Name())
 		info, err := entry.Info()
 		if err != nil {
 			continue
@@ -195,7 +172,7 @@ func (tr *TraceRun) cleanup() {
 	})
 
 	// Remove files older than retention duration
-	if tr.tracer.RetentionDuration > 0 {
+	if tr.config.RetentionDuration > 0 {
 		for _, file := range traceFiles {
 			if file.modTime.Before(cutoffTime) {
 				if err := os.Remove(file.path); err != nil {
@@ -208,8 +185,8 @@ func (tr *TraceRun) cleanup() {
 	}
 
 	// If we still have too many files, remove the oldest ones
-	if tr.tracer.MaxTraceFiles > 0 && len(traceFiles) > tr.tracer.MaxTraceFiles {
-		filesToRemove := len(traceFiles) - tr.tracer.MaxTraceFiles
+	if tr.config.MaxTraceFiles > 0 && len(traceFiles) > tr.config.MaxTraceFiles {
+		filesToRemove := len(traceFiles) - tr.config.MaxTraceFiles
 		for i := 0; i < filesToRemove && i < len(traceFiles); i++ {
 			if err := os.Remove(traceFiles[i].path); err != nil {
 				slog.Error("Failed to remove excess trace file", "file", traceFiles[i].path, "error", err)
@@ -220,13 +197,18 @@ func (tr *TraceRun) cleanup() {
 	}
 }
 
+// Filepath returns the path to the trace file
+func (tr *TraceRun) Filepath() string {
+	return tr.filepath
+}
+
 // BeforeCall implements Interceptor - records LLM call before invocation
 func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
 	fmt.Fprintf(tr.file, "\n====> [%s] Start %s (%s) runID: %s\n", time.Now().Format("15:04:05"),
-		run.agent.Name, run.model.ModelName, tr.runID)
+		run.agent.Name, run.model.ModelName, run.ID())
 
 	for _, message := range messages {
 		role, _ := message.Value()

@@ -246,6 +246,9 @@ func (m *Model) WithStopSequences(sequences []string) *Model {
 }
 
 func (m *Model) WithParameter(name string, value interface{}) *Model {
+	if m.Parameters == nil {
+		m.Parameters = make(map[string]interface{})
+	}
 	m.Parameters[name] = value
 	return m
 }

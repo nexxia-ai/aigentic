@@ -3,7 +3,7 @@ package ai
 import (
 	"errors"
 	"fmt"
-	"strings"
+	"log/slog"
 	"sync"
 )
 
@@ -11,18 +11,20 @@ var (
 	ErrModelNotFound      = errors.New("model not found")
 	ErrInvalidIdentifier  = errors.New("invalid model identifier format, expected 'provider/modelName'")
 	ErrModelAlreadyExists = errors.New("model already registered")
-	ErrEmptyProviderName  = errors.New("provider name cannot be empty")
-	ErrEmptyModelName     = errors.New("model name cannot be empty")
+	ErrEmptyIdentifier    = errors.New("identifier cannot be empty")
+	ErrEmptyProvider      = errors.New("provider cannot be empty")
+	ErrEmptyModel         = errors.New("model name cannot be empty")
 )
 
 type ModelFactoryFunc func(modelName, apiKey string, baseURL ...string) *Model
 
 type ModelInfo struct {
-	Model       string
-	BaseURL     string
-	DisplayName string
-	Family      string
-	NewModel    ModelFactoryFunc
+	Identifier string
+	Provider   string
+	Model      string
+	BaseURL    string
+	Family     string
+	NewModel   ModelFactoryFunc
 }
 
 type modelRegistry struct {
@@ -38,42 +40,33 @@ func init() {
 	}
 }
 
-func RegisterModel(provider, modelName string, info ModelInfo) error {
-	if provider == "" {
-		return ErrEmptyProviderName
+func RegisterModel(info ModelInfo) error {
+	if info.Identifier == "" {
+		return ErrEmptyIdentifier
 	}
-	if modelName == "" {
-		return ErrEmptyModelName
+	if info.Provider == "" {
+		return ErrEmptyProvider
 	}
-
-	identifier := fmt.Sprintf("%s/%s", provider, modelName)
+	if info.Model == "" {
+		return ErrEmptyModel
+	}
+	if info.NewModel == nil {
+		return fmt.Errorf("NewModel function cannot be nil")
+	}
 
 	defaultRegistry.mu.Lock()
 	defer defaultRegistry.mu.Unlock()
 
-	if _, exists := defaultRegistry.models[identifier]; exists {
-		return fmt.Errorf("%w: %s", ErrModelAlreadyExists, identifier)
+	if _, exists := defaultRegistry.models[info.Identifier]; exists {
+		slog.Warn("Overwriting model registration", "identifier", info.Identifier)
 	}
 
-	info.Model = identifier
-	defaultRegistry.models[identifier] = info
+	defaultRegistry.models[info.Identifier] = info
 	return nil
 }
 
 func New(identifier, apiKey string) (*Model, error) {
 	if identifier == "" {
-		return nil, ErrInvalidIdentifier
-	}
-
-	parts := strings.SplitN(identifier, "/", 2)
-	if len(parts) < 2 {
-		return nil, ErrInvalidIdentifier
-	}
-
-	provider := parts[0]
-	modelName := parts[1]
-
-	if provider == "" || modelName == "" {
 		return nil, ErrInvalidIdentifier
 	}
 
@@ -85,7 +78,7 @@ func New(identifier, apiKey string) (*Model, error) {
 		return nil, fmt.Errorf("%w: %s", ErrModelNotFound, identifier)
 	}
 
-	return info.NewModel(modelName, apiKey, info.BaseURL), nil
+	return info.NewModel(info.Model, apiKey, info.BaseURL), nil
 }
 
 func Models() []ModelInfo {

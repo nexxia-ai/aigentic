@@ -2,7 +2,7 @@ package ai
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 )
 
@@ -26,11 +26,14 @@ func TestNew_WithModelInfoModel_ShouldWork(t *testing.T) {
 	testModel := "test-model"
 
 	info := ModelInfo{
-		BaseURL:  "https://api.test.com",
-		NewModel: mockFactory,
+		Provider:   testProvider,
+		Model:      testModel,
+		Identifier: "Test Model",
+		BaseURL:    "https://api.test.com",
+		NewModel:   mockFactory,
 	}
 
-	err := RegisterModel(testProvider, testModel, info)
+	err := RegisterModel(info)
 	if err != nil {
 		t.Fatalf("Failed to register model: %v", err)
 	}
@@ -41,30 +44,28 @@ func TestNew_WithModelInfoModel_ShouldWork(t *testing.T) {
 	}
 
 	var retrievedInfo ModelInfo
-	expectedIdentifier := testProvider + "/" + testModel
 	for _, m := range modelsList {
-		if m.Model == expectedIdentifier {
+		if m.Identifier == info.Identifier {
 			retrievedInfo = m
 			break
 		}
 	}
 
-	if retrievedInfo.Model == "" {
+	if retrievedInfo.Identifier == "" {
 		t.Fatal("Could not find registered model")
 	}
 
-	if retrievedInfo.Model == "" {
-		t.Fatal("ModelInfo.Model field is empty")
+	if retrievedInfo.Model != testModel {
+		t.Errorf("Expected ModelInfo.Model to be '%s', got: %s", testModel, retrievedInfo.Model)
 	}
 
-	expectedFullIdentifier := testProvider + "/" + testModel
-	if retrievedInfo.Model != expectedFullIdentifier {
-		t.Errorf("Expected ModelInfo.Model to be '%s', got: %s", expectedFullIdentifier, retrievedInfo.Model)
+	if retrievedInfo.Provider != testProvider {
+		t.Errorf("Expected ModelInfo.Provider to be '%s', got: %s", testProvider, retrievedInfo.Provider)
 	}
 
-	model, err := New(retrievedInfo.Model, "test-api-key")
+	model, err := New(info.Identifier, "test-api-key")
 	if err != nil {
-		t.Errorf("Expected no error when using ModelInfo.Model with New(), got: %v", err)
+		t.Errorf("Expected no error when using Identifier with New(), got: %v", err)
 	}
 	if model == nil {
 		t.Error("Expected model to be created, got nil")
@@ -86,37 +87,37 @@ func TestNew_WithModelInfoModelName_ShouldFail(t *testing.T) {
 	testModel := "bug-model"
 
 	info := ModelInfo{
-		BaseURL:  "https://api.bug.com",
-		NewModel: mockFactory,
+		Provider:   testProvider,
+		Model:      testModel,
+		Identifier: "Bug Model",
+		BaseURL:    "https://api.bug.com",
+		NewModel:   mockFactory,
 	}
 
-	err := RegisterModel(testProvider, testModel, info)
+	err := RegisterModel(info)
 	if err != nil {
 		t.Fatalf("Failed to register model: %v", err)
 	}
 
 	modelsList := Models()
 	var retrievedInfo ModelInfo
-	expectedIdentifier := testProvider + "/" + testModel
 	for _, m := range modelsList {
-		if m.Model == expectedIdentifier {
+		if m.Identifier == info.Identifier {
 			retrievedInfo = m
 			break
 		}
 	}
 
-	if retrievedInfo.Model == "" {
+	if retrievedInfo.Identifier == "" {
 		t.Fatal("Could not find registered model")
 	}
 
-	parts := strings.SplitN(retrievedInfo.Model, "/", 2)
-	modelNameOnly := parts[1]
-	_, err = New(modelNameOnly, "test-api-key")
+	_, err = New(info.Model, "test-api-key")
 	if err == nil {
-		t.Error("Expected error when using ModelInfo.ModelName (without provider prefix) with New(), but got none")
+		t.Error("Expected error when using model name (not identifier) with New(), but got none")
 	}
-	if err != ErrInvalidIdentifier {
-		t.Errorf("Expected ErrInvalidIdentifier, got: %v", err)
+	if !errors.Is(err, ErrModelNotFound) {
+		t.Errorf("Expected ErrModelNotFound, got: %v", err)
 	}
 }
 
@@ -140,19 +141,21 @@ func TestNew_WithFullIdentifier_ShouldWork(t *testing.T) {
 	testModel := "another-model"
 
 	info := ModelInfo{
-		BaseURL:  "https://api.another.com",
-		NewModel: mockFactory,
+		Provider:   testProvider,
+		Model:      testModel,
+		Identifier: "Another Model",
+		BaseURL:    "https://api.another.com",
+		NewModel:   mockFactory,
 	}
 
-	err := RegisterModel(testProvider, testModel, info)
+	err := RegisterModel(info)
 	if err != nil {
 		t.Fatalf("Failed to register model: %v", err)
 	}
 
-	fullIdentifier := testProvider + "/" + testModel
-	model, err := New(fullIdentifier, "test-api-key")
+	model, err := New(info.Identifier, "test-api-key")
 	if err != nil {
-		t.Errorf("Expected no error with full identifier, got: %v", err)
+		t.Errorf("Expected no error with identifier, got: %v", err)
 	}
 	if model == nil {
 		t.Error("Expected model to be created, got nil")
@@ -182,38 +185,43 @@ func TestModelInfo_CompleteWorkflow(t *testing.T) {
 	testModel := "workflow-model"
 
 	info := ModelInfo{
-		BaseURL:     "https://api.workflow.com",
-		DisplayName: "Workflow Model",
-		Family:      "test",
-		NewModel:    mockFactory,
+		Provider:   testProvider,
+		Model:      testModel,
+		Identifier: "Workflow Model",
+		BaseURL:    "https://api.workflow.com",
+		Family:     "test",
+		NewModel:   mockFactory,
 	}
 
-	err := RegisterModel(testProvider, testModel, info)
+	err := RegisterModel(info)
 	if err != nil {
 		t.Fatalf("Failed to register model: %v", err)
 	}
 
 	allModels := Models()
 	var targetModel ModelInfo
-	expectedIdentifier := testProvider + "/" + testModel
 	for _, m := range allModels {
-		if m.Model == expectedIdentifier && m.DisplayName == "Workflow Model" {
+		if m.Identifier == "Workflow Model" {
 			targetModel = m
 			break
 		}
 	}
 
-	if targetModel.Model == "" {
+	if targetModel.Identifier == "" {
 		t.Fatal("Could not find registered model")
 	}
 
-	if targetModel.Model != "workflow/workflow-model" {
-		t.Errorf("Expected Model field to be 'workflow/workflow-model', got: %s", targetModel.Model)
+	if targetModel.Model != "workflow-model" {
+		t.Errorf("Expected Model field to be 'workflow-model', got: %s", targetModel.Model)
 	}
 
-	model, err := New(targetModel.Model, "workflow-key")
+	if targetModel.Provider != "workflow" {
+		t.Errorf("Expected Provider field to be 'workflow', got: %s", targetModel.Provider)
+	}
+
+	model, err := New(info.Identifier, "workflow-key")
 	if err != nil {
-		t.Errorf("Failed to create model using ModelInfo.Model: %v", err)
+		t.Errorf("Failed to create model using Identifier: %v", err)
 	}
 
 	if model == nil {

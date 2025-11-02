@@ -45,12 +45,14 @@ func (h *ConversationHistory) GetEntries() []HistoryEntry {
 
 // GetMessages returns all messages flattened for LLM context (user, assistant, tools in order)
 // Hidden entries are excluded from the result
+// Messages are returned in reverse chronological order (newest first)
 func (h *ConversationHistory) GetMessages() []ai.Message {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
 	var messages []ai.Message
-	for _, entry := range h.entries {
+	for i := len(h.entries) - 1; i >= 0; i-- {
+		entry := h.entries[i]
 		if entry.Hidden {
 			continue
 		}

@@ -30,12 +30,14 @@ func (h *historyInterceptor) BeforeCall(run *AgentRun, messages []ai.Message, to
 		return messages, tools, nil
 	}
 
-	// Find where to inject history (after system/user messages, before current run's msgHistory)
+	// Find where to inject history (after ALL system messages, before user messages/documents)
 	injectionPoint := 0
 	for i, msg := range messages {
 		role, _ := msg.Value()
-		if role == ai.SystemRole || role == ai.UserRole {
+		if role == ai.SystemRole {
 			injectionPoint = i + 1
+		} else if role != ai.SystemRole {
+			break
 		}
 	}
 
@@ -92,18 +94,8 @@ func (h *historyInterceptor) AfterToolCall(run *AgentRun, toolName string, toolC
 
 // initializeCurrentEntry creates a new history entry for the current conversation turn
 func (h *historyInterceptor) initializeCurrentEntry(run *AgentRun, messages []ai.Message) {
-	// Extract user message from the messages
-	var userMsg ai.Message
-	for _, msg := range messages {
-		role, _ := msg.Value()
-		if role == ai.UserRole {
-			userMsg = msg
-			break
-		}
-	}
-
-	// If no user message found, skip history tracking for this call
-	if userMsg == nil {
+	// Use the original user message from the run, not the templated prompt
+	if run.userMessage == "" {
 		return
 	}
 
@@ -113,7 +105,7 @@ func (h *historyInterceptor) initializeCurrentEntry(run *AgentRun, messages []ai
 	}
 
 	h.currentEntry = &HistoryEntry{
-		UserMessage:  userMsg,
+		UserMessage:  ai.UserMessage{Role: ai.UserRole, Content: run.userMessage},
 		ToolMessages: make([]ai.Message, 0),
 		TraceFile:    traceFile,
 		RunID:        run.ID(),

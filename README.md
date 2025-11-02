@@ -321,6 +321,97 @@ go run github.com/nexxia-ai/aigentic-examples/memory@latest
 go run github.com/nexxia-ai/aigentic-examples/production@latest
 ```
 
+### Conversation History
+
+Track full conversation history across multiple `Execute()` or `Start()` calls with automatic message capture and trace correlation.
+
+**Single Agent with Multiple Calls:**
+
+```go
+func main() {
+    // Create conversation history
+    history := aigentic.NewConversationHistory()
+    
+    agent := aigentic.Agent{
+        Model:               openai.NewModel("gpt-4o-mini", "your-api-key"),
+        Name:                "Chatbot",
+        ConversationHistory: history,  // Enable history tracking
+        Tracer:              aigentic.NewTracer(),
+    }
+    
+    // First conversation turn
+    agent.Execute("My name is Alice and I love programming")
+    
+    // Second turn - agent remembers context
+    agent.Execute("What's my name?")
+    
+    // View history with trace files
+    for i, entry := range history.GetEntries() {
+        fmt.Printf("Turn %d:\n", i+1)
+        fmt.Printf("  User: %v\n", entry.UserMessage)
+        fmt.Printf("  Assistant: %v\n", entry.AssistantMessage)
+        fmt.Printf("  Trace: %s\n", entry.TraceFile)
+        fmt.Printf("  RunID: %s\n", entry.RunID)
+    }
+}
+```
+
+**Multiple Agents Sharing History:**
+
+```go
+func main() {
+    sharedHistory := aigentic.NewConversationHistory()
+    
+    // Multiple agents share the same history
+    greeter := aigentic.Agent{
+        Model:               openai.NewModel("gpt-4o-mini", "your-api-key"),
+        ConversationHistory: sharedHistory,
+    }
+    
+    assistant := aigentic.Agent{
+        Model:               openai.NewModel("gpt-4o-mini", "your-api-key"),
+        ConversationHistory: sharedHistory,  // Same history
+    }
+    
+    // Greeter interacts
+    greeter.Execute("Hello!")
+    
+    // Assistant sees full conversation context
+    assistant.Execute("What did we talk about?")
+}
+```
+
+**History Management:**
+
+```go
+// Clear all history
+history.Clear()
+
+// Remove specific entry
+history.RemoveAt(0)
+
+// Keep only recent messages (sliding window)
+entries := history.GetEntries()
+history.SetEntries(entries[len(entries)-10:])
+
+// Find entries by trace file
+entries := history.FindByTraceFile("trace-20251102042420.001.txt")
+
+// Find entries by run ID
+entries := history.FindByRunID("a1b2c3d4-...")
+```
+
+**HistoryEntry Structure:**
+
+Each conversation turn stores:
+- `UserMessage` - The user's input message
+- `AssistantMessage` - The AI's response
+- `ToolMessages` - Any tool call/response messages in this turn
+- `TraceFile` - Path to trace file for debugging
+- `RunID` - The agent run ID that produced this turn
+- `Timestamp` - When the turn started
+- `AgentName` - Which agent handled this turn
+
 ### Tracing and Debugging
 
 All interactions are automatically logged if you set the Tracer field.

@@ -25,7 +25,7 @@ agents:
     model_name: "gpt-4"
     description: "Handles customer inquiries and support requests"
     instructions: "Be polite and professional, escalate complex issues"
-    include_history: true
+    conversation_history: true
     retries: 2
     stream: true
     log_level: "info"
@@ -38,7 +38,7 @@ agents:
     model_name: "gpt-3.5-turbo"
     description: "Specialized agent for billing inquiries"
     instructions: "Handle billing questions and payment issues"
-    include_history: false
+    conversation_history: false
     retries: 1
     stream: false
     log_level: "warn"
@@ -50,7 +50,7 @@ agents:
     model_name: "gpt-4"
     description: "Handles technical support requests"
     instructions: "Provide technical solutions and troubleshooting steps"
-    include_history: true
+    conversation_history: true
     retries: 2
     stream: false
     log_level: "info"
@@ -210,5 +210,52 @@ agents:
 	}
 	if a2.Tracer != nil {
 		t.Errorf("expected tracer to be nil for no_trace agent")
+	}
+}
+
+func TestInstantiateAgents_ConversationHistoryEnabled(t *testing.T) {
+	yaml := `
+tools:
+  t:
+    command: x
+    args: [y]
+
+agents:
+  - name: with_history
+    model_name: gpt-4
+    conversation_history: true
+    tools: ["t"]
+  - name: no_history
+    model_name: gpt-4
+    conversation_history: false
+    tools: ["t"]
+`
+	cfg, err := DecodeConfigYAML(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	modelResolver := func(s string) (*ai.Model, error) { return &ai.Model{ModelName: s}, nil }
+	toolResolver := func(name string, sc ai.ServerConfig) ([]AgentTool, error) { return []AgentTool{}, nil }
+
+	agents, err := cfg.InstantiateAgents(modelResolver, toolResolver)
+	if err != nil {
+		t.Fatalf("unexpected instantiate error: %v", err)
+	}
+
+	a1, ok := agents["with_history"]
+	if !ok {
+		t.Fatalf("with_history not found")
+	}
+	if a1.ConversationHistory == nil {
+		t.Errorf("expected conversation history to be set for with_history")
+	}
+
+	a2, ok := agents["no_history"]
+	if !ok {
+		t.Fatalf("no_history not found")
+	}
+	if a2.ConversationHistory != nil {
+		t.Errorf("expected conversation history to be nil for no_history agent")
 	}
 }

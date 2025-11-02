@@ -77,12 +77,20 @@ func newAgentRun(a Agent, message string) *AgentRun {
 	if a.Tracer != nil {
 		traceRun = a.Tracer.NewTraceRun()
 	}
-	// Build interceptor chain: copy from agent, add trace if set
+	// Build interceptor chain: copy from agent
 	interceptors := make([]Interceptor, len(a.Interceptors))
 	copy(interceptors, a.Interceptors)
+
+	// Add history interceptor if present
+	if a.ConversationHistory != nil {
+		interceptors = append(interceptors, newHistoryInterceptor(a.ConversationHistory))
+	}
+
+	// Add trace interceptor if present
 	if traceRun != nil {
 		interceptors = append(interceptors, traceRun)
 	}
+
 	// Always add LoggerInterceptor as the last interceptor
 	interceptors = append(interceptors, newLoggerInterceptor())
 	// Apply a conservative default to prevent runaway tool/LLM loops.

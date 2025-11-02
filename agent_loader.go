@@ -13,19 +13,19 @@ import (
 // AgentConfig is a flat, serializable definition of an Agent for YAML/JSON.
 // Keep top-level only: no nested structs; references by name.
 type AgentConfig struct {
-	Name             string   `yaml:"name" json:"name"`
-	ModelName        string   `yaml:"model_name" json:"model_name"`
-	Description      string   `yaml:"description" json:"description"`
-	Instructions     string   `yaml:"instructions" json:"instructions"`
-	IncludeHistory   bool     `yaml:"include_history" json:"include_history"`
-	Retries          int      `yaml:"retries" json:"retries"`
-	Stream           bool     `yaml:"stream" json:"stream"`
-	LogLevel         string   `yaml:"log_level" json:"log_level"`
-	MaxLLMCalls      int      `yaml:"max_llm_calls" json:"max_llm_calls"`
-	EnableEvaluation bool     `yaml:"enable_evaluation" json:"enable_evaluation"`
-	EnableTrace      bool     `yaml:"enable_trace" json:"enable_trace"`
-	Tools            []string `yaml:"tools" json:"tools"`
-	Agents           []string `yaml:"agents" json:"agents"`
+	Name                string   `yaml:"name" json:"name"`
+	ModelName           string   `yaml:"model_name" json:"model_name"`
+	Description         string   `yaml:"description" json:"description"`
+	Instructions        string   `yaml:"instructions" json:"instructions"`
+	ConversationHistory bool     `yaml:"conversation_history" json:"conversation_history"`
+	Retries             int      `yaml:"retries" json:"retries"`
+	Stream              bool     `yaml:"stream" json:"stream"`
+	LogLevel            string   `yaml:"log_level" json:"log_level"`
+	MaxLLMCalls         int      `yaml:"max_llm_calls" json:"max_llm_calls"`
+	EnableEvaluation    bool     `yaml:"enable_evaluation" json:"enable_evaluation"`
+	EnableTrace         bool     `yaml:"enable_trace" json:"enable_trace"`
+	Tools               []string `yaml:"tools" json:"tools"`
+	Agents              []string `yaml:"agents" json:"agents"`
 }
 
 // ConfigFile is the root document for config serialization.
@@ -123,7 +123,6 @@ func (cfg *ConfigFile) InstantiateAgents(
 			Name:             ac.Name,
 			Description:      ac.Description,
 			Instructions:     ac.Instructions,
-			IncludeHistory:   ac.IncludeHistory,
 			Retries:          ac.Retries,
 			Stream:           ac.Stream,
 			MaxLLMCalls:      ac.MaxLLMCalls,
@@ -145,6 +144,10 @@ func (cfg *ConfigFile) InstantiateAgents(
 		// Configure tracing if enabled
 		if ac.EnableTrace {
 			a.Tracer = NewTracer()
+		}
+		// Configure conversation history if enabled
+		if ac.ConversationHistory {
+			a.ConversationHistory = NewConversationHistory()
 		}
 		// Attach tools from tool servers listed by name using resolver
 		for _, tname := range ac.Tools {

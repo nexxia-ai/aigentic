@@ -32,8 +32,10 @@ type Agent struct {
 	//       "call tool X, then tool Y, then tool Z, in this order".
 	Instructions string
 
-	// IncludeHistory is a flag to include the message history in the prompt.
-	IncludeHistory bool
+	// ConversationHistory enables automatic conversation history tracking across multiple Start() calls.
+	// Messages are captured with metadata (trace file, run ID, timestamp) for correlation and debugging.
+	// Set to a ConversationHistory object to share history across multiple agents or conversation sessions.
+	ConversationHistory *ConversationHistory
 
 	// Retries is the number of times to retry the agent if it fails.
 	Retries int

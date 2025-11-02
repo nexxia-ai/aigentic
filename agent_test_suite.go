@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,86 @@ type IntegrationTestSuite struct {
 	NewModel  func() *ai.Model
 	Name      string
 	SkipTests []string
+}
+
+// TODO: fix this - this is a hack and does not test the real tool
+// newMemoryTool creates a memory tool for testing without importing tools package to avoid import cycles
+func newMemoryTool() AgentTool {
+	data := make(map[string]string)
+	var mutex sync.RWMutex
+
+	formatAll := func() string {
+		mutex.RLock()
+		defer mutex.RUnlock()
+
+		if len(data) == 0 {
+			return ""
+		}
+
+		var parts []string
+		for name, content := range data {
+			parts = append(parts, fmt.Sprintf("## Memory: %s\n%s", name, content))
+		}
+		return strings.Join(parts, "\n\n")
+	}
+
+	update := func(name, content string) error {
+		mutex.Lock()
+		defer mutex.Unlock()
+
+		if content == "" {
+			delete(data, name)
+		} else {
+			data[name] = content
+		}
+		return nil
+	}
+
+	contextFn := func(run *AgentRun) (string, error) {
+		return formatAll(), nil
+	}
+
+	return AgentTool{
+		Name:        "update_memory",
+		Description: "Update or delete memory entries. Set memory_content to empty string to delete.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"memory_name": map[string]interface{}{
+					"type":        "string",
+					"description": "Name/identifier for this memory entry",
+				},
+				"memory_content": map[string]interface{}{
+					"type":        "string",
+					"description": "Markdown content (empty string to delete)",
+				},
+			},
+			"required": []string{"memory_name", "memory_content"},
+		},
+		ContextFunctions: []ContextFunction{contextFn},
+		NewExecute: func(run *AgentRun, result ValidationResult) (*ai.ToolResult, error) {
+			args := result.Values.(map[string]interface{})
+			name := args["memory_name"].(string)
+			content := args["memory_content"].(string)
+
+			if err := update(name, content); err != nil {
+				return &ai.ToolResult{
+					Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error: %v", err)}},
+					Error:   true,
+				}, nil
+			}
+
+			msg := fmt.Sprintf("Memory '%s' updated", name)
+			if content == "" {
+				msg = fmt.Sprintf("Memory '%s' deleted", name)
+			}
+
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{{Type: "text", Content: msg}},
+				Error:   false,
+			}, nil
+		},
+	}
 }
 
 // RunIntegrationTestSuite runs all standard integration tests against a model implementation
@@ -1030,23 +1111,24 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		Instructions: "EXECUTE TASKS SEQUENTIALLY - ONE AT A TIME:\n" +
 			"1) Analyze the plan and identify each task step\n" +
 			"2) Execute tasks ONE AT A TIME in the exact order specified - DO NOT make parallel calls\n" +
-			"3) After each task completion, immediately save the result to memory before proceeding to the next task\n" +
+			"3) After each task completion, immediately save the result to memory using update_memory tool before proceeding to the next task\n" +
 			"4) NEVER repeat or duplicate tool calls - each task should be executed only once\n" +
 			"5) Track completed tasks to avoid repetition\n" +
 			"6) When saving memory, include all previous memory content plus the new result\n" +
 			"7) After all tasks are complete, return only the final memory content (no commentary)\n" +
 			"CRITICAL: Execute step 1, then step 2, then step 3, etc. - NEVER execute multiple steps simultaneously.",
-		Agents: []Agent{lookupCompany, lookupSupplier},
-		Tracer: NewTracer(),
+		AgentTools: []AgentTool{newMemoryTool()},
+		Agents:     []Agent{lookupCompany, lookupSupplier},
+		Tracer:     NewTracer(),
 	}
 
 	run, err := coordinator.Start(
 		"Execute the following plan: " +
 			"1) Call 'lookup_company' with input 'Look up company 150'. " +
-			"2) Save the result to run memory. " +
+			"2) Save the result to memory using update_memory tool. " +
 			"3) Call 'lookup_company_supplier' with input 'Look up supplier 200'. " +
-			"4) Save the result to run memory again, keeping the previous memory content. " +
-			"5) When you have the company and the supplier details, then respond with exactly the full content of the run memory (no extra text).",
+			"4) Save the result to memory again using update_memory tool, keeping the previous memory content. " +
+			"5) When you have the company and the supplier details, then respond with exactly the full content of the memory (no extra text).",
 	)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
@@ -1065,7 +1147,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		case *ToolEvent:
 			args := e.ValidationResult.Values.(map[string]any)
 			toolOrder = append(toolOrder, e.ToolName)
-			if e.ToolName == "save_memory" {
+			if e.ToolName == "update_memory" {
 				saveIdxs = append(saveIdxs, len(toolOrder)-1)
 			}
 			if e.ToolName == "lookup_company" {
@@ -1104,7 +1186,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	supplierIdx := indexOf("lookup_company_supplier")
 	assert.NotEqual(t, -1, companyIdx, "lookup_company subagent should be called")
 	assert.NotEqual(t, -1, supplierIdx, "lookup_company_supplier subagent should be called")
-	assert.Greater(t, len(saveIdxs), 1, "save_memory should be called at least twice")
+	assert.Greater(t, len(saveIdxs), 1, "update_memory should be called at least twice")
 
 	// Validate inputs used to call subagents
 	assert.Contains(t, strings.ToLower(companyToolInput), "look up company 150")

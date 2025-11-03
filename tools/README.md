@@ -4,9 +4,40 @@ This directory contains tools designed to work with the `aigentic.Agent` type. A
 
 ## Available Tools
 
-1. **ReadFileTool** (`readfile.go`) - Reads files from a specified store
-2. **WriteFileTool** (`writefile.go`) - Writes files to a specified store
-3. **PythonSandboxTool** (`pythonsandbox.go`) - Executes Python code in a sandboxed environment
+1. **MemoryTool** (`memory.go`) - Stores and manages persistent memory entries at the session level
+2. **ReadFileTool** (`readfile.go`) - Reads files from a specified store
+3. **WriteFileTool** (`writefile.go`) - Writes files to a specified store
+4. **PythonSandboxTool** (`pythonsandbox.go`) - Executes Python code in a sandboxed environment
+
+### MemoryTool
+
+The MemoryTool provides a single `update_memory` tool that allows the LLM to store, update, and delete memory entries.
+
+**Key Features:**
+- **Session-scoped**: All memories are stored at the session level and persist across multiple agent runs
+- **Automatic injection**: Memories are automatically included in the system prompt for every LLM call
+- **Upsert operation**: Calling `update_memory` with an existing ID updates that memory entry
+- **Insertion order**: Memories maintain the order in which they were created
+- **Simple deletion**: Delete memories by setting both description and content to empty strings
+
+**Tool Parameters:**
+- `memory_id` (required): Unique identifier for the memory entry
+- `memory_description` (required): Human-readable description of the memory
+- `memory_content` (required): The actual content to store
+
+**Example Usage:**
+```go
+session := aigentic.NewSession(context.Background())
+agent := aigentic.Agent{
+    Session:    session,
+    AgentTools: []aigentic.AgentTool{tools.NewMemoryTool()},
+}
+
+// The LLM will automatically use update_memory to store information
+agent.Execute("Remember that my favorite color is blue")
+```
+
+Memories are stored in the session and automatically injected into the system prompt, so the LLM always has access to them without needing explicit retrieval operations.
 
 ## Using Tools with Agents
 
@@ -26,6 +57,7 @@ func main() {
         Description: "An agent with file and Python tools",
         Model:       model,
         AgentTools: []aigentic.AgentTool{
+            tools.NewMemoryTool(),
             tools.NewReadFileTool(),
             tools.NewWriteFileTool(),
             tools.NewPythonSandboxTool(),
@@ -123,6 +155,13 @@ All tools have comprehensive test coverage:
 
 ### Unit Tests
 - **agent_tool_test.go** (5 tests) - Tests that all tools properly implement AgentTool interface
+- **memory_test.go** (5 tests) - Comprehensive tests for memory operations
+  - Basic memory storage and retrieval
+  - Memory deletion (empty description and content)
+  - System prompt injection
+  - Multiple memory entries
+  - Upsert operations (update existing memories)
+  - Session persistence across runs
 - **readfile_test.go** (13 tests + 1 benchmark) - Comprehensive tests for file reading
   - Schema validation
   - Successful reads (text, multiline, empty, large files)
@@ -159,7 +198,7 @@ All tools have comprehensive test coverage:
   - Unicode and special character preservation
   - JSON file round-trip
 
-**Total Test Coverage: 57 test cases + 3 benchmarks**
+**Total Test Coverage: 62 test cases + 3 benchmarks**
 
 ## Running Tests
 

@@ -11,15 +11,16 @@ import (
 
 // HistoryEntry represents a complete conversation turn
 type HistoryEntry struct {
-	UserMessage      ai.Message
-	AssistantMessage ai.Message
-	ToolMessages     []ai.Message
-	Documents        []*document.Document
-	TraceFile        string
-	RunID            string
-	Timestamp        time.Time
-	AgentName        string
-	Hidden           bool
+	UserMessage           ai.Message
+	AssistantMessage      ai.Message
+	FinalAssistantMessage ai.Message
+	ToolMessages          []ai.Message
+	Documents             []*document.Document
+	TraceFile             string
+	RunID                 string
+	Timestamp             time.Time
+	AgentName             string
+	Hidden                bool
 }
 
 // ConversationHistory stores conversation history with metadata for trace correlation
@@ -48,6 +49,7 @@ func (h *ConversationHistory) GetEntries() []HistoryEntry {
 // GetMessages returns all messages flattened for LLM context (user, assistant, tools in order)
 // Hidden entries are excluded from the result
 // Messages are returned in reverse chronological order (newest first)
+// When tool calls are present, the order is: user, assistant (with tool_calls), tool responses, final assistant
 func (h *ConversationHistory) GetMessages() []ai.Message {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
@@ -59,8 +61,50 @@ func (h *ConversationHistory) GetMessages() []ai.Message {
 			continue
 		}
 		messages = append(messages, entry.UserMessage)
-		messages = append(messages, entry.ToolMessages...)
-		messages = append(messages, entry.AssistantMessage)
+
+		if len(entry.ToolMessages) > 0 {
+			// Get the assistant message with tool_calls
+			assistantMsg, ok := entry.AssistantMessage.(ai.AIMessage)
+			if !ok {
+				// If not an AIMessage, just append as-is
+				messages = append(messages, entry.AssistantMessage)
+				messages = append(messages, entry.ToolMessages...)
+				if entry.FinalAssistantMessage != nil {
+					messages = append(messages, entry.FinalAssistantMessage)
+				}
+				continue
+			}
+
+			// Build a map of valid tool_call IDs from the assistant message
+			validToolCallIDs := make(map[string]bool)
+			for _, tc := range assistantMsg.ToolCalls {
+				validToolCallIDs[tc.ID] = true
+			}
+
+			// Filter tool messages to only include those matching valid tool_call IDs
+			var filteredToolMessages []ai.Message
+			for _, toolMsg := range entry.ToolMessages {
+				if toolMsgObj, ok := toolMsg.(ai.ToolMessage); ok {
+					if validToolCallIDs[toolMsgObj.ToolCallID] {
+						filteredToolMessages = append(filteredToolMessages, toolMsg)
+					}
+				}
+			}
+
+			// Only include assistant message if it has tool_calls or if we have matching tool messages
+			if len(assistantMsg.ToolCalls) > 0 || len(filteredToolMessages) > 0 {
+				messages = append(messages, entry.AssistantMessage)
+				messages = append(messages, filteredToolMessages...)
+				if entry.FinalAssistantMessage != nil {
+					messages = append(messages, entry.FinalAssistantMessage)
+				}
+			} else {
+				// No tool calls, just append the assistant message
+				messages = append(messages, entry.AssistantMessage)
+			}
+		} else {
+			messages = append(messages, entry.AssistantMessage)
+		}
 	}
 	return messages
 }

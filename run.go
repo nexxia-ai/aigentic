@@ -65,6 +65,21 @@ func (r *AgentRun) Cancel() {
 	}
 }
 
+// AddMemory adds a memory entry or updates an existing one
+func (r *AgentRun) AddMemory(id, description, content, scope string) error {
+	return r.session.AddMemory(id, description, content, scope, r.id)
+}
+
+// DeleteMemory removes a memory entry by ID
+func (r *AgentRun) DeleteMemory(id string) error {
+	return r.session.DeleteMemory(id)
+}
+
+// GetMemories returns all memories in insertion order
+func (r *AgentRun) GetMemories() []MemoryEntry {
+	return r.session.GetMemories()
+}
+
 func newAgentRun(a Agent, message string) *AgentRun {
 	runID := uuid.New().String()
 	session := a.Session

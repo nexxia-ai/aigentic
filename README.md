@@ -2,7 +2,7 @@
 
 **Declarative AI agent framework for Go**
 
-aigentic is a production-ready Go framework for building AI-powered applications with sophisticated agent orchestration, designed to address the lack of agentic frameworks in Go that are comparable to Python. Its design was greatly influenced by agno.com.
+aigentic is a production-ready Go framework for building AI-powered applications with sophisticated agent orchestration.
 
 aigentic provides a declarative solution where you declare agents and their capabilities, then run them with a simple, clean API.
 
@@ -334,12 +334,18 @@ agent.Execute("My name is John and I'm a software engineer")
 agent.Execute("What did I tell you about my profession?")
 ```
 
-The memory system provides three tools that the agent can use:
-- `save_memory` - Save information to session, run, or plan compartments
-- `get_memory` - Retrieve information from a compartment
-- `clear_memory` - Clear information from a compartment
+The memory system provides a single tool that the agent can use:
+- `update_memory` - Store or update memory entries. Set both description and content to empty strings to delete.
 
-The LLM automatically decides when to use these tools based on your instructions.
+**How Memory Works:**
+- Memories are stored at the session level and persist across multiple agent runs
+- All memories are automatically injected into the system prompt for every LLM call
+- The agent can use `update_memory` to store information with an ID, description, and content
+- To update an existing memory, call `update_memory` with the same ID
+- To delete a memory, call `update_memory` with empty description and content strings
+- Memories maintain insertion order and are always available to the LLM in the system prompt
+
+The LLM automatically decides when to use the memory tool based on your instructions.
 
 **Run this example:**
 ```bash

@@ -1,6 +1,8 @@
 package aigentic
 
 import (
+	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -29,13 +31,13 @@ type ValidationResult struct {
 }
 
 type AgentTool struct {
-	RequireApproval bool
-	Name            string                                                                   `json:"name"`
-	Description     string                                                                   `json:"description"`
-	InputSchema     map[string]interface{}                                                   `json:"inputSchema,omitempty"`
-	Execute         func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) `json:"-"`
-	Validate        func(run *AgentRun, args map[string]interface{}) (ValidationResult, error)
-	NewExecute      func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error)
+	RequireApproval  bool
+	Name             string                                                                   `json:"name"`
+	Description      string                                                                   `json:"description"`
+	InputSchema      map[string]interface{}                                                   `json:"inputSchema,omitempty"`
+	Execute          func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) `json:"-"`
+	Validate         func(run *AgentRun, args map[string]interface{}) (ValidationResult, error)
+	NewExecute       func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error)
 	ContextFunctions []ContextFunction
 }
 
@@ -97,19 +99,20 @@ func WrapTool(tool ai.Tool) AgentTool {
 //	tool := aigentic.NewTool(
 //	    "calculator",
 //	    "Performs mathematical calculations",
-//	    func(ctx context.Context, run *AgentRun, input CalculatorInput) (string, error) {
+//	    func(run *AgentRun, input CalculatorInput) (string, error) {
 //	        return evaluateExpression(input.Expression), nil
 //	    },
 //	)
 func NewTool[T any](name, description string, fn func(*AgentRun, T) (string, error)) AgentTool {
-	baseTool := ai.NewTool(name, description, func(ctx any, input T) (string, error) {
-		run, ok := ctx.(*AgentRun)
-		if !ok {
-			// If context is not an AgentRun, create a minimal one
-			run = &AgentRun{}
-		}
-		return fn(run, input)
-	})
+	baseTool := ai.NewTool(name, description,
+		func(ctx any, input T) (string, error) {
+			run, ok := ctx.(*AgentRun)
+			if !ok {
+				slog.Error("Context is not an AgentRun", "context", ctx)
+				return "", errors.New("context is not an AgentRun")
+			}
+			return fn(run, input)
+		})
 
 	return WrapTool(*baseTool)
 }

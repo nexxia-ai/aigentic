@@ -97,6 +97,15 @@ You have already used the following tools:
 {{.ToolHistory}}
 </tool_call_history>
 
+{{end}}
+{{if .HasMemories}}
+<memories>
+{{range .Memories}}
+<memory id="{{.ID}}" description="{{.Description}}">
+{{.Content}}
+</memory>
+{{end}}
+</memories>
 {{end}}`
 
 const DefaultUserTemplate = `{{if .HasSessionContext}}<session_context>
@@ -145,7 +154,7 @@ func (r *BasicContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, 
 	r.msgHistory = append(r.msgHistory, messages...)
 
 	// Generate system prompt using template
-	systemVars := r.createSystemVariables(tools)
+	systemVars := r.createSystemVariables(tools, run)
 	var systemBuf bytes.Buffer
 	if err := r.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
 		return nil, fmt.Errorf("failed to execute system template: %w", err)
@@ -183,9 +192,9 @@ func (r *BasicContextManager) createToolHistoryVariables() string {
 	return r.createToolHistory()
 }
 
-func (r *BasicContextManager) createSystemVariables(tools []ai.Tool) map[string]interface{} {
+func (r *BasicContextManager) createSystemVariables(tools []ai.Tool, run *AgentRun) map[string]interface{} {
 	toolHistory := r.createToolHistoryVariables()
-	return createSystemVariables(r.agent, tools, toolHistory)
+	return createSystemVariables(r.agent, tools, toolHistory, run)
 }
 
 func (r *BasicContextManager) createUserVariables(message string, run *AgentRun) map[string]interface{} {
@@ -193,8 +202,19 @@ func (r *BasicContextManager) createUserVariables(message string, run *AgentRun)
 }
 
 // Package-level utility functions for reuse across context managers
-func createSystemVariables(agent Agent, tools []ai.Tool, toolHistory string) map[string]interface{} {
+func createSystemVariables(agent Agent, tools []ai.Tool, toolHistory string, run *AgentRun) map[string]interface{} {
 	hasToolHistory := strings.TrimSpace(toolHistory) != ""
+
+	memories := run.GetMemories()
+	var filteredMemories []MemoryEntry
+	for _, mem := range memories {
+		if mem.Scope == "session" {
+			filteredMemories = append(filteredMemories, mem)
+		} else if mem.Scope == "run" && mem.RunID == run.ID() {
+			filteredMemories = append(filteredMemories, mem)
+		}
+	}
+	hasMemories := len(filteredMemories) > 0
 
 	return map[string]interface{}{
 		"HasTools":        len(tools) > 0,
@@ -205,6 +225,8 @@ func createSystemVariables(agent Agent, tools []ai.Tool, toolHistory string) map
 		"HasRole":         agent.Description != "",
 		"HasInstructions": agent.Instructions != "",
 		"HasToolHistory":  hasToolHistory,
+		"Memories":        filteredMemories,
+		"HasMemories":     hasMemories,
 	}
 }
 

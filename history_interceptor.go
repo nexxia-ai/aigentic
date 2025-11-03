@@ -57,8 +57,25 @@ func (h *historyInterceptor) AfterCall(run *AgentRun, request []ai.Message, resp
 		return response, nil
 	}
 
-	// Set the assistant message
-	h.currentEntry.AssistantMessage = response
+	// If this response has tool calls, store it as the assistant message
+	// If we already have an assistant message with tool calls and tool messages exist,
+	// this is the final response after tool execution
+	if len(response.ToolCalls) > 0 {
+		h.currentEntry.AssistantMessage = response
+	} else {
+		// Check if we already have an assistant message with tool_calls
+		existingAssistantMsg, ok := h.currentEntry.AssistantMessage.(ai.AIMessage)
+		hasToolCallsInExisting := ok && len(existingAssistantMsg.ToolCalls) > 0
+
+		if hasToolCallsInExisting && len(h.currentEntry.ToolMessages) > 0 {
+			// This is the final assistant message after tool execution
+			h.currentEntry.FinalAssistantMessage = response
+		} else {
+			// No tool calls, this is a simple assistant response
+			h.currentEntry.AssistantMessage = response
+		}
+	}
+
 	// Ensure run's reference is up to date
 	run.currentHistoryEntry = h.currentEntry
 
@@ -78,6 +95,28 @@ func (h *historyInterceptor) BeforeToolCall(run *AgentRun, toolName string, tool
 // AfterToolCall captures tool responses and finalizes if this was the last tool call
 func (h *historyInterceptor) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
 	if h.currentEntry == nil {
+		return result, nil
+	}
+
+	// Verify that the assistant message has tool_calls and this tool_call_id matches
+	assistantMsg, ok := h.currentEntry.AssistantMessage.(ai.AIMessage)
+	if !ok || len(assistantMsg.ToolCalls) == 0 {
+		// Assistant message with tool_calls not set yet, skip storing tool message
+		// This should not happen in normal flow, but we guard against it
+		return result, nil
+	}
+
+	// Verify this tool_call_id exists in the assistant message's tool_calls
+	toolCallIDFound := false
+	for _, tc := range assistantMsg.ToolCalls {
+		if tc.ID == toolCallID {
+			toolCallIDFound = true
+			break
+		}
+	}
+	if !toolCallIDFound {
+		// Tool call ID doesn't match any in the assistant message, skip storing
+		// This should not happen in normal flow, but we guard against it
 		return result, nil
 	}
 

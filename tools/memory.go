@@ -2,83 +2,60 @@ package tools
 
 import (
 	"fmt"
-	"strings"
-	"sync"
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
 func NewMemoryTool() aigentic.AgentTool {
-	data := make(map[string]string)
-	var mutex sync.RWMutex
-
-	formatAll := func() string {
-		mutex.RLock()
-		defer mutex.RUnlock()
-
-		if len(data) == 0 {
-			return ""
-		}
-
-		var parts []string
-		for name, content := range data {
-			parts = append(parts, fmt.Sprintf("## Memory: %s\n%s", name, content))
-		}
-		return strings.Join(parts, "\n\n")
-	}
-
-	update := func(name, content string) error {
-		mutex.Lock()
-		defer mutex.Unlock()
-
-		if content == "" {
-			delete(data, name)
-		} else {
-			data[name] = content
-		}
-		return nil
-	}
-
-	contextFn := func(run *aigentic.AgentRun) (string, error) {
-		return formatAll(), nil
-	}
-
 	return aigentic.AgentTool{
 		Name:        "update_memory",
-		Description: "Update or delete memory entries. Set memory_content to empty string to delete.",
+		Description: "Store or update memory. Set description and content to empty strings to delete.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"memory_name": map[string]interface{}{
+				"memory_id": map[string]interface{}{
 					"type":        "string",
-					"description": "Name/identifier for this memory entry",
+					"description": "Unique identifier for this memory entry",
+				},
+				"memory_description": map[string]interface{}{
+					"type":        "string",
+					"description": "Description of this memory entry",
 				},
 				"memory_content": map[string]interface{}{
 					"type":        "string",
-					"description": "Markdown content (empty string to delete)",
+					"description": "Content of this memory entry",
 				},
 			},
-			"required": []string{"memory_name", "memory_content"},
+			"required": []string{"memory_id", "memory_description", "memory_content"},
 		},
-		ContextFunctions: []aigentic.ContextFunction{contextFn},
 		NewExecute: func(run *aigentic.AgentRun, result aigentic.ValidationResult) (*ai.ToolResult, error) {
 			args := result.Values.(map[string]interface{})
-			name := args["memory_name"].(string)
+			id := args["memory_id"].(string)
+			description := args["memory_description"].(string)
 			content := args["memory_content"].(string)
 
-			if err := update(name, content); err != nil {
+			if description == "" && content == "" {
+				if err := run.DeleteMemory(id); err != nil {
+					return &ai.ToolResult{
+						Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error deleting memory: %v", err)}},
+						Error:   true,
+					}, nil
+				}
 				return &ai.ToolResult{
-					Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error: %v", err)}},
+					Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Memory '%s' deleted", id)}},
+					Error:   false,
+				}, nil
+			}
+
+			if err := run.AddMemory(id, description, content, "session"); err != nil {
+				return &ai.ToolResult{
+					Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error updating memory: %v", err)}},
 					Error:   true,
 				}, nil
 			}
 
-			msg := fmt.Sprintf("Memory '%s' updated", name)
-			if content == "" {
-				msg = fmt.Sprintf("Memory '%s' deleted", name)
-			}
-
+			msg := fmt.Sprintf("Memory '%s' stored", id)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: msg}},
 				Error:   false,

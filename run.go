@@ -787,68 +787,76 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 }
 
 // processToolCallsFromChunk processes tool calls from a streaming chunk using the shared stream group
-func (r *AgentRun) processToolCallsFromChunk(toolCalls []ai.ToolCall) {
-	for _, tc := range toolCalls {
-		// Skip tool calls that were already processed
-		if r.processedToolCallIDs[tc.ID] {
-			continue
-		}
-		// Mark this tool call as processed
-		r.processedToolCallIDs[tc.ID] = true
+func (r *AgentRun) processToolCall(tc ai.ToolCall, group *toolCallGroup) bool {
+	if r.processedToolCallIDs[tc.ID] {
+		return false
+	}
+	r.processedToolCallIDs[tc.ID] = true
 
-		var args map[string]interface{}
-		if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
-			if r.trace != nil {
-				r.trace.RecordError(err)
-			}
-			r.queueAction(&toolResponseAction{request: &toolCallAction{
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
+		if r.trace != nil {
+			r.trace.RecordError(err)
+		}
+		r.queueAction(&toolResponseAction{
+			request: &toolCallAction{
 				ToolCallID:       tc.ID,
 				ToolName:         tc.Name,
 				ValidationResult: ValidationResult{Values: args},
-				Group:            r.currentStreamGroup},
-				response: fmt.Sprintf("invalid tool parameters: %v", err)})
-			continue
-		}
+				Group:            group,
+			},
+			response: fmt.Sprintf("invalid tool parameters: %v", err),
+		})
+		return false
+	}
 
-		tool := r.findTool(tc.Name)
-		if tool == nil {
-			r.queueAction(&toolResponseAction{
-				request:  &toolCallAction{ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: r.currentStreamGroup},
-				response: fmt.Sprintf("tool not found: %s", tc.Name),
-			})
-			continue
-		}
+	tool := r.findTool(tc.Name)
+	if tool == nil {
+		r.queueAction(&toolResponseAction{
+			request:  &toolCallAction{ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
+			response: fmt.Sprintf("tool not found: %s", tc.Name),
+		})
+		return false
+	}
 
-		// run validation
-		values, err := tool.validateInput(r, args)
-		if err != nil {
-			r.queueAction(&toolResponseAction{
-				request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: r.currentStreamGroup},
-				response: fmt.Sprintf("invalid tool parameters: %v", err)})
-			continue
-		}
+	values, err := tool.validateInput(r, args)
+	if err != nil {
+		r.queueAction(&toolResponseAction{
+			request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
+			response: fmt.Sprintf("invalid tool parameters: %v", err),
+		})
+		return false
+	}
 
-		if tool.RequireApproval {
-			approvalID := uuid.New().String()
-			r.pendingApprovals[approvalID] = pendingApproval{
-				ApprovalID:       approvalID,
-				Tool:             tool,
-				ToolCallID:       tc.ID,
-				ValidationResult: values,
-				Group:            r.currentStreamGroup,
-				deadline:         time.Now().Add(r.approvalTimeout),
-			}
-			approvalEvent := &ApprovalEvent{
-				RunID:            r.id,
-				ApprovalID:       approvalID,
-				ToolName:         tc.Name,
-				ValidationResult: values,
-			}
-			r.queueEvent(approvalEvent)
+	if tool.RequireApproval {
+		approvalID := uuid.New().String()
+		r.pendingApprovals[approvalID] = pendingApproval{
+			ApprovalID:       approvalID,
+			Tool:             tool,
+			ToolCallID:       tc.ID,
+			ValidationResult: values,
+			Group:            group,
+			deadline:         time.Now().Add(r.approvalTimeout),
+		}
+		approvalEvent := &ApprovalEvent{
+			RunID:            r.id,
+			ApprovalID:       approvalID,
+			ToolName:         tc.Name,
+			ValidationResult: values,
+		}
+		r.queueEvent(approvalEvent)
+		return true
+	}
+
+	r.queueAction(&toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: values, Group: group})
+	return false
+}
+
+func (r *AgentRun) processToolCallsFromChunk(toolCalls []ai.ToolCall) {
+	for _, tc := range toolCalls {
+		if r.processToolCall(tc, r.currentStreamGroup) {
 			return
 		}
-
-		r.queueAction(&toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: values, Group: r.currentStreamGroup})
 	}
 }
 
@@ -867,64 +875,9 @@ func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, exi
 	}
 
 	for _, tc := range toolCalls {
-		// Skip tool calls that were already processed from streaming chunks
-		if r.processedToolCallIDs[tc.ID] {
-			continue
-		}
-		// Mark this tool call as processed
-		r.processedToolCallIDs[tc.ID] = true
-
-		var args map[string]interface{}
-		if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
-			if r.trace != nil {
-				r.trace.RecordError(err)
-			}
-			r.queueAction(&toolResponseAction{request: &toolCallAction{
-				ToolCallID: tc.ID,
-				ToolName:   tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
-				response: fmt.Sprintf("invalid tool parameters: %v", err)})
-			continue
-		}
-
-		tool := r.findTool(tc.Name)
-		if tool == nil {
-			r.queueAction(&toolResponseAction{
-				request:  &toolCallAction{ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
-				response: fmt.Sprintf("tool not found: %s", tc.Name),
-			})
-			continue
-		}
-
-		// run validation
-		values, err := tool.validateInput(r, args)
-		if err != nil {
-			r.queueAction(&toolResponseAction{
-				request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
-				response: fmt.Sprintf("invalid tool parameters: %v", err)})
-			continue
-		}
-
-		if tool.RequireApproval {
-			approvalID := uuid.New().String()
-			r.pendingApprovals[approvalID] = pendingApproval{
-				ApprovalID:       approvalID,
-				Tool:             tool,
-				ToolCallID:       tc.ID,
-				ValidationResult: values,
-				Group:            group,
-				deadline:         time.Now().Add(r.approvalTimeout),
-			}
-			approvalEvent := &ApprovalEvent{
-				RunID:            r.id,
-				ApprovalID:       approvalID,
-				ToolName:         tc.Name,
-				ValidationResult: values,
-			}
-			r.queueEvent(approvalEvent)
+		if r.processToolCall(tc, group) {
 			return
 		}
-
-		r.queueAction(&toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: values, Group: group})
 	}
 }
 

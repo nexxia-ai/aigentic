@@ -118,41 +118,31 @@ go run github.com/nexxia-ai/aigentic-examples/streaming@latest
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/tools)
 
+Use `aigentic.NewTool()` for type-safe tools with automatic JSON schema generation:
+
 ```go
-func main() {
-    // Create a custom calculator tool
-    calculatorTool := aigentic.AgentTool{
-        Name:        "calculator",
-        Description: "Performs mathematical calculations",
-        InputSchema: map[string]interface{}{
-            "type": "object",
-            "properties": map[string]interface{}{
-                "expression": map[string]interface{}{
-                    "type":        "string",
-                    "description": "Mathematical expression to evaluate",
-                },
-            },
-            "required": []string{"expression"},
-        },
-        Execute: func(run *aigentic.AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-            expr := args["expression"].(string)
-            result := evaluateExpression(expr) // Your implementation
-            
-            return &ai.ToolResult{
-                Content: []ai.ToolContent{{
-                    Type:    "text", 
-                    Content: fmt.Sprintf("Result: %v", result),
-                }},
-            }, nil
-        },
+func createCalculatorTool() aigentic.AgentTool {
+    type CalculatorInput struct {
+        Expression string `json:"expression" description:"Mathematical expression to evaluate"`
     }
 
+    return aigentic.NewTool(
+        "calculator",
+        "Performs mathematical calculations",
+        func(run *aigentic.AgentRun, input CalculatorInput) (string, error) {
+            result := evaluateExpression(input.Expression)
+            return fmt.Sprintf("Result: %v", result), nil
+        },
+    )
+}
+
+func main() {
     agent := aigentic.Agent{
         Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
         Name:         "MathAssistant",
         Description:  "An assistant that can perform calculations",
         Instructions: "Use the calculator tool for mathematical operations.",
-        AgentTools:   []aigentic.AgentTool{calculatorTool},
+        AgentTools:   []aigentic.AgentTool{createCalculatorTool()},
     }
 
     response, _ := agent.Execute("What is 15 * 23 + 100?")
@@ -169,31 +159,53 @@ go run github.com/nexxia-ai/aigentic-examples/tools@latest
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/approval)
 
-To enable approval for tools, simply set the RequireApproval field in the AgentTool. This will generate a ApprovalEvent in the main workflow.
+To enable approval for tools, create the tool with `aigentic.NewTool()` and set `RequireApproval: true`. This will generate an `ApprovalEvent` in the event stream.
 
 ```go
-    calculatorTool := aigentic.AgentTool {
-        ...,
-        RequireApproval: true
+func createSendEmailTool() aigentic.AgentTool {
+    type SendEmailInput struct {
+        To      string `json:"to" description:"Email recipient address"`
+        Subject string `json:"subject" description:"Email subject line"`
+        Body    string `json:"body" description:"Email body content"`
     }
 
-    run, err := agent.Start("call the tool with value 43")
-    ... error checking removed
+    emailTool := aigentic.NewTool(
+        "send_email",
+        "Sends an email to a recipient with subject and body. Requires approval before sending.",
+        func(run *aigentic.AgentRun, input SendEmailInput) (string, error) {
+            return fmt.Sprintf("Email sent to %s", input.To), nil
+        },
+    )
+    emailTool.RequireApproval = true
+    return emailTool
+}
+
+func main() {
+    agent := aigentic.Agent{
+        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
+        Name:         "EmailAgent",
+        Instructions: "Use the send_email tool when asked to send emails.",
+        AgentTools:   []aigentic.AgentTool{createSendEmailTool()},
+        Stream:       true,
+    }
+
+    run, err := agent.Start("Send an email to john@example.com")
+    if err != nil {
+        log.Fatal(err)
+    }
     
-    // Process real-time events
     for event := range run.Next() {
         switch e := event.(type) {
         case *aigentic.ContentEvent:
-            fmt.Print(e.Content) // Stream content as it generates
-        case *aigentic.ThinkingEvent:
-            fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
+            fmt.Print(e.Content)
         case *aigentic.ApprovalEvent:
             approved := yourUIApprovalFlow(e)
-            run.Approve(e.ID, approved) // true - approved, false - rejected
+            run.Approve(e.ApprovalID, approved)
         case *aigentic.ErrorEvent:
             fmt.Printf("\n❌ Error: %v\n", e.Err)
         }
     }
+}
 ```
 
 **Run this example:**
@@ -295,30 +307,67 @@ go run github.com/nexxia-ai/aigentic-examples/multi-agent@latest
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/memory)
 
+Use sessions to share context across multiple agent runs, and enable memory tools for persistent context:
+
 ```go
+import (
+    "context"
+    "github.com/nexxia-ai/aigentic"
+    "github.com/nexxia-ai/aigentic/tools"
+)
+
 session := aigentic.NewSession(context.Background())
 
 agent := aigentic.Agent{
-    Model:   openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Session: session,    // Shared memory across conversations
-    Memory:  aigentic.NewMemory(), // Persistent context
+    Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
+    Name:         "PersonalAssistant",
+    Description:  "A personal assistant that remembers user preferences",
+    Instructions: "Remember user preferences and context using the memory tools.",
+    Session:      session,                                  // Shared session across conversations
+    AgentTools:   []aigentic.AgentTool{tools.NewMemoryTool()}, // Enable memory tools
 }
 
-// First conversation
+// First conversation - agent saves information to memory
 agent.Execute("My name is John and I'm a software engineer")
 
-// Later conversation - agent remembers
+// Later conversation - agent retrieves from memory
 agent.Execute("What did I tell you about my profession?")
 ```
+
+The memory system provides three tools that the agent can use:
+- `save_memory` - Save information to session, run, or plan compartments
+- `get_memory` - Retrieve information from a compartment
+- `clear_memory` - Clear information from a compartment
+
+The LLM automatically decides when to use these tools based on your instructions.
 
 **Run this example:**
 ```bash
 go run github.com/nexxia-ai/aigentic-examples/memory@latest
 ```
 
-**Run this example:**
-```bash
-go run github.com/nexxia-ai/aigentic-examples/production@latest
+### Sharing Memory Across Agents
+
+Create a shared session and memory tools to enable multiple agents to access the same memory:
+
+```go
+session := aigentic.NewSession(context.Background())
+
+agent1 := aigentic.Agent{
+    Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
+    Session:      session,
+    AgentTools:   []aigentic.AgentTool{tools.NewMemoryTool()},
+}
+
+agent2 := aigentic.Agent{
+    Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
+    Session:      session, // Same session
+    AgentTools:   []aigentic.AgentTool{tools.NewMemoryTool()}, // Same memory tools
+}
+
+// Both agents can access the same session memory
+agent1.Execute("Save my preference: I like coffee")
+agent2.Execute("What's my preference?") // Agent2 can access what Agent1 saved
 ```
 
 ### Conversation History
@@ -412,21 +461,77 @@ Each conversation turn stores:
 - `Timestamp` - When the turn started
 - `AgentName` - Which agent handled this turn
 
-### Tracing and Debugging
+### Event-Driven Architecture
 
-All interactions are automatically logged if you set the Tracer field.
-Traces are saved to <tmp_dir>/traces/ 
+The framework is event-driven, allowing you to react to execution state changes in real-time:
 
 ```go
 agent := aigentic.Agent{
-    Model: openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Tracer: aigentic.NewTracer(), // for prompt debugging
-    LogLevel: slog.LevelDebug,     // for execution flow debugging 
+    Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
+    Instructions: "Use tools to help users",
+    AgentTools:   []aigentic.AgentTool{createCalculatorTool()},
+    Stream:       true,
+}
+
+run, _ := agent.Start("Calculate 15 * 23")
+
+for event := range run.Next() {
+    switch e := event.(type) {
+    case *aigentic.ContentEvent:
+        fmt.Print(e.Content) // Stream content as it generates
+    case *aigentic.ThinkingEvent:
+        fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
+    case *aigentic.ToolEvent:
+        fmt.Printf("\n🔧 Tool executed: %s\n", e.ToolName)
+    case *aigentic.ApprovalEvent:
+        // Handle approval requests
+        run.Approve(e.ApprovalID, true)
+    case *aigentic.ErrorEvent:
+        fmt.Printf("\n❌ Error: %v\n", e.Err)
+    }
+}
+```
+
+### Tracing and Debugging
+
+All interactions are automatically logged if you set the Tracer field.
+Traces are saved to `<tmp_dir>/traces/`
+
+```go
+import "log/slog"
+
+agent := aigentic.Agent{
+    Model:    openai.NewModel("gpt-4o-mini", "your-api-key"),
+    Tracer:   aigentic.NewTracer(),     // Enable tracing for prompt debugging
+    LogLevel: slog.LevelDebug,          // Enable debug logging for execution flow
 }
 
 // All interactions are automatically traced
 response, _ := agent.Execute("Complex reasoning task")
 ```
+
+### MCP (Model Context Protocol) Integration
+
+aigentic supports MCP servers for tool integration. See the [MCP examples](https://github.com/nexxia-ai/aigentic-examples) for complete integration patterns.
+
+### Built-in Tools
+
+The framework includes built-in tools for common operations:
+
+```go
+import "github.com/nexxia-ai/aigentic/tools"
+
+agent := aigentic.Agent{
+    Model:      openai.NewModel("gpt-4o-mini", "your-api-key"),
+    AgentTools: []aigentic.AgentTool{
+        tools.NewMemoryTool(),        // Memory operations
+        tools.NewReadFileTool(),      // Read files from filesystem
+        tools.NewWriteFileTool(),     // Write files to filesystem
+    },
+}
+```
+
+Create custom tools using `aigentic.NewTool()` for type-safe tool definitions with automatic schema generation.
 
 ---
 

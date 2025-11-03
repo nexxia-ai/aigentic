@@ -102,6 +102,10 @@ func (h *historyInterceptor) AfterToolCall(run *AgentRun, toolName string, toolC
 
 // initializeCurrentEntry creates a new history entry for the current conversation turn
 func (h *historyInterceptor) initializeCurrentEntry(run *AgentRun, messages []ai.Message) {
+	if h.currentEntry != nil {
+		return
+	}
+
 	// Use the original user message from the run, not the templated prompt
 	if run.userMessage == "" {
 		return

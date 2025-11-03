@@ -29,18 +29,6 @@ type ServerConfig struct {
 	Env     map[string]string `json:"env,omitempty"`
 }
 
-// ToolContent represents a single piece of content returned by a tool
-type ToolContent struct {
-	Type    string // "text", "image", "audio", etc.
-	Content any    // The actual content (string, []byte, etc.)
-}
-
-// ToolResult represents the complete result from a tool invocation
-type ToolResult struct {
-	Content []ToolContent
-	Error   bool
-}
-
 type MCPClient struct {
 	Name   string
 	client mcpclient.MCPClient

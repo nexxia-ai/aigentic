@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 type pendingApproval struct {
@@ -18,6 +19,7 @@ type pendingApproval struct {
 type toolCallGroup struct {
 	aiMessage *ai.AIMessage
 	responses map[string]ai.ToolMessage
+	documents map[string][]*document.Document
 }
 
 type ValidationResult struct {

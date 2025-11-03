@@ -25,6 +25,7 @@ type Document struct {
 	id        string
 	Filename  string
 	FilePath  string
+	URL       string
 	FileSize  int64
 	MimeType  string
 	CreatedAt time.Time

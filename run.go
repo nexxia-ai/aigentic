@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 var approvalTimeout = time.Minute * 60
@@ -43,6 +44,7 @@ type AgentRun struct {
 	maxLLMCalls          int // maximum number of LLM calls (defaults to 20 when unset)
 	llmCallCount         int // number of LLM calls made
 	approvalTimeout      time.Duration
+	currentHistoryEntry  *HistoryEntry
 }
 
 func (r *AgentRun) ID() string {
@@ -51,6 +53,10 @@ func (r *AgentRun) ID() string {
 
 func (r *AgentRun) Session() *Session {
 	return r.session
+}
+
+func (r *AgentRun) HistoryEntry() *HistoryEntry {
+	return r.currentHistoryEntry
 }
 
 func (r *AgentRun) Cancel() {
@@ -558,6 +564,12 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		}
 	}
 
+	documents := extractToolDocuments(currentResult)
+	if act.Group.documents == nil {
+		act.Group.documents = make(map[string][]*document.Document)
+	}
+	act.Group.documents[act.ToolCallID] = documents
+
 	r.queueAction(&toolResponseAction{request: act, response: response})
 }
 
@@ -579,6 +591,13 @@ func formatToolResponse(result *ai.ToolResult) string {
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+func extractToolDocuments(result *ai.ToolResult) []*document.Document {
+	if result == nil {
+		return nil
+	}
+	return result.Documents
 }
 
 func stringifyToolContent(content any) string {
@@ -624,6 +643,13 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 		for _, tc := range action.Group.aiMessage.ToolCalls {
 			if response, exists := action.Group.responses[tc.ID]; exists {
 				r.msgHistory = append(r.msgHistory, response)
+				var docs []*document.Document
+				if action.Group.documents != nil {
+					docs = action.Group.documents[tc.ID]
+				}
+				if docs == nil {
+					docs = []*document.Document{}
+				}
 				event := &ToolResponseEvent{
 					RunID:      r.id,
 					AgentName:  r.agent.Name,
@@ -631,6 +657,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 					ToolCallID: response.ToolCallID,
 					ToolName:   response.ToolName,
 					Content:    response.Content,
+					Documents:  docs,
 				}
 				r.queueEvent(event)
 			}
@@ -690,6 +717,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 				r.currentStreamGroup = &toolCallGroup{
 					aiMessage: &chunkMsg,
 					responses: make(map[string]ai.ToolMessage),
+					documents: make(map[string][]*document.Document),
 				}
 			}
 			// Process tool calls using the shared group
@@ -719,6 +747,13 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			for _, tc := range r.currentStreamGroup.aiMessage.ToolCalls {
 				if response, exists := r.currentStreamGroup.responses[tc.ID]; exists {
 					r.msgHistory = append(r.msgHistory, response)
+					var docs []*document.Document
+					if r.currentStreamGroup.documents != nil {
+						docs = r.currentStreamGroup.documents[tc.ID]
+					}
+					if docs == nil {
+						docs = []*document.Document{}
+					}
 					event := &ToolResponseEvent{
 						RunID:      r.id,
 						AgentName:  r.agent.Name,
@@ -726,6 +761,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 						ToolCallID: response.ToolCallID,
 						ToolName:   response.ToolName,
 						Content:    response.Content,
+						Documents:  docs,
 					}
 					r.queueEvent(event)
 				}
@@ -826,6 +862,7 @@ func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, exi
 		group = &toolCallGroup{
 			aiMessage: &msg,
 			responses: make(map[string]ai.ToolMessage),
+			documents: make(map[string][]*document.Document),
 		}
 	}
 

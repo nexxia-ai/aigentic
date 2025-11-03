@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 // HistoryEntry represents a complete conversation turn
@@ -13,6 +14,7 @@ type HistoryEntry struct {
 	UserMessage      ai.Message
 	AssistantMessage ai.Message
 	ToolMessages     []ai.Message
+	Documents        []*document.Document
 	TraceFile        string
 	RunID            string
 	Timestamp        time.Time

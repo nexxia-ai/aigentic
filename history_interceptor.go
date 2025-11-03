@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 // historyInterceptor captures conversation history across agent runs
@@ -58,6 +59,8 @@ func (h *historyInterceptor) AfterCall(run *AgentRun, request []ai.Message, resp
 
 	// Set the assistant message
 	h.currentEntry.AssistantMessage = response
+	// Ensure run's reference is up to date
+	run.currentHistoryEntry = h.currentEntry
 
 	// If no tool calls, finalize this conversation turn
 	if len(response.ToolCalls) == 0 {
@@ -89,6 +92,11 @@ func (h *historyInterceptor) AfterToolCall(run *AgentRun, toolName string, toolC
 	// Append to tool messages
 	h.currentEntry.ToolMessages = append(h.currentEntry.ToolMessages, toolMsg)
 
+	// Extract and append documents from ToolResult
+	if result != nil && len(result.Documents) > 0 {
+		h.currentEntry.Documents = append(h.currentEntry.Documents, result.Documents...)
+	}
+
 	return result, nil
 }
 
@@ -107,11 +115,13 @@ func (h *historyInterceptor) initializeCurrentEntry(run *AgentRun, messages []ai
 	h.currentEntry = &HistoryEntry{
 		UserMessage:  ai.UserMessage{Role: ai.UserRole, Content: run.userMessage},
 		ToolMessages: make([]ai.Message, 0),
+		Documents:    make([]*document.Document, 0),
 		TraceFile:    traceFile,
 		RunID:        run.ID(),
 		Timestamp:    time.Now(),
 		AgentName:    run.agent.Name,
 	}
+	run.currentHistoryEntry = h.currentEntry
 }
 
 // finalizeEntry appends the current entry to history and resets it
@@ -120,6 +130,10 @@ func (h *historyInterceptor) finalizeEntry() {
 		return
 	}
 
+	// Finalize the entry - make a copy for history, but keep the original reference
+	// in run.currentHistoryEntry so callers can access it after completion
 	h.history.AppendEntry(*h.currentEntry)
+	// Note: run.currentHistoryEntry already points to h.currentEntry, so it remains accessible
+	// The interceptor's currentEntry can be cleared
 	h.currentEntry = nil
 }

@@ -220,10 +220,10 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		CompanyNumber string `json:"company_number" description:"The company number to lookup"`
 	}
 
-	tool := ai.NewTool(
+	tool := NewTool(
 		"lookup_company_name",
 		"A tool that looks up the name of a company based on a company number",
-		func(ctx context.Context, input LookupCompanyInput) (string, error) {
+		func(run *AgentRun, input LookupCompanyInput) (string, error) {
 			return "Nexxia", nil
 		},
 	)
@@ -235,7 +235,7 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Always use the lookup_company_name tool to get information.",
 		MaxLLMCalls:  3, // Limit to 3 LLM calls
-		AgentTools:   []AgentTool{WrapTool(*tool)},
+		AgentTools:   []AgentTool{tool},
 		Tracer:       NewTracer(),
 		// LogLevel:     slog.LevelDebug,
 	}

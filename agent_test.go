@@ -54,10 +54,10 @@ func TestAgentToolCalling(t *testing.T) {
 		Message string `json:"message" description:"The message to process"`
 	}
 
-	testTool := ai.NewTool(
+	testTool := NewTool(
 		"test_tool",
 		"A test tool that records when it's called",
-		func(ctx context.Context, input TestToolInput) (string, error) {
+		func(run *AgentRun, input TestToolInput) (string, error) {
 			toolCalled = true
 			toolArgs = map[string]interface{}{"message": input.Message}
 			return "Tool executed successfully with message: " + input.Message, nil
@@ -68,7 +68,7 @@ func TestAgentToolCalling(t *testing.T) {
 		Name:        "test-tool-agent",
 		Description: "A test agent that uses tools",
 		Tracer:      NewTracer(),
-		AgentTools:  []AgentTool{WrapTool(*testTool)},
+		AgentTools:  []AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -235,10 +235,10 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 		Input string `json:"input" description:"The input to lookup"`
 	}
 
-	testTool1 := ai.NewTool(
+	testTool1 := NewTool(
 		"lookup_company",
 		"A test tool for looking up companies",
-		func(ctx context.Context, input LookupToolInput) (string, error) {
+		func(run *AgentRun, input LookupToolInput) (string, error) {
 			tool1Called++
 			if input.Input == "Look up company 150" {
 				return "COMPANY: Nexxia", nil
@@ -252,10 +252,10 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 		Content string `json:"content" description:"The content to save"`
 	}
 
-	testTool2 := ai.NewTool(
+	testTool2 := NewTool(
 		"save_memory",
 		"A test tool for saving to memory",
-		func(ctx context.Context, input SaveMemoryInput) (string, error) {
+		func(run *AgentRun, input SaveMemoryInput) (string, error) {
 			tool2Called++
 			return "memory saved successfully", nil
 		},
@@ -267,7 +267,7 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 	agent := Agent{
 		Name:        "test-multi-tool-agent",
 		Description: "A test agent that makes multiple tool calls including same tool with different inputs",
-		AgentTools:  []AgentTool{WrapTool(*testTool1), WrapTool(*testTool2)},
+		AgentTools:  []AgentTool{testTool1, testTool2},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 

@@ -21,7 +21,7 @@ type Agent struct {
 	Session    *Session
 	AgentTools []AgentTool
 
-	// Description should containt a description of the agent's role and capabilities.
+	// Description should contain a description of the agent's role and capabilities.
 	// It will be added to the system prompt. If this is a sub-agent, the Description is passed to the parent agent.
 	Description string
 

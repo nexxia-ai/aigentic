@@ -1,22 +1,23 @@
 package aigentic
 
-// action defines an agent action used in the internal action loop
+// action is a marker interface for internal agent actions.
+// Types implement this interface by defining the unexported isAction method.
 type action interface {
-	Target() string
+	isAction()
 }
 
 type llmCallAction struct {
 	Message string
 }
 
-func (a *llmCallAction) Target() string { return "" }
+func (*llmCallAction) isAction() {}
 
 type approvalAction struct {
 	ApprovalID string
 	Approved   bool
 }
 
-func (a *approvalAction) Target() string { return "" }
+func (*approvalAction) isAction() {}
 
 type toolCallAction struct {
 	ToolCallID       string
@@ -25,17 +26,17 @@ type toolCallAction struct {
 	Group            *toolCallGroup
 }
 
-func (a *toolCallAction) Target() string { return "" }
+func (*toolCallAction) isAction() {}
 
 type toolResponseAction struct {
 	request  *toolCallAction
 	response string
 }
 
-func (a *toolResponseAction) Target() string { return "" }
+func (*toolResponseAction) isAction() {}
 
 type stopAction struct {
 	Error error
 }
 
-func (a *stopAction) Target() string { return "" }
+func (*stopAction) isAction() {}

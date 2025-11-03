@@ -35,14 +35,14 @@ type AgentRun struct {
 	eventQueue           chan Event
 	actionQueue          chan action
 	pendingApprovals     map[string]pendingApproval
-	processedToolCallIDs map[string]bool // track tool calls processed from streaming chunks to avoid duplicates
-	currentStreamGroup   *toolCallGroup  // group for current streaming response (shared between chunks and final message)
+	processedToolCallIDs map[string]bool
+	currentStreamGroup   *toolCallGroup
 	trace                *TraceRun
 	userMessage          string
-	parentRun            *AgentRun // pointer to parent if this is a sub-agent
+	parentRun            *AgentRun
 	Logger               *slog.Logger
-	maxLLMCalls          int // maximum number of LLM calls (defaults to 20 when unset)
-	llmCallCount         int // number of LLM calls made
+	maxLLMCalls          int
+	llmCallCount         int
 	approvalTimeout      time.Duration
 	currentHistoryEntry  *HistoryEntry
 }

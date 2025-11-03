@@ -23,8 +23,6 @@ type Session struct {
 
 	Context    context.Context
 	cancelFunc context.CancelFunc
-
-	RunHistory []AgentRun
 }
 
 // NewSession creates a new session with default settings

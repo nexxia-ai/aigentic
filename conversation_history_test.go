@@ -76,7 +76,7 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 	}
 
 	assert.GreaterOrEqual(t, len(receivedEvents), 1, "Should receive at least one ToolResponseEvent")
-	
+
 	hasDocument := false
 	for _, event := range receivedEvents {
 		if event.ToolName == "create_pdf" {
@@ -92,7 +92,7 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 	assert.True(t, hasDocument, "Should receive document in ToolResponseEvent")
 }
 
-func TestDocumentsAddedToHistoryEntry(t *testing.T) {
+func TestDocumentsAddedToConversationTurn(t *testing.T) {
 	history := NewConversationHistory()
 	callCount := 0
 
@@ -118,9 +118,9 @@ func TestDocumentsAddedToHistoryEntry(t *testing.T) {
 	}
 
 	agent := Agent{
-		Name:              "test-history-agent",
-		Description:       "Agent that creates documents in history",
-		AgentTools:        []AgentTool{testTool},
+		Name:                "test-history-agent",
+		Description:         "Agent that creates documents in history",
+		AgentTools:          []AgentTool{testTool},
 		ConversationHistory: history,
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
@@ -154,15 +154,15 @@ func TestDocumentsAddedToHistoryEntry(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, result, "Report is ready")
 
-	entry := run.HistoryEntry()
-	assert.NotNil(t, entry, "HistoryEntry should not be nil")
-	assert.Equal(t, 1, len(entry.Documents), "Should have one document in HistoryEntry")
+	entry := run.ConversationTurn()
+	assert.NotNil(t, entry, "ConversationTurn should not be nil")
+	assert.Equal(t, 1, len(entry.Documents), "Should have one document in ConversationTurn")
 	assert.Equal(t, "report.pdf", entry.Documents[0].Filename)
 	assert.Equal(t, "application/pdf", entry.Documents[0].MimeType)
 
-	historyEntry, err := history.GetByRunID(run.ID())
+	conversationTurn, err := history.GetByRunID(run.ID())
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(historyEntry.Documents), "Document should persist in ConversationHistory")
+	assert.Equal(t, 1, len(conversationTurn.Documents), "Document should persist in ConversationHistory")
 }
 
 func TestMultipleDocumentsFromSingleTool(t *testing.T) {
@@ -192,15 +192,15 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 	}
 
 	agent := Agent{
-		Name:              "test-multiple-docs-agent",
+		Name:                "test-multiple-docs-agent",
 		ConversationHistory: history,
-		AgentTools:        []AgentTool{testTool},
+		AgentTools:          []AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
 			if callCount == 1 {
 				return ai.AIMessage{
-					Role:    ai.AssistantRole,
+					Role: ai.AssistantRole,
 					ToolCalls: []ai.ToolCall{
 						{
 							ID:   "call_789",
@@ -225,7 +225,7 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 	_, err = run.Wait(0)
 	assert.NoError(t, err)
 
-	entry := run.HistoryEntry()
+	entry := run.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 2, len(entry.Documents), "Should have two documents")
 	assert.Equal(t, "file1.pdf", entry.Documents[0].Filename)
@@ -272,15 +272,15 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 	}
 
 	agent := Agent{
-		Name:              "test-multi-tool-agent",
+		Name:                "test-multi-tool-agent",
 		ConversationHistory: history,
-		AgentTools:        []AgentTool{tool1, tool2},
+		AgentTools:          []AgentTool{tool1, tool2},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
 			if callCount == 1 {
 				return ai.AIMessage{
-					Role:    ai.AssistantRole,
+					Role: ai.AssistantRole,
 					ToolCalls: []ai.ToolCall{
 						{ID: "call_1", Type: "function", Name: "create_pdf1", Args: "{}"},
 						{ID: "call_2", Type: "function", Name: "create_pdf2", Args: "{}"},
@@ -301,7 +301,7 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 	_, err = run.Wait(0)
 	assert.NoError(t, err)
 
-	entry := run.HistoryEntry()
+	entry := run.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 2, len(entry.Documents), "Should have documents from both tools")
 	assert.Equal(t, "pdf1.pdf", entry.Documents[0].Filename)
@@ -329,15 +329,15 @@ func TestToolWithNoDocuments(t *testing.T) {
 	}
 
 	agent := Agent{
-		Name:              "test-no-docs-agent",
+		Name:                "test-no-docs-agent",
 		ConversationHistory: history,
-		AgentTools:        []AgentTool{testTool},
+		AgentTools:          []AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
 			if callCount == 1 {
 				return ai.AIMessage{
-					Role:    ai.AssistantRole,
+					Role: ai.AssistantRole,
 					ToolCalls: []ai.ToolCall{
 						{ID: "call_simple", Type: "function", Name: "simple_tool", Args: "{}"},
 					},
@@ -357,7 +357,7 @@ func TestToolWithNoDocuments(t *testing.T) {
 	_, err = run.Wait(0)
 	assert.NoError(t, err)
 
-	entry := run.HistoryEntry()
+	entry := run.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 0, len(entry.Documents), "Should have no documents")
 }
@@ -385,15 +385,15 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 	}
 
 	agent := Agent{
-		Name:              "test-persist-agent",
+		Name:                "test-persist-agent",
 		ConversationHistory: history,
-		AgentTools:        []AgentTool{testTool},
+		AgentTools:          []AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
 			if callCount == 1 {
 				return ai.AIMessage{
-					Role:    ai.AssistantRole,
+					Role: ai.AssistantRole,
 					ToolCalls: []ai.ToolCall{
 						{ID: "call_persist", Type: "function", Name: "create_persistent", Args: "{}"},
 					},
@@ -414,10 +414,10 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 	_, err = run.Wait(0)
 	assert.NoError(t, err)
 
-	historyEntry, err := history.GetByRunID(runID)
+	conversationTurn, err := history.GetByRunID(runID)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(historyEntry.Documents), "Document should persist in ConversationHistory")
-	assert.Equal(t, "persistent.pdf", historyEntry.Documents[0].Filename)
+	assert.Equal(t, 1, len(conversationTurn.Documents), "Document should persist in ConversationHistory")
+	assert.Equal(t, "persistent.pdf", conversationTurn.Documents[0].Filename)
 }
 
 func TestDocumentMetadataPreserved(t *testing.T) {
@@ -446,15 +446,15 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 	}
 
 	agent := Agent{
-		Name:              "test-metadata-agent",
+		Name:                "test-metadata-agent",
 		ConversationHistory: history,
-		AgentTools:        []AgentTool{testTool},
+		AgentTools:          []AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
 			if callCount == 1 {
 				return ai.AIMessage{
-					Role:    ai.AssistantRole,
+					Role: ai.AssistantRole,
 					ToolCalls: []ai.ToolCall{
 						{ID: "call_meta", Type: "function", Name: "create_with_metadata", Args: "{}"},
 					},
@@ -474,7 +474,7 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 	_, err = run.Wait(0)
 	assert.NoError(t, err)
 
-	entry := run.HistoryEntry()
+	entry := run.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 1, len(entry.Documents), "Should have one document")
 
@@ -510,15 +510,15 @@ func TestEmptyToolResultDocuments(t *testing.T) {
 	}
 
 	agent := Agent{
-		Name:              "test-empty-docs-agent",
+		Name:                "test-empty-docs-agent",
 		ConversationHistory: history,
-		AgentTools:        []AgentTool{testTool},
+		AgentTools:          []AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
 			if callCount == 1 {
 				return ai.AIMessage{
-					Role:    ai.AssistantRole,
+					Role: ai.AssistantRole,
 					ToolCalls: []ai.ToolCall{
 						{ID: "call_empty", Type: "function", Name: "empty_docs_tool", Args: "{}"},
 					},
@@ -538,12 +538,12 @@ func TestEmptyToolResultDocuments(t *testing.T) {
 	_, err = run.Wait(0)
 	assert.NoError(t, err)
 
-	entry := run.HistoryEntry()
+	entry := run.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 0, len(entry.Documents), "Should have no documents")
 }
 
-func TestAgentRunHistoryEntryAccess(t *testing.T) {
+func TestAgentRunConversationTurnAccess(t *testing.T) {
 	history := NewConversationHistory()
 	callCount := 0
 
@@ -566,15 +566,15 @@ func TestAgentRunHistoryEntryAccess(t *testing.T) {
 	}
 
 	agent := Agent{
-		Name:              "test-accessible-agent",
+		Name:                "test-accessible-agent",
 		ConversationHistory: history,
-		AgentTools:        []AgentTool{testTool},
+		AgentTools:          []AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
 			if callCount == 1 {
 				return ai.AIMessage{
-					Role:    ai.AssistantRole,
+					Role: ai.AssistantRole,
 					ToolCalls: []ai.ToolCall{
 						{ID: "call_acc", Type: "function", Name: "create_accessible", Args: "{}"},
 					},
@@ -595,14 +595,238 @@ func TestAgentRunHistoryEntryAccess(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, result, "Ready")
 
-	entry := run.HistoryEntry()
-	assert.NotNil(t, entry, "HistoryEntry should be accessible after completion")
-	assert.Equal(t, run.ID(), entry.RunID, "Entry should have correct RunID")
-	assert.Equal(t, 1, len(entry.Documents), "Should have document in entry")
+	entry := run.ConversationTurn()
+	assert.NotNil(t, entry, "ConversationTurn should be accessible after completion")
+	assert.Equal(t, run.ID(), entry.RunID, "Turn should have correct RunID")
+	assert.Equal(t, 1, len(entry.Documents), "Should have document in turn")
 	assert.Equal(t, "accessible.pdf", entry.Documents[0].Filename)
 
-	entry2 := run.HistoryEntry()
-	assert.NotNil(t, entry2, "HistoryEntry should still be accessible on second call")
-	assert.Equal(t, entry, entry2, "Should return same entry")
+	entry2 := run.ConversationTurn()
+	assert.NotNil(t, entry2, "ConversationTurn should still be accessible on second call")
+	assert.Equal(t, entry, entry2, "Should return same turn")
 }
 
+func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
+	history := NewConversationHistory()
+	callCount := 0
+
+	testTool := AgentTool{
+		Name:        "echo",
+		Description: "Echoes back the input",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"text": map[string]interface{}{
+					"type": "string",
+				},
+			},
+			"required": []string{"text"},
+		},
+		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{
+					{Type: "text", Content: "echoed: test"},
+				},
+			}, nil
+		},
+	}
+
+	agent := Agent{
+		Name:                "test-agent",
+		ConversationHistory: history,
+		AgentTools:          []AgentTool{testTool},
+		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+			callCount++
+
+			if callCount == 1 {
+				return ai.AIMessage{
+					Role: ai.AssistantRole,
+					ToolCalls: []ai.ToolCall{
+						{
+							ID:   "call_123",
+							Type: "function",
+							Name: "echo",
+							Args: `{"text": "test"}`,
+						},
+					},
+				}, nil
+			}
+
+			if callCount == 2 {
+				verifyMessageOrder(t, messages)
+				verifyToolCallIDsMatch(t, messages)
+				return ai.AIMessage{
+					Role:    ai.AssistantRole,
+					Content: "Second call completed",
+				}, nil
+			}
+
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Final response",
+			}, nil
+		}),
+	}
+
+	run1, err := agent.Start("First message - use echo tool")
+	assert.NoError(t, err)
+	_, err = run1.Wait(0)
+	assert.NoError(t, err)
+
+	run2, err := agent.Start("Second message")
+	assert.NoError(t, err)
+	_, err = run2.Wait(0)
+	assert.NoError(t, err)
+}
+
+func verifyToolCallIDsMatch(t *testing.T, messages []ai.Message) {
+	var currentAssistantMessage ai.AIMessage
+	var assistantHasToolCalls bool
+
+	for _, msg := range messages {
+		role, _ := msg.Value()
+
+		if role == ai.AssistantRole {
+			if aiMsg, ok := msg.(ai.AIMessage); ok {
+				currentAssistantMessage = aiMsg
+				assistantHasToolCalls = len(aiMsg.ToolCalls) > 0
+			}
+		}
+
+		if role == ai.ToolRole {
+			if toolMsg, ok := msg.(ai.ToolMessage); ok {
+				if assistantHasToolCalls {
+					found := false
+					for _, tc := range currentAssistantMessage.ToolCalls {
+						if tc.ID == toolMsg.ToolCallID {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("Tool message with tool_call_id '%s' does not match any tool_call ID in the preceding assistant message", toolMsg.ToolCallID)
+					}
+				}
+			}
+		}
+	}
+}
+
+func verifyMessageOrder(t *testing.T, messages []ai.Message) {
+	assistantWithToolCallsFound := false
+	toolMessageFound := false
+	lastAssistantIndex := -1
+
+	for i, msg := range messages {
+		role, _ := msg.Value()
+
+		if role == ai.AssistantRole {
+			if aiMsg, ok := msg.(ai.AIMessage); ok && len(aiMsg.ToolCalls) > 0 {
+				assistantWithToolCallsFound = true
+				lastAssistantIndex = i
+			}
+		}
+
+		if role == ai.ToolRole {
+			if !assistantWithToolCallsFound {
+				t.Errorf("Tool message found at index %d without preceding assistant message with tool_calls. Last assistant was at index %d", i, lastAssistantIndex)
+			}
+			if lastAssistantIndex >= i {
+				t.Errorf("Tool message found at index %d but assistant with tool_calls is at index %d (should come before)", i, lastAssistantIndex)
+			}
+			toolMessageFound = true
+		}
+	}
+
+	assert.True(t, assistantWithToolCallsFound, "Should have assistant message with tool_calls")
+	assert.True(t, toolMessageFound, "Should have tool message")
+}
+
+func TestConversationHistoryIncludedInFutureConversations(t *testing.T) {
+	history := NewConversationHistory()
+	callCount := 0
+	var receivedMessages []ai.Message
+
+	agent := Agent{
+		Name:                "test-history-agent",
+		Description:         "Agent that remembers conversation history",
+		ConversationHistory: history,
+		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+			callCount++
+			receivedMessages = append(receivedMessages, messages...)
+
+			if callCount == 1 {
+				return ai.AIMessage{
+					Role:    ai.AssistantRole,
+					Content: "Hello, I'm the assistant. First response.",
+				}, nil
+			}
+
+			if callCount == 2 {
+				hasPreviousMessage := false
+				for _, msg := range messages {
+					if userMsg, ok := msg.(ai.UserMessage); ok {
+						if userMsg.Content == "First message" {
+							hasPreviousMessage = true
+							break
+						}
+					}
+					if aiMsg, ok := msg.(ai.AIMessage); ok {
+						if aiMsg.Content == "Hello, I'm the assistant. First response." {
+							hasPreviousMessage = true
+							break
+						}
+					}
+				}
+				if !hasPreviousMessage {
+					t.Errorf("Previous conversation messages not found in second conversation. Received %d messages", len(messages))
+				}
+				return ai.AIMessage{
+					Role:    ai.AssistantRole,
+					Content: "Hello again, I remember our previous conversation.",
+				}, nil
+			}
+
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Unexpected call",
+			}, nil
+		}),
+	}
+
+	run1, err := agent.Start("First message")
+	assert.NoError(t, err)
+	result1, err := run1.Wait(0)
+	assert.NoError(t, err)
+	assert.Contains(t, result1, "First response")
+
+	assert.Equal(t, 1, history.Len(), "History should have one turn after first conversation")
+
+	receivedMessages = nil
+
+	run2, err := agent.Start("Second message")
+	assert.NoError(t, err)
+	result2, err := run2.Wait(0)
+	assert.NoError(t, err)
+	assert.Contains(t, result2, "remember our previous conversation")
+
+	assert.Equal(t, 2, history.Len(), "History should have two turns after second conversation")
+
+	foundFirstMessage := false
+	foundFirstResponse := false
+	for _, msg := range receivedMessages {
+		if userMsg, ok := msg.(ai.UserMessage); ok {
+			if userMsg.Content == "First message" {
+				foundFirstMessage = true
+			}
+		}
+		if aiMsg, ok := msg.(ai.AIMessage); ok {
+			if aiMsg.Content == "Hello, I'm the assistant. First response." {
+				foundFirstResponse = true
+			}
+		}
+	}
+
+	assert.True(t, foundFirstMessage, "Previous user message should be included in second conversation")
+	assert.True(t, foundFirstResponse, "Previous assistant response should be included in second conversation")
+}

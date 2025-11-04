@@ -26,25 +26,24 @@ type AgentRun struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
-	tools      []AgentTool
-	msgHistory []ai.Message
+	tools []AgentTool
 
 	contextManager ContextManager
 	interceptors   []Interceptor
 
-	eventQueue           chan Event
-	actionQueue          chan action
-	pendingApprovals     map[string]pendingApproval
-	processedToolCallIDs map[string]bool
-	currentStreamGroup   *toolCallGroup
-	trace                *TraceRun
-	userMessage          string
-	parentRun            *AgentRun
-	Logger               *slog.Logger
-	maxLLMCalls          int
-	llmCallCount         int
-	approvalTimeout      time.Duration
-	currentHistoryEntry  *HistoryEntry
+	eventQueue              chan Event
+	actionQueue             chan action
+	pendingApprovals        map[string]pendingApproval
+	processedToolCallIDs    map[string]bool
+	currentStreamGroup      *toolCallGroup
+	trace                   *TraceRun
+	userMessage             string
+	parentRun               *AgentRun
+	Logger                  *slog.Logger
+	maxLLMCalls             int
+	llmCallCount            int
+	approvalTimeout         time.Duration
+	currentConversationTurn *ConversationTurn
 }
 
 func (r *AgentRun) ID() string {
@@ -55,8 +54,8 @@ func (r *AgentRun) Session() *Session {
 	return r.session
 }
 
-func (r *AgentRun) HistoryEntry() *HistoryEntry {
-	return r.currentHistoryEntry
+func (r *AgentRun) ConversationTurn() *ConversationTurn {
+	return r.currentConversationTurn
 }
 
 func (r *AgentRun) Cancel() {
@@ -144,6 +143,11 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		Logger:               slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 	run.tools = run.addTools()
+	traceFile := ""
+	if run.trace != nil {
+		traceFile = run.trace.Filepath()
+	}
+	run.currentConversationTurn = NewConversationTurn(run.userMessage, run.id, run.agent.Name, traceFile)
 	return run
 }
 
@@ -419,7 +423,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	var err error
 	var msgs []ai.Message
-	msgs, err = r.contextManager.BuildPrompt(r, r.msgHistory, tools)
+	msgs, err = r.contextManager.BuildPrompt(r, r.currentConversationTurn.getCurrentMessages(), tools)
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
 		return
@@ -585,6 +589,10 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	}
 	act.Group.documents[act.ToolCallID] = documents
 
+	if len(documents) > 0 {
+		r.currentConversationTurn.Documents = append(r.currentConversationTurn.Documents, documents...)
+	}
+
 	r.queueAction(&toolResponseAction{request: act, response: response})
 }
 
@@ -657,7 +665,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 		// add all tool responses and queue their events
 		for _, tc := range action.Group.aiMessage.ToolCalls {
 			if response, exists := action.Group.responses[tc.ID]; exists {
-				r.msgHistory = append(r.msgHistory, response)
+				r.currentConversationTurn.addMessage(response)
 				var docs []*document.Document
 				if action.Group.documents != nil {
 					docs = action.Group.documents[tc.ID]
@@ -744,13 +752,14 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 	// this not a chunk, which means the model Call/Stream is complete
 	// add to history and fire tool calls
 	if len(msg.ToolCalls) == 0 {
-		r.msgHistory = append(r.msgHistory, msg)
+		r.currentConversationTurn.addMessage(msg)
+		r.currentConversationTurn.Reply = msg
+		r.currentConversationTurn.compact()
 		r.queueAction(&stopAction{Error: nil})
 		return
 	}
 
-	// reset history slice each time so that we only keep the last assistant msg and tool responses (if any)
-	r.msgHistory = []ai.Message{msg}
+	r.currentConversationTurn.addMessage(msg)
 
 	// If we have a stream group from chunks, update it with the final message, otherwise create new group
 	if r.currentStreamGroup != nil {
@@ -761,7 +770,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			// add all tool responses and queue their events
 			for _, tc := range r.currentStreamGroup.aiMessage.ToolCalls {
 				if response, exists := r.currentStreamGroup.responses[tc.ID]; exists {
-					r.msgHistory = append(r.msgHistory, response)
+					r.currentConversationTurn.addMessage(response)
 					var docs []*document.Document
 					if r.currentStreamGroup.documents != nil {
 						docs = r.currentStreamGroup.documents[tc.ID]

@@ -2,7 +2,6 @@ package aigentic
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"text/template"
@@ -88,14 +87,6 @@ You have access to the following tools:
 </tool>
 {{end}}
 </tools>
-
-{{end}}
-{{if .HasToolHistory}}
-You have already used the following tools:
-
-<tool_call_history>
-{{.ToolHistory}}
-</tool_call_history>
 
 {{end}}
 {{if .HasMemories}}
@@ -184,17 +175,8 @@ func (r *BasicContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, 
 	return msgs, nil
 }
 
-func (r *BasicContextManager) createToolHistory() string {
-	return createToolHistory(r.msgHistory, r.currentMsg)
-}
-
-func (r *BasicContextManager) createToolHistoryVariables() string {
-	return r.createToolHistory()
-}
-
 func (r *BasicContextManager) createSystemVariables(tools []ai.Tool, run *AgentRun) map[string]interface{} {
-	toolHistory := r.createToolHistoryVariables()
-	return createSystemVariables(r.agent, tools, toolHistory, run)
+	return createSystemVariables(r.agent, tools, run)
 }
 
 func (r *BasicContextManager) createUserVariables(message string, run *AgentRun) map[string]interface{} {
@@ -202,9 +184,7 @@ func (r *BasicContextManager) createUserVariables(message string, run *AgentRun)
 }
 
 // Package-level utility functions for reuse across context managers
-func createSystemVariables(agent Agent, tools []ai.Tool, toolHistory string, run *AgentRun) map[string]interface{} {
-	hasToolHistory := strings.TrimSpace(toolHistory) != ""
-
+func createSystemVariables(agent Agent, tools []ai.Tool, run *AgentRun) map[string]interface{} {
 	memories := run.GetMemories()
 	var filteredMemories []MemoryEntry
 	for _, mem := range memories {
@@ -221,10 +201,8 @@ func createSystemVariables(agent Agent, tools []ai.Tool, toolHistory string, run
 		"Role":            agent.Description,
 		"Instructions":    agent.Instructions,
 		"Tools":           tools,
-		"ToolHistory":     toolHistory,
 		"HasRole":         agent.Description != "",
 		"HasInstructions": agent.Instructions != "",
-		"HasToolHistory":  hasToolHistory,
 		"Memories":        filteredMemories,
 		"HasMemories":     hasMemories,
 	}
@@ -242,49 +220,6 @@ func createUserVariables(agent Agent, message string, run *AgentRun) map[string]
 		"SessionContext":     sessionContext,
 		"HasSessionContext":  hasSessionContext,
 	}
-}
-
-func createToolHistory(msgHistory []ai.Message, currentMsg int) string {
-	msg := ""
-
-	// Create a map to store tool response messages by tool call ID
-	toolResponses := make(map[string]ai.ToolMessage)
-
-	// First pass: collect all tool response messages
-	for _, history := range msgHistory[0:currentMsg] {
-		if toolMsg, ok := history.(ai.ToolMessage); ok && toolMsg.Role == ai.ToolRole {
-			toolResponses[toolMsg.ToolCallID] = toolMsg
-		}
-	}
-
-	// Second pass: process AI messages with tool calls
-	for _, history := range msgHistory[0:currentMsg] {
-		if aiMsg, ok := history.(ai.AIMessage); ok && aiMsg.Role == ai.AssistantRole {
-			// Process each tool call in this AI message
-			for _, toolCall := range aiMsg.ToolCalls {
-				// Find the corresponding tool response
-				if toolResponse, found := toolResponses[toolCall.ID]; found {
-					// Create JSON strings for parameters and result
-					toolParams := toolCall.Args
-					if toolParams == "" {
-						toolParams = "{}"
-					}
-
-					var toolResult string
-					if resultBytes, err := json.Marshal(toolResponse.Content); err == nil {
-						toolResult = string(resultBytes)
-					} else {
-						toolResult = fmt.Sprintf("\"%s\"", toolResponse.Content)
-					}
-
-					msg += fmt.Sprintf("<tool_called>\ntool_name: %s\ntool_call_id: %s\ntool_parameters: %s\ntool_result: %s\n</tool_called>\n",
-						toolCall.Name, toolCall.ID, toolParams, toolResult)
-				}
-			}
-		}
-	}
-
-	return msg
 }
 
 func addDocuments(agent Agent) []ai.Message {

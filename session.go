@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 // MemoryEntry represents a single memory entry
@@ -36,6 +37,8 @@ type Session struct {
 	mutex    sync.RWMutex
 	memories []MemoryEntry
 
+	documents []*document.Document
+
 	Context    context.Context
 	cancelFunc context.CancelFunc
 }
@@ -53,6 +56,7 @@ func NewSession(ctx context.Context) *Session {
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 		State:      make(map[string]interface{}),
+		documents:  make([]*document.Document, 0),
 	}
 	return s
 }

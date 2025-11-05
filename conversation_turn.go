@@ -7,6 +7,13 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 )
 
+// DocumentEntry represents a document with its scope and tool tracking information
+type DocumentEntry struct {
+	Document *document.Document
+	Scope    string
+	ToolID   string
+}
+
 // ConversationTurn represents a complete conversation turn
 // During run: stores all intermediate messages for tool execution
 // After completion: compacted to just Request, Reply, Documents
@@ -14,7 +21,7 @@ type ConversationTurn struct {
 	Request   ai.Message
 	messages  []ai.Message
 	Reply     ai.Message
-	Documents []*document.Document
+	Documents []DocumentEntry
 	TraceFile string
 	RunID     string
 	Timestamp time.Time
@@ -55,7 +62,7 @@ func NewConversationTurn(userMessage, runID, agentName, traceFile string) *Conve
 	return &ConversationTurn{
 		Request:   ai.UserMessage{Role: ai.UserRole, Content: userMessage},
 		messages:  make([]ai.Message, 0),
-		Documents: make([]*document.Document, 0),
+		Documents: make([]DocumentEntry, 0),
 		TraceFile: traceFile,
 		RunID:     runID,
 		Timestamp: time.Now(),

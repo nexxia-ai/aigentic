@@ -169,7 +169,7 @@ func (r *BasicContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, 
 	}
 
 	// Add documents using shared function
-	msgs = append(msgs, addDocuments(r.agent)...)
+	msgs = append(msgs, addDocuments(run.session, r.agent)...)
 
 	msgs = append(msgs, r.msgHistory...)
 	return msgs, nil
@@ -222,11 +222,11 @@ func createUserVariables(agent Agent, message string, run *AgentRun) map[string]
 	}
 }
 
-func addDocuments(agent Agent) []ai.Message {
+func addDocuments(session *Session, agent Agent) []ai.Message {
 	var msgs []ai.Message
 
 	// Add document attachments as separate Resource messages
-	for _, doc := range agent.Documents {
+	for _, doc := range session.documents {
 		content, err := doc.Bytes()
 		if err != nil {
 			continue // skip

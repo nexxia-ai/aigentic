@@ -25,11 +25,11 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "PDF created successfully at /path/to/test.pdf"},
 				},
-				Documents: []*document.Document{doc},
 			}, nil
 		},
 	}
@@ -108,11 +108,11 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "Report created successfully"},
 				},
-				Documents: []*document.Document{doc},
 			}, nil
 		},
 	}
@@ -157,8 +157,8 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 	entry := run.ConversationTurn()
 	assert.NotNil(t, entry, "ConversationTurn should not be nil")
 	assert.Equal(t, 1, len(entry.Documents), "Should have one document in ConversationTurn")
-	assert.Equal(t, "report.pdf", entry.Documents[0].Filename)
-	assert.Equal(t, "application/pdf", entry.Documents[0].MimeType)
+	assert.Equal(t, "report.pdf", entry.Documents[0].Document.Filename)
+	assert.Equal(t, "application/pdf", entry.Documents[0].Document.MimeType)
 
 	conversationTurn, err := history.GetByRunID(run.ID())
 	assert.NoError(t, err)
@@ -182,11 +182,12 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			run.AddDocument("", doc1, "model")
+			run.AddDocument("", doc2, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "Multiple files created"},
 				},
-				Documents: []*document.Document{doc1, doc2},
 			}, nil
 		},
 	}
@@ -228,8 +229,8 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 	entry := run.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 2, len(entry.Documents), "Should have two documents")
-	assert.Equal(t, "file1.pdf", entry.Documents[0].Filename)
-	assert.Equal(t, "file2.txt", entry.Documents[1].Filename)
+	assert.Equal(t, "file1.pdf", entry.Documents[0].Document.Filename)
+	assert.Equal(t, "file2.txt", entry.Documents[1].Document.Filename)
 }
 
 func TestMultipleToolsWithDocuments(t *testing.T) {
@@ -249,9 +250,9 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			run.AddDocument("", doc1, "model")
 			return &ai.ToolResult{
 				Content:   []ai.ToolContent{{Type: "text", Content: "PDF1 ready"}},
-				Documents: []*document.Document{doc1},
 			}, nil
 		},
 	}
@@ -264,9 +265,9 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			run.AddDocument("", doc2, "model")
 			return &ai.ToolResult{
 				Content:   []ai.ToolContent{{Type: "text", Content: "PDF2 ready"}},
-				Documents: []*document.Document{doc2},
 			}, nil
 		},
 	}
@@ -304,8 +305,8 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 	entry := run.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 2, len(entry.Documents), "Should have documents from both tools")
-	assert.Equal(t, "pdf1.pdf", entry.Documents[0].Filename)
-	assert.Equal(t, "pdf2.pdf", entry.Documents[1].Filename)
+	assert.Equal(t, "pdf1.pdf", entry.Documents[0].Document.Filename)
+	assert.Equal(t, "pdf2.pdf", entry.Documents[1].Document.Filename)
 }
 
 func TestToolWithNoDocuments(t *testing.T) {
@@ -377,9 +378,9 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content:   []ai.ToolContent{{Type: "text", Content: "Document created"}},
-				Documents: []*document.Document{doc},
 			}, nil
 		},
 	}
@@ -417,7 +418,7 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 	conversationTurn, err := history.GetByRunID(runID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(conversationTurn.Documents), "Document should persist in ConversationHistory")
-	assert.Equal(t, "persistent.pdf", conversationTurn.Documents[0].Filename)
+	assert.Equal(t, "persistent.pdf", conversationTurn.Documents[0].Document.Filename)
 }
 
 func TestDocumentMetadataPreserved(t *testing.T) {
@@ -438,9 +439,9 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content:   []ai.ToolContent{{Type: "text", Content: "Document created"}},
-				Documents: []*document.Document{doc},
 			}, nil
 		},
 	}
@@ -478,7 +479,7 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 	assert.NotNil(t, entry)
 	assert.Equal(t, 1, len(entry.Documents), "Should have one document")
 
-	savedDoc := entry.Documents[0]
+	savedDoc := entry.Documents[0].Document
 	assert.Equal(t, "metadata.pdf", savedDoc.Filename)
 	assert.Equal(t, "/custom/path/metadata.pdf", savedDoc.FilePath)
 	assert.Equal(t, "application/pdf", savedDoc.MimeType)
@@ -504,7 +505,6 @@ func TestEmptyToolResultDocuments(t *testing.T) {
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
 				Content:   []ai.ToolContent{{Type: "text", Content: "Response"}},
-				Documents: []*document.Document{},
 			}, nil
 		},
 	}
@@ -558,9 +558,9 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content:   []ai.ToolContent{{Type: "text", Content: "Document created"}},
-				Documents: []*document.Document{doc},
 			}, nil
 		},
 	}
@@ -599,7 +599,7 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 	assert.NotNil(t, entry, "ConversationTurn should be accessible after completion")
 	assert.Equal(t, run.ID(), entry.RunID, "Turn should have correct RunID")
 	assert.Equal(t, 1, len(entry.Documents), "Should have document in turn")
-	assert.Equal(t, "accessible.pdf", entry.Documents[0].Filename)
+	assert.Equal(t, "accessible.pdf", entry.Documents[0].Document.Filename)
 
 	entry2 := run.ConversationTurn()
 	assert.NotNil(t, entry2, "ConversationTurn should still be accessible on second call")

@@ -79,6 +79,31 @@ func (r *AgentRun) GetMemories() []MemoryEntry {
 	return r.session.GetMemories()
 }
 
+// AddDocument adds a document to the conversation turn and optionally to the session
+func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope string) error {
+	if doc == nil {
+		return fmt.Errorf("document cannot be nil")
+	}
+
+	if scope != "local" && scope != "model" && scope != "session" {
+		return fmt.Errorf("invalid scope: %s (must be 'local', 'model', or 'session')", scope)
+	}
+
+	entry := DocumentEntry{
+		Document: doc,
+		Scope:    scope,
+		ToolID:   toolID,
+	}
+
+	r.currentConversationTurn.Documents = append(r.currentConversationTurn.Documents, entry)
+
+	if scope == "model" || scope == "session" {
+		r.session.documents = append(r.session.documents, doc)
+	}
+
+	return nil
+}
+
 func newAgentRun(a Agent, message string) *AgentRun {
 	runID := uuid.New().String()
 	session := a.Session
@@ -142,6 +167,13 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		contextManager:       a.ContextManager,
 		Logger:               slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
+
+	// Copy agent.Documents to session.documents during initialization
+	if len(a.Documents) > 0 {
+		session.documents = make([]*document.Document, len(a.Documents))
+		copy(session.documents, a.Documents)
+	}
+
 	run.tools = run.addTools()
 	traceFile := ""
 	if run.trace != nil {
@@ -583,16 +615,6 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		}
 	}
 
-	documents := extractToolDocuments(currentResult)
-	if act.Group.documents == nil {
-		act.Group.documents = make(map[string][]*document.Document)
-	}
-	act.Group.documents[act.ToolCallID] = documents
-
-	if len(documents) > 0 {
-		r.currentConversationTurn.Documents = append(r.currentConversationTurn.Documents, documents...)
-	}
-
 	r.queueAction(&toolResponseAction{request: act, response: response})
 }
 
@@ -614,13 +636,6 @@ func formatToolResponse(result *ai.ToolResult) string {
 	}
 
 	return strings.Join(parts, "\n")
-}
-
-func extractToolDocuments(result *ai.ToolResult) []*document.Document {
-	if result == nil {
-		return nil
-	}
-	return result.Documents
 }
 
 func stringifyToolContent(content any) string {
@@ -667,11 +682,10 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 			if response, exists := action.Group.responses[tc.ID]; exists {
 				r.currentConversationTurn.addMessage(response)
 				var docs []*document.Document
-				if action.Group.documents != nil {
-					docs = action.Group.documents[tc.ID]
-				}
-				if docs == nil {
-					docs = []*document.Document{}
+				for _, entry := range r.currentConversationTurn.Documents {
+					if entry.ToolID == tc.ID || entry.ToolID == "" {
+						docs = append(docs, entry.Document)
+					}
 				}
 				event := &ToolResponseEvent{
 					RunID:      r.id,
@@ -740,7 +754,6 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 				r.currentStreamGroup = &toolCallGroup{
 					aiMessage: &chunkMsg,
 					responses: make(map[string]ai.ToolMessage),
-					documents: make(map[string][]*document.Document),
 				}
 			}
 			// Process tool calls using the shared group
@@ -772,11 +785,10 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 				if response, exists := r.currentStreamGroup.responses[tc.ID]; exists {
 					r.currentConversationTurn.addMessage(response)
 					var docs []*document.Document
-					if r.currentStreamGroup.documents != nil {
-						docs = r.currentStreamGroup.documents[tc.ID]
-					}
-					if docs == nil {
-						docs = []*document.Document{}
+					for _, entry := range r.currentConversationTurn.Documents {
+						if entry.ToolID == tc.ID || entry.ToolID == "" {
+							docs = append(docs, entry.Document)
+						}
 					}
 					event := &ToolResponseEvent{
 						RunID:      r.id,
@@ -894,7 +906,6 @@ func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, exi
 		group = &toolCallGroup{
 			aiMessage: &msg,
 			responses: make(map[string]ai.ToolMessage),
-			documents: make(map[string][]*document.Document),
 		}
 	}
 

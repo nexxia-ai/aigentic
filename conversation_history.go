@@ -19,42 +19,44 @@ func newHistoryInterceptor(history *ConversationHistory) *historyInterceptor {
 	}
 }
 
-// BeforeCall appends conversation history after all system messages
+// BeforeCall appends conversation history just before the new user message
 func (h *historyInterceptor) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
 	if len(messages) == 0 {
 		return messages, tools, nil
 	}
 
-	// Find the index after all system messages
-	systemEndIndex := 0
+	historyMessages := h.history.GetMessages()
+	if len(historyMessages) == 0 {
+		return messages, tools, nil
+	}
+
+	// Find the first user message (the new user message from the template)
+	userMessageIndex := -1
 	for i, msg := range messages {
 		role, _ := msg.Value()
-		if role == ai.SystemRole {
-			systemEndIndex = i + 1
-		} else {
-			break
+		if role == ai.UserRole {
+			// Check if this is a UserMessage (not ResourceMessage or ToolMessage)
+			if _, ok := msg.(ai.UserMessage); ok {
+				userMessageIndex = i
+				break
+			}
 		}
 	}
 
-	// Insert history messages right after all system messages
-	historyMessages := h.history.GetMessages()
-	if len(historyMessages) > 0 {
-		// GetMessages returns messages in reverse chronological order (newest first)
-		// Reverse to chronological order (oldest first)
-		reversedHistory := make([]ai.Message, len(historyMessages))
-		for i := len(historyMessages) - 1; i >= 0; i-- {
-			reversedHistory[len(historyMessages)-1-i] = historyMessages[i]
-		}
-
-		// Insert history after all system messages
-		result := make([]ai.Message, 0, len(messages)+len(reversedHistory))
-		result = append(result, messages[:systemEndIndex]...) // All system messages
-		result = append(result, reversedHistory...)           // History messages
-		result = append(result, messages[systemEndIndex:]...) // Rest of messages
+	// If no user message found, append history at the end (shouldn't happen in normal flow)
+	if userMessageIndex == -1 {
+		result := make([]ai.Message, 0, len(messages)+len(historyMessages))
+		result = append(result, messages...)
+		result = append(result, historyMessages...)
 		return result, tools, nil
 	}
 
-	return messages, tools, nil
+	// Insert history right before the user message (as second-to-last before user message)
+	result := make([]ai.Message, 0, len(messages)+len(historyMessages))
+	result = append(result, messages[:userMessageIndex]...) // All messages before user message
+	result = append(result, historyMessages...)              // History messages (chronological order)
+	result = append(result, messages[userMessageIndex:]...) // User message and everything after
+	return result, tools, nil
 }
 
 // AfterCall appends the completed conversation turn to history when conversation completes
@@ -109,13 +111,13 @@ func (h *ConversationHistory) GetEntries() []ConversationTurn {
 
 // GetMessages returns all messages flattened for LLM context (user, reply in order)
 // Hidden entries are excluded from the result
-// Messages are returned in reverse chronological order (newest first)
+// Messages are returned in chronological order (oldest first)
 func (h *ConversationHistory) GetMessages() []ai.Message {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
 	var messages []ai.Message
-	for i := len(h.turns) - 1; i >= 0; i-- {
+	for i := 0; i < len(h.turns); i++ {
 		turn := h.turns[i]
 		if turn.Hidden {
 			continue

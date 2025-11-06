@@ -58,28 +58,22 @@ func collectContextFunctions(agent Agent, run *AgentRun) string {
 const DefaultSystemTemplate = `
 You are an autonomous agent working to complete a task.
 You have to consider all the information you were given and reason about the next step to take.
-Analyse the tools you have already used to ensure you are not repeating yourself.
-{{if .HasTools}}
-You have access to one or more tools to complete the task. Use these tools as required to complete the task.
-{{end}}
 
 {{if .HasRole}}
 The user provided the following description of your role:
 <role>
 {{.Role}}
 </role>
-
 {{end}}
-{{if .HasInstructions}}
 
+{{if .HasInstructions}}
  <instructions>
 {{.Instructions}}
 </instructions>
-
 {{end}}
+
 {{if .HasTools}}
 You have access to the following tools:
-
 <tools>
 {{range .Tools}}<tool>
 {{.Name}}
@@ -87,8 +81,8 @@ You have access to the following tools:
 </tool>
 {{end}}
 </tools>
-
 {{end}}
+
 {{if .HasMemories}}
 <memories>
 {{range .Memories}}
@@ -99,13 +93,15 @@ You have access to the following tools:
 </memories>
 {{end}}`
 
-const DefaultUserTemplate = `{{if .HasSessionContext}}<session_context>
+const DefaultUserTemplate = `
+{{if .HasSessionContext}}
+<session_context>
 {{.SessionContext}}
 </session_context>
+{{end}}
 
-{{end}}{{if .HasMessage}}Please answer the following request or task:
+{{if .HasMessage}}Please answer the following request or task:
 {{.Message}} 
-
 {{end}}`
 
 func NewBasicContextManager(agent Agent, userMsg string) *BasicContextManager {

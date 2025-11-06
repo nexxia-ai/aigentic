@@ -59,46 +59,90 @@ func DecodeConfigYAML(r io.Reader) (*ConfigFile, error) {
 }
 
 func validateConfig(cfg *ConfigFile) error {
-	// Build agent name set
+	const defaultRetries = 2
+	const defaultMaxLLMCalls = 20
+
+	validAgents := make([]AgentConfig, 0, len(cfg.Agents))
 	names := map[string]struct{}{}
+
 	for _, a := range cfg.Agents {
 		if a.Name == "" {
-			return fmt.Errorf("agent missing name")
+			slog.Error("skipping agent: missing name")
+			continue
 		}
+
 		if _, ok := names[a.Name]; ok {
-			return fmt.Errorf("duplicate agent name: %s", a.Name)
+			slog.Error("skipping agent: duplicate name", "name", a.Name)
+			continue
 		}
+
 		names[a.Name] = struct{}{}
-		if a.Retries < 0 || a.MaxLLMCalls < 0 {
-			return fmt.Errorf("agent %s has negative retries or max_llm_calls", a.Name)
+		validAgent := a
+
+		if a.Retries < 0 {
+			slog.Error("agent has negative retries, using default", "agent", a.Name, "retries", a.Retries, "default", defaultRetries)
+			validAgent.Retries = defaultRetries
 		}
+
+		if a.MaxLLMCalls < 0 {
+			slog.Error("agent has negative max_llm_calls, using default", "agent", a.Name, "max_llm_calls", a.MaxLLMCalls, "default", defaultMaxLLMCalls)
+			validAgent.MaxLLMCalls = defaultMaxLLMCalls
+		}
+
 		switch a.LogLevel {
 		case "", "debug", "info", "warn", "error":
 		default:
-			return fmt.Errorf("agent %s has invalid log_level: %s", a.Name, a.LogLevel)
+			slog.Error("agent has invalid log_level, using info as default", "agent", a.Name, "log_level", a.LogLevel)
+			validAgent.LogLevel = "info"
 		}
+
 		if a.ModelName == "" {
-			return fmt.Errorf("agent %s missing model_name", a.Name)
+			slog.Warn("agent missing model_name, will use default model", "agent", a.Name)
 		}
+
+		validTools := make([]string, 0, len(a.Tools))
 		for _, t := range a.Tools {
 			if _, ok := cfg.Tools[t]; !ok {
-				return fmt.Errorf("agent %s references unknown tool: %s", a.Name, t)
+				slog.Error("agent references unknown tool, skipping", "agent", a.Name, "tool", t)
+				continue
 			}
+			validTools = append(validTools, t)
 		}
+		validAgent.Tools = validTools
+
+		validChildAgents := make([]string, 0, len(a.Agents))
 		for _, child := range a.Agents {
 			if child == a.Name {
-				return fmt.Errorf("agent %s cannot reference itself", a.Name)
+				slog.Error("agent references itself, skipping reference", "agent", a.Name)
+				continue
 			}
+			validChildAgents = append(validChildAgents, child)
 		}
+		validAgent.Agents = validChildAgents
+
+		validAgents = append(validAgents, validAgent)
 	}
-	// Validate referenced agents now that we have the set
-	for _, a := range cfg.Agents {
+
+	names = make(map[string]struct{})
+	for _, a := range validAgents {
+		names[a.Name] = struct{}{}
+	}
+
+	finalAgents := make([]AgentConfig, 0, len(validAgents))
+	for _, a := range validAgents {
+		validChildAgents := make([]string, 0, len(a.Agents))
 		for _, child := range a.Agents {
 			if _, ok := names[child]; !ok {
-				return fmt.Errorf("agent %s references unknown agent: %s", a.Name, child)
+				slog.Error("agent references unknown agent, skipping reference", "agent", a.Name, "child", child)
+				continue
 			}
+			validChildAgents = append(validChildAgents, child)
 		}
+		a.Agents = validChildAgents
+		finalAgents = append(finalAgents, a)
 	}
+
+	cfg.Agents = finalAgents
 	return nil
 }
 

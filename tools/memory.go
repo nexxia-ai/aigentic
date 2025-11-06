@@ -10,7 +10,7 @@ import (
 func NewMemoryTool() aigentic.AgentTool {
 	return aigentic.AgentTool{
 		Name:        "update_memory",
-		Description: "Store or update memory. Set description and content to empty strings to delete.",
+		Description: "This is your transient memory. Use it to store or update memory entries. Set description and content to empty strings to delete.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

@@ -54,6 +54,10 @@ func (r *AgentRun) Session() *Session {
 	return r.session
 }
 
+func (r *AgentRun) Model() *ai.Model {
+	return r.model
+}
+
 func (r *AgentRun) ConversationTurn() *ConversationTurn {
 	return r.currentConversationTurn
 }
@@ -102,6 +106,13 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 	}
 
 	return nil
+}
+
+// UpdateContextManager replaces the context manager with a new one.
+// This allows AgentTools to update the Description, Instructions, and user message
+// that will be used in subsequent LLM calls.
+func (r *AgentRun) UpdateContextManager(cm ContextManager) {
+	r.contextManager = cm
 }
 
 func newAgentRun(a Agent, message string) *AgentRun {

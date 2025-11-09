@@ -124,9 +124,15 @@ agents:
     model_name: gpt-4
     tools: ["missing"]
 `
-	_, err := DecodeConfigYAML(strings.NewReader(yaml))
-	if err == nil {
-		t.Fatalf("expected error for unknown tool, got nil")
+	cfg, err := DecodeConfigYAML(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("expected one agent, got %d", len(cfg.Agents))
+	}
+	if len(cfg.Agents[0].Tools) != 0 {
+		t.Fatalf("expected tools to be filtered, got %v", cfg.Agents[0].Tools)
 	}
 }
 
@@ -142,9 +148,15 @@ agents:
     tools: ["t"]
     agents: ["b"]
 `
-	_, err := DecodeConfigYAML(strings.NewReader(yaml))
-	if err == nil {
-		t.Fatalf("expected error for unknown agent ref, got nil")
+	cfg, err := DecodeConfigYAML(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("expected one agent, got %d", len(cfg.Agents))
+	}
+	if len(cfg.Agents[0].Agents) != 0 {
+		t.Fatalf("expected agent references to be filtered, got %v", cfg.Agents[0].Agents)
 	}
 }
 
@@ -160,9 +172,12 @@ agents:
     log_level: noisy
     tools: ["t"]
 `
-	_, err := DecodeConfigYAML(strings.NewReader(yaml))
-	if err == nil {
-		t.Fatalf("expected error for invalid log level, got nil")
+	cfg, err := DecodeConfigYAML(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Agents[0].LogLevel != "info" {
+		t.Fatalf("expected log level to default to info, got %s", cfg.Agents[0].LogLevel)
 	}
 }
 

@@ -2,7 +2,6 @@ package aigentic
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/document"
@@ -11,13 +10,7 @@ import (
 // Session represents a shared session between agents and teams
 type Session struct {
 	// Core session identifiers
-	ID        string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-
-	// Session metadata
-	Description string
-	Tags        []string
+	ID string
 
 	documents []*document.Document
 
@@ -35,8 +28,6 @@ func NewSession(ctx context.Context) *Session {
 		ID:         uuid.New().String(),
 		Context:    ctx,
 		cancelFunc: cancel,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
 		documents:  make([]*document.Document, 0),
 	}
 	return s

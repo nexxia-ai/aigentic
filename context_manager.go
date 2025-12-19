@@ -14,7 +14,7 @@ type ContextManager interface {
 	BuildPrompt(*AgentRun, []ai.Message, []ai.Tool) ([]ai.Message, error)
 }
 
-type BasicContextManager struct {
+type AgentContext struct {
 	agent          Agent // copy of agent
 	userMsg        string
 	msgHistory     []ai.Message
@@ -23,7 +23,7 @@ type BasicContextManager struct {
 	UserTemplate   *template.Template
 }
 
-var _ ContextManager = &BasicContextManager{}
+var _ ContextManager = &AgentContext{}
 
 func collectContextFunctions(agent Agent, run *AgentRun) string {
 	var parts []string
@@ -104,20 +104,20 @@ const DefaultUserTemplate = `
 {{.Message}} 
 {{end}}`
 
-func NewBasicContextManager(agent Agent, userMsg string) *BasicContextManager {
-	cm := &BasicContextManager{agent: agent, userMsg: userMsg}
+func NewAgentContext(agent Agent, userMsg string) *AgentContext {
+	cm := &AgentContext{agent: agent, userMsg: userMsg}
 	cm.SetDefaultTemplates()
 	return cm
 }
 
 // SetDefaultTemplates sets the default system and user templates
-func (r *BasicContextManager) SetDefaultTemplates() {
+func (r *AgentContext) SetDefaultTemplates() {
 	r.SystemTemplate = template.Must(template.New("system").Parse(DefaultSystemTemplate))
 	r.UserTemplate = template.Must(template.New("user").Parse(DefaultUserTemplate))
 }
 
 // ParseSystemTemplate parses and sets a custom system template
-func (r *BasicContextManager) ParseSystemTemplate(templateStr string) error {
+func (r *AgentContext) ParseSystemTemplate(templateStr string) error {
 	tmpl, err := template.New("system").Parse(templateStr)
 	if err != nil {
 		return err
@@ -127,7 +127,7 @@ func (r *BasicContextManager) ParseSystemTemplate(templateStr string) error {
 }
 
 // ParseUserTemplate parses and sets a custom user template
-func (r *BasicContextManager) ParseUserTemplate(templateStr string) error {
+func (r *AgentContext) ParseUserTemplate(templateStr string) error {
 	tmpl, err := template.New("user").Parse(templateStr)
 	if err != nil {
 		return err
@@ -136,7 +136,7 @@ func (r *BasicContextManager) ParseUserTemplate(templateStr string) error {
 	return nil
 }
 
-func (r *BasicContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
+func (r *AgentContext) BuildPrompt(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
 	r.currentMsg = len(r.msgHistory)
 	r.msgHistory = append(r.msgHistory, messages...)
 
@@ -171,11 +171,11 @@ func (r *BasicContextManager) BuildPrompt(run *AgentRun, messages []ai.Message, 
 	return msgs, nil
 }
 
-func (r *BasicContextManager) createSystemVariables(tools []ai.Tool, run *AgentRun) map[string]interface{} {
+func (r *AgentContext) createSystemVariables(tools []ai.Tool, run *AgentRun) map[string]interface{} {
 	return createSystemVariables(r.agent, tools, run)
 }
 
-func (r *BasicContextManager) createUserVariables(message string, run *AgentRun) map[string]interface{} {
+func (r *AgentContext) createUserVariables(message string, run *AgentRun) map[string]interface{} {
 	return createUserVariables(r.agent, message, run)
 }
 

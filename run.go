@@ -44,6 +44,11 @@ type AgentRun struct {
 	llmCallCount            int
 	approvalTimeout         time.Duration
 	currentConversationTurn *ConversationTurn
+
+	// ContextManager defines the context manager for the agent.
+	// If set, this context manager will be used instead of the default BasicContextManager.
+	// Set "ContextManager: aigentic.NewEnhancedSystemContextManager(agent, message)" to use a custom context manager.
+	ContextManager ContextManager
 }
 
 func (r *AgentRun) ID() string {
@@ -155,10 +160,6 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		maxLLMCalls = a.MaxLLMCalls
 	}
 
-	if a.ContextManager == nil {
-		a.ContextManager = NewBasicContextManager(a, message)
-	}
-
 	run := &AgentRun{
 		id:                   runID,
 		agent:                a,
@@ -175,7 +176,7 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		pendingApprovals:     make(map[string]pendingApproval),
 		processedToolCallIDs: make(map[string]bool),
 		approvalTimeout:      approvalTimeout,
-		contextManager:       a.ContextManager,
+		contextManager:       NewAgentContext(a, message),
 		Logger:               slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 

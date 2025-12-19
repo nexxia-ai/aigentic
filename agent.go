@@ -59,11 +59,6 @@ type Agent struct {
 	// Interceptors chain allows inspection and modification of model calls
 	Interceptors []Interceptor
 
-	// ContextManager defines the context manager for the agent.
-	// If set, this context manager will be used instead of the default BasicContextManager.
-	// Set "ContextManager: aigentic.NewEnhancedSystemContextManager(agent, message)" to use a custom context manager.
-	ContextManager ContextManager
-
 	LogLevel    slog.Level
 	MaxLLMCalls int // Maximum number of LLM calls (0 = unlimited)
 

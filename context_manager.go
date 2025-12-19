@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 	"text/template"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
@@ -14,6 +16,16 @@ type ContextManager interface {
 	BuildPrompt(*AgentRun, []ai.Message, []ai.Tool) ([]ai.Message, error)
 }
 
+// MemoryEntry represents a single memory entry
+type MemoryEntry struct {
+	ID          string
+	Description string
+	Content     string
+	Scope       string
+	RunID       string
+	Timestamp   time.Time
+}
+
 type AgentContext struct {
 	agent          Agent // copy of agent
 	userMsg        string
@@ -21,6 +33,10 @@ type AgentContext struct {
 	currentMsg     int
 	SystemTemplate *template.Template
 	UserTemplate   *template.Template
+
+	// Thread-safe memory storage
+	mutex    sync.RWMutex
+	memories []MemoryEntry
 }
 
 var _ ContextManager = &AgentContext{}
@@ -253,4 +269,56 @@ func addDocuments(session *Session, agent Agent) []ai.Message {
 	}
 
 	return msgs
+}
+
+// AddMemory adds a new memory entry or updates an existing one by ID
+func (r *AgentContext) AddMemory(id, description, content, scope, runID string) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	now := time.Now()
+	for i := range r.memories {
+		if r.memories[i].ID == id {
+			r.memories[i].Description = description
+			r.memories[i].Content = content
+			r.memories[i].Scope = scope
+			r.memories[i].RunID = runID
+			r.memories[i].Timestamp = now
+			return nil
+		}
+	}
+
+	r.memories = append(r.memories, MemoryEntry{
+		ID:          id,
+		Description: description,
+		Content:     content,
+		Scope:       scope,
+		RunID:       runID,
+		Timestamp:   now,
+	})
+	return nil
+}
+
+// DeleteMemory removes a memory entry by ID
+func (r *AgentContext) DeleteMemory(id string) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	for i := range r.memories {
+		if r.memories[i].ID == id {
+			r.memories = append(r.memories[:i], r.memories[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+// GetMemories returns all memories in insertion order
+func (r *AgentContext) GetMemories() []MemoryEntry {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+
+	result := make([]MemoryEntry, len(r.memories))
+	copy(result, r.memories)
+	return result
 }

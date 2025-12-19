@@ -28,7 +28,7 @@ type AgentRun struct {
 
 	tools []AgentTool
 
-	contextManager ContextManager
+	contextManager *AgentContext
 	interceptors   []Interceptor
 
 	eventQueue              chan Event
@@ -75,17 +75,17 @@ func (r *AgentRun) Cancel() {
 
 // AddMemory adds a memory entry or updates an existing one
 func (r *AgentRun) AddMemory(id, description, content, scope string) error {
-	return r.session.AddMemory(id, description, content, scope, r.id)
+	return r.contextManager.AddMemory(id, description, content, scope, r.id)
 }
 
 // DeleteMemory removes a memory entry by ID
 func (r *AgentRun) DeleteMemory(id string) error {
-	return r.session.DeleteMemory(id)
+	return r.contextManager.DeleteMemory(id)
 }
 
 // GetMemories returns all memories in insertion order
 func (r *AgentRun) GetMemories() []MemoryEntry {
-	return r.session.GetMemories()
+	return r.contextManager.GetMemories()
 }
 
 // AddDocument adds a document to the conversation turn and optionally to the session
@@ -111,13 +111,6 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 	}
 
 	return nil
-}
-
-// UpdateContextManager replaces the context manager with a new one.
-// This allows AgentTools to update the Description, Instructions, and user message
-// that will be used in subsequent LLM calls.
-func (r *AgentRun) UpdateContextManager(cm ContextManager) {
-	r.contextManager = cm
 }
 
 func newAgentRun(a Agent, message string) *AgentRun {

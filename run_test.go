@@ -75,10 +75,6 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 				Tracer:      NewTracer(),
 			}
 
-			// Create a session
-			session := NewSession(context.Background())
-			agent.Session = session
-
 			// Create an agent run
 			run := newAgentRun(agent, "Test message")
 			defer run.stop()
@@ -170,10 +166,6 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 		Tracer: NewTracer(),
 	}
 
-	// Create a session
-	session := NewSession(context.Background())
-	agent.Session = session
-
 	// Create an agent run
 	run := newAgentRun(agent, "Test message")
 	defer run.stop()
@@ -235,10 +227,6 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 		Stream: true,
 		Tracer: NewTracer(),
 	}
-
-	// Create a session
-	session := NewSession(context.Background())
-	agent.Session = session
 
 	// Create an agent run
 	run := newAgentRun(agent, "Test message")
@@ -309,10 +297,6 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 		MaxLLMCalls: 2,
 		Tracer:      NewTracer(),
 	}
-
-	// Create a session
-	session := NewSession(context.Background())
-	agent.Session = session
 
 	// Create an agent run
 	run := newAgentRun(agent, "Test message")
@@ -411,9 +395,6 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 		Stream:      true,
 		Tracer:      NewTracer(),
 	}
-
-	session := NewSession(context.Background())
-	agent.Session = session
 
 	run := newAgentRun(agent, "Test chunking")
 	defer run.stop()

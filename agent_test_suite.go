@@ -3,7 +3,6 @@ package aigentic
 // This file contains reusable integration tests to test various model providers.
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -305,9 +304,6 @@ func NewCreateInvoiceTool() AgentTool {
 
 // Individual test functions that can be reused
 func TestBasicAgent(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
-
 	tests := []struct {
 		agent         Agent
 		name          string
@@ -331,7 +327,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			tools: []ai.Tool{},
 		},
 		{
-			agent:         Agent{Session: session, Model: model},
+			agent:         Agent{Model: model},
 			name:          "basic conversation",
 			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
@@ -378,12 +374,10 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 }
 
 func TestAgentRun(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
 	// Sessions no longer have Trace field
 
 	newAgent := func() Agent {
 		return Agent{
-			Session:      session,
 			Model:        model,
 			Description:  "You are a helpful assistant that provides clear and concise answers.",
 			Instructions: "Always explain your reasoning and provide examples when possible.",
@@ -454,13 +448,11 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 }
 
 func TestToolIntegration(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
 	// Sessions no longer have Trace field
 
 	newAgent := func() Agent {
 		return Agent{
 			Name:         "test-agent",
-			Session:      session,
 			Model:        model,
 			Description:  "You are a helpful assistant that provides clear and concise answers.",
 			Instructions: "Always explain your reasoning and provide examples when possible.",
@@ -521,9 +513,6 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 }
 
 func TestTeamCoordination(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
-
 	// Subagents
 	lookup := Agent{
 		Model:        model,
@@ -550,9 +539,8 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 	}
 
 	coordinator := Agent{
-		Session: session,
-		Model:   model,
-		Name:    "coordinator",
+		Model: model,
+		Name:  "coordinator",
 		Description: "Coordinate a workflow to ensure an invoice exists for the requested company name and amount. " +
 			"Steps: 1) Call 'lookup' subagent with the company name. 2) If NOT_FOUND, call 'company_creator' to create it. " +
 			"3) Call 'invoice_creator' with the resolved company_id and the requested amount. " +
@@ -883,11 +871,8 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 }
 
 func TestBasicStreaming(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
 
 	agent := Agent{
-		Session:      session,
 		Model:        model,
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible.",
@@ -922,11 +907,8 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 }
 
 func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
 
 	agent := Agent{
-		Session:      session,
 		Model:        model,
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible.",
@@ -960,11 +942,8 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 }
 
 func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
 
 	agent := Agent{
-		Session:      session,
 		Model:        model,
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible.",
@@ -998,12 +977,9 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 }
 
 func TestStreamingWithTools(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
 
 	counter := 0
 	agent := Agent{
-		Session:      session,
 		Model:        model,
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible.",
@@ -1038,12 +1014,9 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 }
 
 func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
 
 	counter := 0
 	agent := Agent{
-		Session:      session,
 		Model:        model,
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Use the lookup tool to find company information when asked.",
@@ -1081,8 +1054,6 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 }
 
 func TestMemoryPersistence(t *testing.T, model *ai.Model) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
 
 	counter := 0
 	// Sub-agents
@@ -1104,7 +1075,6 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 
 	// Coordinator executes the plan, saves each result to memory, then replies with full memory content
 	coordinator := Agent{
-		Session:     session,
 		Model:       model,
 		Name:        "coordinator",
 		Description: "You are a coordinator that executes a plan and saves the results to memory. ",

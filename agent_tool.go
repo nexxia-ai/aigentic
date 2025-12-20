@@ -1,7 +1,6 @@
 package aigentic
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,13 +121,6 @@ func NewTool[T any](name, description string, fn func(*AgentRun, T) (string, err
 		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			if run == nil {
 				return nil, errors.New("AgentRun is nil")
-			}
-			if run.session == nil {
-				if run.ctx != nil {
-					run.session = NewSession(run.ctx)
-				} else {
-					run.session = NewSession(context.Background())
-				}
 			}
 
 			jsonData, err := json.Marshal(args)

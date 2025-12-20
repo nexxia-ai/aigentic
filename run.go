@@ -18,18 +18,18 @@ import (
 var approvalTimeout = time.Minute * 60
 
 type AgentRun struct {
-	id      string
-	agent   Agent
-	session *Session
-	model   *ai.Model
+	id        string
+	sessionID string // a unique identifier for multiple runs
+	agent     Agent
+	model     *ai.Model
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
 	tools []AgentTool
 
-	contextManager *AgentContext
-	interceptors   []Interceptor
+	agentContext *AgentContext
+	interceptors []Interceptor
 
 	eventQueue              chan Event
 	actionQueue             chan action
@@ -55,10 +55,6 @@ func (r *AgentRun) ID() string {
 	return r.id
 }
 
-func (r *AgentRun) Session() *Session {
-	return r.session
-}
-
 func (r *AgentRun) Model() *ai.Model {
 	return r.model
 }
@@ -75,17 +71,17 @@ func (r *AgentRun) Cancel() {
 
 // AddMemory adds a memory entry or updates an existing one
 func (r *AgentRun) AddMemory(id, description, content, scope string) error {
-	return r.contextManager.AddMemory(id, description, content, scope, r.id)
+	return r.agentContext.AddMemory(id, description, content, scope, r.id)
 }
 
 // DeleteMemory removes a memory entry by ID
 func (r *AgentRun) DeleteMemory(id string) error {
-	return r.contextManager.DeleteMemory(id)
+	return r.agentContext.DeleteMemory(id)
 }
 
 // GetMemories returns all memories in insertion order
 func (r *AgentRun) GetMemories() []MemoryEntry {
-	return r.contextManager.GetMemories()
+	return r.agentContext.GetMemories()
 }
 
 // AddDocument adds a document to the conversation turn and optionally to the session
@@ -107,7 +103,7 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 	r.currentConversationTurn.Documents = append(r.currentConversationTurn.Documents, entry)
 
 	if scope == "model" || scope == "session" {
-		r.session.documents = append(r.session.documents, doc)
+		r.agentContext.documents = append(r.agentContext.documents, doc)
 	}
 
 	return nil
@@ -115,11 +111,8 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 
 func newAgentRun(a Agent, message string) *AgentRun {
 	runID := uuid.New().String()
-	session := a.Session
-	if session == nil {
-		session = NewSession(context.Background())
-	}
-	runCtx, cancelFunc := context.WithCancel(session.Context)
+	sessionID := uuid.New().String()
+	runCtx, cancelFunc := context.WithCancel(context.Background())
 	model := a.Model
 	if model == nil {
 		model = ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
@@ -157,7 +150,7 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		id:                   runID,
 		agent:                a,
 		model:                model,
-		session:              session,
+		sessionID:            sessionID,
 		ctx:                  runCtx,
 		cancelFunc:           cancelFunc,
 		userMessage:          message,
@@ -169,14 +162,13 @@ func newAgentRun(a Agent, message string) *AgentRun {
 		pendingApprovals:     make(map[string]pendingApproval),
 		processedToolCallIDs: make(map[string]bool),
 		approvalTimeout:      approvalTimeout,
-		contextManager:       NewAgentContext(a, message),
+		agentContext:         NewAgentContext(a, message),
 		Logger:               slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
 	}
 
 	// Copy agent.Documents to session.documents during initialization
 	if len(a.Documents) > 0 {
-		session.documents = make([]*document.Document, len(a.Documents))
-		copy(session.documents, a.Documents)
+		copy(run.agentContext.documents, a.Documents)
 	}
 
 	run.tools = run.addTools()
@@ -236,7 +228,6 @@ func (r *AgentRun) addTools() []AgentTool {
 				if v, ok := validationResult.Values.(map[string]any)["input"].(string); ok {
 					input = v
 				}
-				aa.Session = r.session
 				// Inherit Stream setting from parent if child agent doesn't have it explicitly set
 				if !aa.Stream && r.agent.Stream {
 					aa.Stream = true
@@ -387,7 +378,7 @@ func (r *AgentRun) runStopAction(act *stopAction) {
 		event := &ErrorEvent{
 			RunID:     r.id,
 			AgentName: r.agent.Name,
-			SessionID: r.session.ID,
+			SessionID: r.sessionID,
 			Err:       act.Error,
 		}
 		r.queueEvent(event)
@@ -452,7 +443,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 	event := &LLMCallEvent{
 		RunID:     r.id,
 		AgentName: r.agent.Name,
-		SessionID: r.session.ID,
+		SessionID: r.sessionID,
 		Message:   message,
 		Tools:     tools,
 	}
@@ -460,7 +451,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	var err error
 	var msgs []ai.Message
-	msgs, err = r.contextManager.BuildPrompt(r, r.currentConversationTurn.getCurrentMessages(), tools)
+	msgs, err = r.agentContext.BuildPrompt(r, r.currentConversationTurn.getCurrentMessages(), tools)
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
 		return
@@ -494,7 +485,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 			evalEvent := &EvalEvent{
 				RunID:     r.id,
 				AgentName: r.agent.Name,
-				SessionID: r.session.ID,
+				SessionID: r.sessionID,
 				Sequence:  r.llmCallCount,
 				Timestamp: callStart,
 				Duration:  time.Since(callStart),
@@ -515,7 +506,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 			evalEvent := &EvalEvent{
 				RunID:     r.id,
 				AgentName: r.agent.Name,
-				SessionID: r.session.ID,
+				SessionID: r.sessionID,
 				Sequence:  r.llmCallCount,
 				Timestamp: callStart,
 				Duration:  time.Since(callStart),
@@ -567,7 +558,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		RunID:            r.id,
 		EventID:          eventID,
 		AgentName:        r.agent.Name,
-		SessionID:        r.session.ID,
+		SessionID:        r.sessionID,
 		ToolName:         act.ToolName,
 		ValidationResult: act.ValidationResult,
 		ToolGroup:        act.Group,
@@ -695,7 +686,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 				event := &ToolResponseEvent{
 					RunID:      r.id,
 					AgentName:  r.agent.Name,
-					SessionID:  r.session.ID,
+					SessionID:  r.sessionID,
 					ToolCallID: response.ToolCallID,
 					ToolName:   response.ToolName,
 					Content:    response.Content,
@@ -710,7 +701,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 			event := &ContentEvent{
 				RunID:     r.id,
 				AgentName: r.agent.Name,
-				SessionID: r.session.ID,
+				SessionID: r.sessionID,
 				Content:   action.Group.aiMessage.Content,
 			}
 			r.queueEvent(event)
@@ -730,7 +721,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			event := &ThinkingEvent{
 				RunID:     r.id,
 				AgentName: r.agent.Name,
-				SessionID: r.session.ID,
+				SessionID: r.sessionID,
 				Thought:   msg.Think,
 			}
 			r.queueEvent(event)
@@ -740,7 +731,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			event := &ContentEvent{
 				RunID:     r.id,
 				AgentName: r.agent.Name,
-				SessionID: r.session.ID,
+				SessionID: r.sessionID,
 				Content:   msg.Content,
 			}
 			r.queueEvent(event)
@@ -798,7 +789,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 					event := &ToolResponseEvent{
 						RunID:      r.id,
 						AgentName:  r.agent.Name,
-						SessionID:  r.session.ID,
+						SessionID:  r.sessionID,
 						ToolCallID: response.ToolCallID,
 						ToolName:   response.ToolName,
 						Content:    response.Content,
@@ -813,7 +804,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 				event := &ContentEvent{
 					RunID:     r.id,
 					AgentName: r.agent.Name,
-					SessionID: r.session.ID,
+					SessionID: r.sessionID,
 					Content:   r.currentStreamGroup.aiMessage.Content,
 				}
 				r.queueEvent(event)

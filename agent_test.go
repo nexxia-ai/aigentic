@@ -358,8 +358,6 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 }
 
 func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
 
 	callCount := 0
 
@@ -417,7 +415,6 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 
 	// Coordinator agent that calls the child agent
 	coordinator := Agent{
-		Session:     session,
 		Model:       model,
 		Name:        "coordinator",
 		Description: "A coordinator that delegates tasks to child agents.",

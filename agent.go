@@ -18,7 +18,6 @@ type Agent struct {
 	Model      *ai.Model
 	Name       string
 	Agents     []Agent
-	Session    *Session
 	AgentTools []AgentTool
 
 	// Description should contain a description of the agent's role and capabilities.

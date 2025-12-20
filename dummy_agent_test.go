@@ -1,7 +1,6 @@
 package aigentic
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -810,8 +809,6 @@ func TestDummyTeamCoordination(t *testing.T) {
 	invoiceCreatorModel := ai.NewDummyModel(invoiceCreatorReplayFunc)
 
 	// Create a custom test that mimics TestTeamCoordination but uses our separate models
-	session := NewSession(context.Background())
-	// Sessions no longer have Trace field
 
 	// Subagents with their own models
 	lookup := Agent{
@@ -839,9 +836,8 @@ func TestDummyTeamCoordination(t *testing.T) {
 	}
 
 	coordinator := Agent{
-		Session: session,
-		Model:   coordinatorModel,
-		Name:    "coordinator",
+		Model: coordinatorModel,
+		Name:  "coordinator",
 		Description: "Coordinate a workflow to ensure an invoice exists for the requested company name and amount. " +
 			"Steps: 1) Call 'lookup' subagent with the company name. 2) If NOT_FOUND, call 'company_creator' to create it. " +
 			"3) Call 'invoice_creator' with the resolved company_id and the requested amount. " +

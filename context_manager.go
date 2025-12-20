@@ -35,8 +35,9 @@ type AgentContext struct {
 	UserTemplate   *template.Template
 
 	// Thread-safe memory storage
-	mutex    sync.RWMutex
-	memories []MemoryEntry
+	mutex     sync.RWMutex
+	memories  []MemoryEntry
+	documents []*document.Document
 }
 
 var _ ContextManager = &AgentContext{}
@@ -180,8 +181,8 @@ func (r *AgentContext) BuildPrompt(run *AgentRun, messages []ai.Message, tools [
 		msgs = append(msgs, ai.UserMessage{Role: ai.UserRole, Content: userContent})
 	}
 
-	// Add documents using shared function
-	msgs = append(msgs, addDocuments(run.session, r.agent)...)
+	// Add documents to the prompt
+	msgs = append(msgs, r.addDocuments(r.agent)...)
 
 	msgs = append(msgs, r.msgHistory...)
 	return msgs, nil
@@ -234,11 +235,11 @@ func createUserVariables(agent Agent, message string, run *AgentRun) map[string]
 	}
 }
 
-func addDocuments(session *Session, agent Agent) []ai.Message {
+func (r *AgentContext) addDocuments(agent Agent) []ai.Message {
 	var msgs []ai.Message
 
 	// Add document attachments as separate Resource messages
-	for _, doc := range session.documents {
+	for _, doc := range r.documents {
 		content, err := doc.Bytes()
 		if err != nil {
 			continue // skip

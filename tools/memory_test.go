@@ -12,11 +12,9 @@ import (
 
 func TestMemoryToolBasicUsage(t *testing.T) {
 	callCount := 0
-	session := aigentic.NewSession(context.Background())
 	agent := aigentic.Agent{
 		Name:        "test-agent",
 		Description: "Test agent with memory tool",
-		Session:     session,
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, toolList []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 			if callCount == 1 {
@@ -62,11 +60,9 @@ func TestMemoryToolBasicUsage(t *testing.T) {
 
 func TestMemoryToolDelete(t *testing.T) {
 	callCount := 0
-	session := aigentic.NewSession(context.Background())
 	agent := aigentic.Agent{
 		Name:        "test-agent",
 		Description: "Test agent with memory tool",
-		Session:     session,
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, toolList []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 			if callCount == 1 {
@@ -127,11 +123,9 @@ func TestMemoryToolDelete(t *testing.T) {
 
 func TestMemoryToolSystemPromptInjection(t *testing.T) {
 	callCount := 0
-	session := aigentic.NewSession(context.Background())
 	agent := aigentic.Agent{
 		Name:        "test-agent",
 		Description: "Test agent with memory context",
-		Session:     session,
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, toolList []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 			if callCount == 1 {
@@ -183,11 +177,9 @@ func TestMemoryToolSystemPromptInjection(t *testing.T) {
 
 func TestMemoryToolMultipleEntries(t *testing.T) {
 	callCount := 0
-	session := aigentic.NewSession(context.Background())
 	agent := aigentic.Agent{
 		Name:        "test-agent",
 		Description: "Test agent with multiple memory entries",
-		Session:     session,
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, toolList []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 			if callCount == 1 {
@@ -253,11 +245,9 @@ func TestMemoryToolMultipleEntries(t *testing.T) {
 
 func TestMemoryToolUpsert(t *testing.T) {
 	callCount := 0
-	session := aigentic.NewSession(context.Background())
 	agent := aigentic.Agent{
 		Name:        "test-agent",
 		Description: "Test agent with memory upsert",
-		Session:     session,
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, toolList []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 			if callCount == 1 {
@@ -325,13 +315,11 @@ func TestMemoryToolUpsert(t *testing.T) {
 }
 
 func TestMemoryToolSessionPersistence(t *testing.T) {
-	session := aigentic.NewSession(context.Background())
 	callCount := 0
 
 	agent := aigentic.Agent{
 		Name:        "test-agent",
 		Description: "Test agent with memory persistence",
-		Session:     session,
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, toolList []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 			if callCount == 1 {

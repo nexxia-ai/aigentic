@@ -37,7 +37,7 @@ func NewMemoryTool() run.AgentTool {
 			content := args["memory_content"].(string)
 
 			if description == "" && content == "" {
-				if err := agentRun.DeleteMemory(id); err != nil {
+				if err := agentRun.AgentContext().DeleteMemory(id); err != nil {
 					return &ai.ToolResult{
 						Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error deleting memory: %v", err)}},
 						Error:   true,
@@ -49,7 +49,7 @@ func NewMemoryTool() run.AgentTool {
 				}, nil
 			}
 
-			if err := agentRun.AddMemory(id, description, content, "session"); err != nil {
+			if err := agentRun.AgentContext().AddMemory(id, description, content, "session", agentRun.ID()); err != nil {
 				return &ai.ToolResult{
 					Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error updating memory: %v", err)}},
 					Error:   true,

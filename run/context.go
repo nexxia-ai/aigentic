@@ -181,7 +181,7 @@ func (r *AgentContext) createUserVariables(message string, run *AgentRun) map[st
 }
 
 func createSystemVariables(ac *AgentContext, tools []ai.Tool, run *AgentRun) map[string]interface{} {
-	memories := run.GetMemories()
+	memories := run.agentContext.GetMemories()
 	var filteredMemories []MemoryEntry
 	for _, mem := range memories {
 		if mem.Scope == "session" {

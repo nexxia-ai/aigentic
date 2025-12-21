@@ -90,21 +90,6 @@ func (r *AgentRun) Cancel() {
 	}
 }
 
-// AddMemory adds a memory entry or updates an existing one
-func (r *AgentRun) AddMemory(id, description, content, scope string) error {
-	return r.agentContext.AddMemory(id, description, content, scope, r.id)
-}
-
-// DeleteMemory removes a memory entry by ID
-func (r *AgentRun) DeleteMemory(id string) error {
-	return r.agentContext.DeleteMemory(id)
-}
-
-// GetMemories returns all memories in insertion order
-func (r *AgentRun) GetMemories() []MemoryEntry {
-	return r.agentContext.GetMemories()
-}
-
 // AddDocument adds a document to the conversation turn and optionally to the session
 func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope string) error {
 	if doc == nil {

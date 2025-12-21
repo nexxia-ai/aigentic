@@ -1,6 +1,7 @@
 package aigentic
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/google/uuid"
@@ -77,7 +78,7 @@ func (a Agent) Start(message string) (*run.AgentRun, error) {
 	if a.Name == "" {
 		a.Name = "noname_" + uuid.New().String()
 	}
-	ar := run.NewAgentRun(a.Name, a.Description, a.Instructions, message)
+	ar := run.NewAgentRun(a.Name, a.Description, a.Instructions)
 	ar.SetModel(a.Model)
 	ar.SetInterceptors(a.Interceptors)
 	ar.SetMaxLLMCalls(a.MaxLLMCalls)
@@ -94,7 +95,7 @@ func (a Agent) Start(message string) (*run.AgentRun, error) {
 	if a.ConversationHistory != nil {
 		ar.SetConversationHistory(a.ConversationHistory)
 	}
-	ar.Start()
+	ar.Start(context.Background(), message)
 	return ar, nil
 }
 

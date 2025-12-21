@@ -36,6 +36,10 @@ func NewAgentContext(id, description, instructions, userMsg string) *AgentContex
 	return cm
 }
 
+func (r *AgentContext) SetUserMessage(userMsg string) {
+	r.userMsg = userMsg
+}
+
 const DefaultSystemTemplate = `
 You are an autonomous agent working to complete a task.
 You have to consider all the information you were given and reason about the next step to take.

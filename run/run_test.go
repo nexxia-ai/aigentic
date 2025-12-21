@@ -97,7 +97,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			agentRun := NewAgentRun("test-streaming-agent", tt.description, "", "Test message")
+			agentRun := NewAgentRun("test-streaming-agent", tt.description, "")
 			agentRun.SetModel(tt.streamingModel)
 			agentRun.SetStreaming(true)
 			agentRun.SetTracer(newTestTracer())
@@ -123,7 +123,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 				}
 			}()
 
-			agentRun.runLLMCallAction("Test message", []AgentTool{})
+			agentRun.runLLMCallAction("Test message")
 
 			time.Sleep(100 * time.Millisecond)
 
@@ -163,7 +163,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 }
 
 func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
-	agentRun := NewAgentRun("test-non-streaming-agent", "Test non-streaming agent", "", "Test message")
+	agentRun := NewAgentRun("test-non-streaming-agent", "Test non-streaming agent", "")
 	agentRun.SetModel(ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{
 			Role:    ai.AssistantRole,
@@ -188,7 +188,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 		}
 	}()
 
-	agentRun.runLLMCallAction("Test message", []AgentTool{})
+	agentRun.runLLMCallAction("Test message")
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -199,7 +199,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 }
 
 func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
-	agentRun := NewAgentRun("test-tool-streaming-agent", "Test streaming agent with tool calls", "", "Test message")
+	agentRun := NewAgentRun("test-tool-streaming-agent", "Test streaming agent with tool calls", "")
 	agentRun.SetModel(ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{
 			Role: ai.AssistantRole,
@@ -237,7 +237,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 		}
 	}()
 
-	agentRun.runLLMCallAction("Test message", []AgentTool{})
+	agentRun.runLLMCallAction("Test message")
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -261,7 +261,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 }
 
 func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
-	agentRun := NewAgentRun("test-limited-agent", "Test agent with LLM call limit", "", "Test message")
+	agentRun := NewAgentRun("test-limited-agent", "Test agent with LLM call limit", "")
 	agentRun.SetModel(ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{
 			Role:    ai.AssistantRole,
@@ -280,9 +280,9 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 		}
 	}()
 
-	agentRun.runLLMCallAction("First call", []AgentTool{})
-	agentRun.runLLMCallAction("Second call", []AgentTool{})
-	agentRun.runLLMCallAction("Third call", []AgentTool{})
+	agentRun.runLLMCallAction("First call")
+	agentRun.runLLMCallAction("Second call")
+	agentRun.runLLMCallAction("Third call")
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -347,7 +347,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 		}, nil
 	})
 
-	agentRun := NewAgentRun("test-chunk-agent", "Test agent with controlled chunking", "", "Test chunking")
+	agentRun := NewAgentRun("test-chunk-agent", "Test agent with controlled chunking", "")
 	agentRun.SetModel(streamingModel)
 	agentRun.SetStreaming(true)
 	agentRun.SetTracer(newTestTracer())
@@ -362,7 +362,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 		}
 	}()
 
-	agentRun.runLLMCallAction("Test chunking", []AgentTool{})
+	agentRun.runLLMCallAction("Test chunking")
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -454,12 +454,12 @@ func TestToolApprovalTimeout(t *testing.T) {
 	approvalTimeout = time.Millisecond * 300
 	tickerInterval = time.Millisecond * 100
 
-	ar := NewAgentRun("timeout_test_agent", "Test agent for approval timeout functionality", "Use the test_approval_tool when requested.", "Please execute the test tool with action 'test_action'")
+	ar := NewAgentRun("timeout_test_agent", "Test agent for approval timeout functionality", "Use the test_approval_tool when requested.")
 	ar.SetModel(model)
 	ar.SetTools([]AgentTool{approvalTool})
 	ar.SetTracer(newTestTracer())
 	ar.approvalTimeout = approvalTimeout
-	ar.Start()
+	ar.Start(context.Background(), "Please execute the test tool with action 'test_action'")
 	defer func() {
 		select {
 		case <-ar.ctx.Done():

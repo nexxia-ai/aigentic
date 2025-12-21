@@ -1,0 +1,207 @@
+package run
+
+import (
+	"fmt"
+
+	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/event"
+)
+
+func (r *AgentRun) runLLMCallAction(message string) {
+
+	// Check LLM call limit before making any LLM call
+	if r.maxLLMCalls > 0 && r.llmCallCount >= r.maxLLMCalls {
+		err := fmt.Errorf("LLM call limit exceeded: %d calls (configured limit: %d)",
+			r.llmCallCount, r.maxLLMCalls)
+		r.queueAction(&stopAction{Error: err})
+		return
+	}
+	r.llmCallCount++ // Increment counter
+
+	// Get all tools from agent, sub-agents, and retrievers
+	allTools := make([]AgentTool, 0, len(r.tools)+len(r.subAgents))
+	allTools = append(allTools, r.tools...)
+	allTools = append(allTools, r.subAgents...)
+	for _, retriever := range r.retrievers {
+		allTools = append(allTools, retriever.ToTool())
+	}
+
+	// Clear processed tool call IDs and stream group for this new LLM call
+	r.processedToolCallIDs = make(map[string]bool)
+	r.currentStreamGroup = nil
+
+	tools := make([]ai.Tool, len(allTools))
+	for i, agentTool := range allTools {
+		tools[i] = agentTool.toTool(r)
+	}
+
+	event := &event.LLMCallEvent{
+		RunID:     r.id,
+		AgentName: r.AgentName(),
+		SessionID: r.sessionID,
+		Message:   message,
+		Tools:     tools,
+	}
+	r.queueEvent(event)
+
+	var err error
+	var msgs []ai.Message
+	msgs, err = r.agentContext.BuildPrompt(r.currentConversationTurn.GetCurrentMessages(), tools)
+	if err != nil {
+		r.queueAction(&stopAction{Error: err})
+		return
+	}
+
+	// Chain BeforeCall interceptors
+	currentMsgs := msgs
+	currentTools := tools
+	for _, interceptor := range r.interceptors {
+		currentMsgs, currentTools, err = interceptor.BeforeCall(r, currentMsgs, currentTools)
+		if err != nil {
+			r.queueAction(&stopAction{Error: fmt.Errorf("interceptor rejected: %w", err)})
+			return
+		}
+	}
+
+	var respMsg ai.AIMessage
+
+	switch r.streaming {
+	case true:
+		respMsg, err = r.model.Stream(r.ctx, currentMsgs, currentTools, func(chunk ai.AIMessage) error {
+			// Handle each chunk as a non-final message
+			r.handleAIMessage(chunk, true) // isChunk is true
+			return nil
+		})
+
+	default:
+		respMsg, err = r.model.Call(r.ctx, currentMsgs, currentTools)
+
+	}
+
+	if err != nil {
+		if r.trace != nil {
+			r.trace.RecordError(err)
+		}
+		r.queueAction(&stopAction{Error: err})
+		return
+	}
+
+	// Chain AfterCall interceptors
+	currentResp := respMsg
+	for _, interceptor := range r.interceptors {
+		currentResp, err = interceptor.AfterCall(r, currentMsgs, currentResp)
+		if err != nil {
+			r.queueAction(&stopAction{Error: fmt.Errorf("interceptor error: %w", err)})
+			return
+		}
+	}
+
+	r.handleAIMessage(currentResp, false)
+}
+
+// handleAIMessage handles the response from the LLM, whether it's a complete message or a chunk
+func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
+	// only fire events if not streaming or if this is a chunk in streaming.
+	// do not fire event if this is the last chunk (streaming) to prevent duplicate content
+	if !r.streaming || isChunk {
+		if msg.Think != "" {
+			event := &event.ThinkingEvent{
+				RunID:     r.id,
+				AgentName: r.AgentName(),
+				SessionID: r.sessionID,
+				Thought:   msg.Think,
+			}
+			r.queueEvent(event)
+		}
+
+		if msg.Content != "" {
+			event := &event.ContentEvent{
+				RunID:     r.id,
+				AgentName: r.AgentName(),
+				SessionID: r.sessionID,
+				Content:   msg.Content,
+			}
+			r.queueEvent(event)
+		}
+	}
+
+	// Process tool calls from chunks immediately for better UX, but track them to avoid duplicates
+	if isChunk {
+		if len(msg.ToolCalls) > 0 {
+			// Initialize stream group if this is the first chunk with tool calls
+			if r.currentStreamGroup == nil {
+				chunkMsg := ai.AIMessage{
+					Role:      msg.Role,
+					ToolCalls: msg.ToolCalls,
+				}
+				r.currentStreamGroup = &ToolCallGroup{
+					AIMessage: &chunkMsg,
+					Responses: make(map[string]ai.ToolMessage),
+				}
+			}
+			// Process tool calls using the shared group
+			r.processToolCallsFromChunk(msg.ToolCalls)
+		}
+		return
+	}
+
+	// this not a chunk, which means the model Call/Stream is complete
+	// add to history and fire tool calls
+	if len(msg.ToolCalls) == 0 {
+		r.currentConversationTurn.AddMessage(msg)
+		r.currentConversationTurn.Reply = msg
+		r.currentConversationTurn.Compact()
+		r.queueAction(&stopAction{Error: nil})
+		return
+	}
+
+	r.currentConversationTurn.AddMessage(msg)
+
+	// If we have a stream group from chunks, update it with the final message, otherwise create new group
+	if r.currentStreamGroup != nil {
+		r.currentStreamGroup.AIMessage = &msg
+		r.groupToolCalls(msg.ToolCalls, msg, r.currentStreamGroup)
+		// Check if all tool calls in the group are now completed (now that we have the final message)
+		if len(r.currentStreamGroup.Responses) == len(r.currentStreamGroup.AIMessage.ToolCalls) {
+			// add all tool responses and queue their events
+			for _, tc := range r.currentStreamGroup.AIMessage.ToolCalls {
+				if response, exists := r.currentStreamGroup.Responses[tc.ID]; exists {
+					r.currentConversationTurn.AddMessage(response)
+					var docs []*document.Document
+					for _, entry := range r.currentConversationTurn.Documents {
+						if entry.ToolID == tc.ID || entry.ToolID == "" {
+							docs = append(docs, entry.Document)
+						}
+					}
+					event := &event.ToolResponseEvent{
+						RunID:      r.id,
+						AgentName:  r.AgentName(),
+						SessionID:  r.sessionID,
+						ToolCallID: response.ToolCallID,
+						ToolName:   response.ToolName,
+						Content:    response.Content,
+						Documents:  docs,
+					}
+					r.queueEvent(event)
+				}
+			}
+
+			// Notify any content from the AI message
+			if r.currentStreamGroup.AIMessage.Content != "" {
+				event := &event.ContentEvent{
+					RunID:     r.id,
+					AgentName: r.AgentName(),
+					SessionID: r.sessionID,
+					Content:   r.currentStreamGroup.AIMessage.Content,
+				}
+				r.queueEvent(event)
+			}
+
+			r.queueAction(&llmCallAction{Message: r.userMessage})
+		}
+		r.currentStreamGroup = nil // clear after processing
+	} else {
+		r.groupToolCalls(msg.ToolCalls, msg, nil)
+	}
+}

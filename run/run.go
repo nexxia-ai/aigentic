@@ -2,13 +2,10 @@ package run
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
@@ -84,7 +81,7 @@ func (r *AgentRun) SetRetrievers(retrievers []Retriever) {
 	r.retrievers = retrievers
 }
 
-func NewAgentRun(name, description, instructions, message string) *AgentRun {
+func NewAgentRun(name, description, instructions string) *AgentRun {
 	runID := uuid.New().String()
 	sessionID := uuid.New().String()
 	runCtx, cancelFunc := context.WithCancel(context.Background())
@@ -93,7 +90,7 @@ func NewAgentRun(name, description, instructions, message string) *AgentRun {
 		return ai.AIMessage{}, fmt.Errorf("agent model is not set")
 	})
 
-	ac := ctxt.NewAgentContext(runID, description, instructions, message)
+	ac := ctxt.NewAgentContext(runID, description, instructions, "")
 	run := &AgentRun{
 		agentName:               name,
 		id:                      runID,
@@ -111,8 +108,8 @@ func NewAgentRun(name, description, instructions, message string) *AgentRun {
 		interceptors:            make([]Interceptor, 0),
 		tools:                   make([]AgentTool, 0),
 		streaming:               false,
-		currentConversationTurn: ctxt.NewConversationTurn(message, runID, "", ""),
 		Logger:                  slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With("agent", name),
+		currentConversationTurn: ctxt.NewConversationTurn("", runID, "", ""),
 	}
 
 	return run
@@ -182,7 +179,10 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 	return nil
 }
 
-func (r *AgentRun) Start() {
+func (r *AgentRun) Start(context context.Context, message string) {
+	r.currentConversationTurn = ctxt.NewConversationTurn(message, r.id, "", "")
+	r.agentContext.SetUserMessage(message)
+
 	// Add trace interceptor if present - this must be the last interceptor to capture the full response
 	if r.trace != nil {
 		r.interceptors = append(r.interceptors, r.trace)
@@ -228,7 +228,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			if v, ok := validationResult.Values.(map[string]any)["input"].(string); ok {
 				input = v
 			}
-			subRun := NewAgentRun(name, description, message, input)
+			subRun := NewAgentRun(name, description, message)
 			subRun.SetModel(model)
 			subRun.SetTools(tools)
 			subRun.trace = r.trace
@@ -239,7 +239,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 				subRun.SetStreaming(true)
 			}
 
-			subRun.Start()
+			subRun.Start(r.ctx, input)
 			content, err := subRun.Wait(0)
 
 			// Record sub-agent errors to trace
@@ -295,20 +295,6 @@ func (r *AgentRun) addTools() []AgentTool {
 	return tools
 }
 
-func (r *AgentRun) findTool(tcName string) *AgentTool {
-	for i := range r.tools {
-		if r.tools[i].Name == tcName {
-			return &r.tools[i]
-		}
-	}
-	for i := range r.subAgents {
-		if r.subAgents[i].Name == tcName {
-			return &r.subAgents[i]
-		}
-	}
-	return nil
-}
-
 func (r *AgentRun) Wait(d time.Duration) (string, error) {
 	content := ""
 	var err error
@@ -354,13 +340,7 @@ func (r *AgentRun) processLoop() {
 				return
 
 			case *llmCallAction:
-				allTools := make([]AgentTool, 0, len(r.tools)+len(r.subAgents))
-				allTools = append(allTools, r.tools...)
-				allTools = append(allTools, r.subAgents...)
-				for _, retriever := range r.retrievers {
-					allTools = append(allTools, retriever.ToTool())
-				}
-				r.runLLMCallAction(act.Message, allTools)
+				r.runLLMCallAction(act.Message)
 
 			case *toolResponseAction:
 				r.runToolResponseAction(act.request, act.response)
@@ -397,490 +377,6 @@ func (r *AgentRun) runStopAction(act *stopAction) {
 	}
 
 	r.stop()
-}
-
-func (r *AgentRun) checkApprovalTimeouts() {
-	now := time.Now()
-	for approvalID, approval := range r.pendingApprovals {
-		if now.After(approval.deadline) {
-			r.Logger.Error("approval timed out", "approvalID", approvalID, "deadline", approval.deadline)
-			delete(r.pendingApprovals, approvalID)
-			r.queueAction(
-				&toolResponseAction{
-					request:  &toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ValidationResult: approval.ValidationResult, Group: approval.Group},
-					response: fmt.Sprintf("approval timed out for tool: %s", approval.Tool.Name),
-				})
-		}
-	}
-}
-
-func (r *AgentRun) runApprovalAction(act *approvalAction) {
-	approval, ok := r.pendingApprovals[act.ApprovalID]
-	if !ok {
-		r.Logger.Error("invalid approval ID", "approvalID", act.ApprovalID)
-		return
-	}
-	delete(r.pendingApprovals, act.ApprovalID)
-
-	if act.Approved {
-		r.queueAction(&toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ValidationResult: approval.ValidationResult, Group: approval.Group})
-		return
-	}
-	r.queueAction(&toolResponseAction{
-		request:  &toolCallAction{ToolCallID: approval.ToolCallID, ToolName: approval.Tool.Name, ValidationResult: approval.ValidationResult, Group: approval.Group},
-		response: fmt.Sprintf("approval denied for tool: %s", approval.Tool.Name),
-	})
-}
-
-func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
-	// Check limit before making any LLM call
-	if r.maxLLMCalls > 0 && r.llmCallCount >= r.maxLLMCalls {
-		err := fmt.Errorf("LLM call limit exceeded: %d calls (configured limit: %d)",
-			r.llmCallCount, r.maxLLMCalls)
-		r.queueAction(&stopAction{Error: err})
-		return
-	}
-	r.llmCallCount++ // Increment counter
-
-	// Clear processed tool call IDs and stream group for this new LLM call
-	r.processedToolCallIDs = make(map[string]bool)
-	r.currentStreamGroup = nil
-
-	tools := make([]ai.Tool, len(agentTools))
-	for i, agentTool := range agentTools {
-		tools[i] = agentTool.toTool(r)
-	}
-
-	event := &event.LLMCallEvent{
-		RunID:     r.id,
-		AgentName: r.AgentName(),
-		SessionID: r.sessionID,
-		Message:   message,
-		Tools:     tools,
-	}
-	r.queueEvent(event)
-
-	var err error
-	var msgs []ai.Message
-	msgs, err = r.agentContext.BuildPrompt(r.currentConversationTurn.GetCurrentMessages(), tools)
-	if err != nil {
-		r.queueAction(&stopAction{Error: err})
-		return
-	}
-
-	// Chain BeforeCall interceptors
-	currentMsgs := msgs
-	currentTools := tools
-	for _, interceptor := range r.interceptors {
-		currentMsgs, currentTools, err = interceptor.BeforeCall(r, currentMsgs, currentTools)
-		if err != nil {
-			r.queueAction(&stopAction{Error: fmt.Errorf("interceptor rejected: %w", err)})
-			return
-		}
-	}
-
-	var respMsg ai.AIMessage
-
-	switch r.streaming {
-	case true:
-		respMsg, err = r.model.Stream(r.ctx, currentMsgs, currentTools, func(chunk ai.AIMessage) error {
-			// Handle each chunk as a non-final message
-			r.handleAIMessage(chunk, true) // isChunk is true
-			return nil
-		})
-
-	default:
-		respMsg, err = r.model.Call(r.ctx, currentMsgs, currentTools)
-
-	}
-
-	if err != nil {
-		if r.trace != nil {
-			r.trace.RecordError(err)
-		}
-		r.queueAction(&stopAction{Error: err})
-		return
-	}
-
-	// Chain AfterCall interceptors
-	currentResp := respMsg
-	for _, interceptor := range r.interceptors {
-		currentResp, err = interceptor.AfterCall(r, currentMsgs, currentResp)
-		if err != nil {
-			r.queueAction(&stopAction{Error: fmt.Errorf("interceptor error: %w", err)})
-			return
-		}
-	}
-
-	r.handleAIMessage(currentResp, false)
-}
-
-func (r *AgentRun) runToolCallAction(act *toolCallAction) {
-	tool := r.findTool(act.ToolName)
-	if tool == nil {
-		r.queueAction(&toolResponseAction{
-			request:  act,
-			response: fmt.Sprintf("tool not found: %s", act.ToolName),
-		})
-		return
-	}
-
-	eventID := uuid.New().String()
-	toolEvent := &event.ToolEvent{
-		RunID:            r.id,
-		EventID:          eventID,
-		AgentName:        r.AgentName(),
-		SessionID:        r.sessionID,
-		ToolName:         act.ToolName,
-		ValidationResult: act.ValidationResult,
-		ToolGroup:        act.Group,
-	}
-	r.queueEvent(toolEvent) // send after adding to the map
-
-	currentValidationResult := act.ValidationResult
-	var err error
-	for _, interceptor := range r.interceptors {
-		currentValidationResult, err = interceptor.BeforeToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult)
-		if err != nil {
-			errMsg := fmt.Sprintf("interceptor rejected tool call: %v", err)
-			r.queueAction(&toolResponseAction{request: act, response: errMsg})
-			return
-		}
-	}
-
-	result, err := tool.call(r, currentValidationResult)
-	if err != nil {
-		if r.trace != nil {
-			r.trace.RecordError(err)
-		}
-		errMsg := fmt.Sprintf("tool execution error: %v", err)
-		r.queueAction(&toolResponseAction{request: act, response: errMsg})
-		return
-	}
-
-	currentResult := result
-	for _, interceptor := range r.interceptors {
-		currentResult, err = interceptor.AfterToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult, currentResult)
-		if err != nil {
-			errMsg := fmt.Sprintf("interceptor error after tool call: %v", err)
-			if r.trace != nil {
-				r.trace.RecordError(err)
-			}
-			r.queueAction(&toolResponseAction{request: act, response: errMsg})
-			return
-		}
-	}
-
-	response := formatToolResponse(currentResult)
-
-	if currentResult != nil && currentResult.Error {
-		toolErr := fmt.Errorf("tool %s reported error", act.ToolName)
-		if response != "" {
-			toolErr = fmt.Errorf("tool %s reported error: %s", act.ToolName, response)
-		}
-		if r.trace != nil {
-			r.trace.RecordError(toolErr)
-		}
-	}
-
-	r.queueAction(&toolResponseAction{request: act, response: response})
-}
-
-func formatToolResponse(result *ai.ToolResult) string {
-	if result == nil || len(result.Content) == 0 {
-		return ""
-	}
-
-	parts := make([]string, 0, len(result.Content))
-	for _, item := range result.Content {
-		segment := stringifyToolContent(item.Content)
-		if segment == "" {
-			continue
-		}
-		if item.Type != "" && item.Type != "text" {
-			segment = fmt.Sprintf("[%s] %s", item.Type, segment)
-		}
-		parts = append(parts, segment)
-	}
-
-	return strings.Join(parts, "\n")
-}
-
-func stringifyToolContent(content any) string {
-	switch v := content.(type) {
-	case nil:
-		return ""
-	case string:
-		return v
-	case []byte:
-		if utf8.Valid(v) {
-			return string(v)
-		}
-		return fmt.Sprintf("0x%x", v)
-	case fmt.Stringer:
-		return v.String()
-	default:
-		encoded, err := json.Marshal(v)
-		if err != nil {
-			return fmt.Sprintf("%v", v)
-		}
-		return string(encoded)
-	}
-}
-
-func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string) {
-	toolMsg := ai.ToolMessage{
-		Role:       ai.ToolRole,
-		Content:    content,
-		ToolCallID: action.ToolCallID,
-		ToolName:   action.ToolName,
-	}
-	action.Group.Responses[action.ToolCallID] = toolMsg
-
-	// Don't check completion if we're still streaming (will be checked when final message arrives)
-	if r.currentStreamGroup != nil && r.currentStreamGroup == action.Group {
-		return
-	}
-
-	// Check if all tool calls in this group are completed
-	if len(action.Group.Responses) == len(action.Group.AIMessage.ToolCalls) {
-
-		// add all tool responses and queue their events
-		for _, tc := range action.Group.AIMessage.ToolCalls {
-			if response, exists := action.Group.Responses[tc.ID]; exists {
-				r.currentConversationTurn.AddMessage(response)
-				var docs []*document.Document
-				for _, entry := range r.currentConversationTurn.Documents {
-					if entry.ToolID == tc.ID || entry.ToolID == "" {
-						docs = append(docs, entry.Document)
-					}
-				}
-				event := &event.ToolResponseEvent{
-					RunID:      r.id,
-					AgentName:  r.AgentName(),
-					SessionID:  r.sessionID,
-					ToolCallID: response.ToolCallID,
-					ToolName:   response.ToolName,
-					Content:    response.Content,
-					Documents:  docs,
-				}
-				r.queueEvent(event)
-			}
-		}
-
-		// Notify any content from the AI message
-		if action.Group.AIMessage.Content != "" {
-			event := &event.ContentEvent{
-				RunID:     r.id,
-				AgentName: r.AgentName(),
-				SessionID: r.sessionID,
-				Content:   action.Group.AIMessage.Content,
-			}
-			r.queueEvent(event)
-		}
-
-		r.queueAction(&llmCallAction{Message: r.userMessage})
-	}
-}
-
-// handleAIMessage handles the response from the LLM, whether it's a complete message or a chunk
-func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
-	// only fire events if not streaming or if this is a chunk in streaming.
-	// do not fire event if this is the last chunk (streaming) to prevent duplicate content
-	if !r.streaming || isChunk {
-		if msg.Think != "" {
-			event := &event.ThinkingEvent{
-				RunID:     r.id,
-				AgentName: r.AgentName(),
-				SessionID: r.sessionID,
-				Thought:   msg.Think,
-			}
-			r.queueEvent(event)
-		}
-
-		if msg.Content != "" {
-			event := &event.ContentEvent{
-				RunID:     r.id,
-				AgentName: r.AgentName(),
-				SessionID: r.sessionID,
-				Content:   msg.Content,
-			}
-			r.queueEvent(event)
-		}
-	}
-
-	// Process tool calls from chunks immediately for better UX, but track them to avoid duplicates
-	if isChunk {
-		if len(msg.ToolCalls) > 0 {
-			// Initialize stream group if this is the first chunk with tool calls
-			if r.currentStreamGroup == nil {
-				chunkMsg := ai.AIMessage{
-					Role:      msg.Role,
-					ToolCalls: msg.ToolCalls,
-				}
-				r.currentStreamGroup = &ToolCallGroup{
-					AIMessage: &chunkMsg,
-					Responses: make(map[string]ai.ToolMessage),
-				}
-			}
-			// Process tool calls using the shared group
-			r.processToolCallsFromChunk(msg.ToolCalls)
-		}
-		return
-	}
-
-	// this not a chunk, which means the model Call/Stream is complete
-	// add to history and fire tool calls
-	if len(msg.ToolCalls) == 0 {
-		r.currentConversationTurn.AddMessage(msg)
-		r.currentConversationTurn.Reply = msg
-		r.currentConversationTurn.Compact()
-		r.queueAction(&stopAction{Error: nil})
-		return
-	}
-
-	r.currentConversationTurn.AddMessage(msg)
-
-	// If we have a stream group from chunks, update it with the final message, otherwise create new group
-	if r.currentStreamGroup != nil {
-		r.currentStreamGroup.AIMessage = &msg
-		r.groupToolCalls(msg.ToolCalls, msg, r.currentStreamGroup)
-		// Check if all tool calls in the group are now completed (now that we have the final message)
-		if len(r.currentStreamGroup.Responses) == len(r.currentStreamGroup.AIMessage.ToolCalls) {
-			// add all tool responses and queue their events
-			for _, tc := range r.currentStreamGroup.AIMessage.ToolCalls {
-				if response, exists := r.currentStreamGroup.Responses[tc.ID]; exists {
-					r.currentConversationTurn.AddMessage(response)
-					var docs []*document.Document
-					for _, entry := range r.currentConversationTurn.Documents {
-						if entry.ToolID == tc.ID || entry.ToolID == "" {
-							docs = append(docs, entry.Document)
-						}
-					}
-					event := &event.ToolResponseEvent{
-						RunID:      r.id,
-						AgentName:  r.AgentName(),
-						SessionID:  r.sessionID,
-						ToolCallID: response.ToolCallID,
-						ToolName:   response.ToolName,
-						Content:    response.Content,
-						Documents:  docs,
-					}
-					r.queueEvent(event)
-				}
-			}
-
-			// Notify any content from the AI message
-			if r.currentStreamGroup.AIMessage.Content != "" {
-				event := &event.ContentEvent{
-					RunID:     r.id,
-					AgentName: r.AgentName(),
-					SessionID: r.sessionID,
-					Content:   r.currentStreamGroup.AIMessage.Content,
-				}
-				r.queueEvent(event)
-			}
-
-			r.queueAction(&llmCallAction{Message: r.userMessage})
-		}
-		r.currentStreamGroup = nil // clear after processing
-	} else {
-		r.groupToolCalls(msg.ToolCalls, msg, nil)
-	}
-}
-
-func (r *AgentRun) processToolCall(tc ai.ToolCall, group *ToolCallGroup) bool {
-	if r.processedToolCallIDs[tc.ID] {
-		return false
-	}
-	r.processedToolCallIDs[tc.ID] = true
-
-	var args map[string]interface{}
-	if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
-		if r.trace != nil {
-			r.trace.RecordError(err)
-		}
-		r.queueAction(&toolResponseAction{
-			request: &toolCallAction{
-				ToolCallID:       tc.ID,
-				ToolName:         tc.Name,
-				ValidationResult: event.ValidationResult{Values: args},
-				Group:            group,
-			},
-			response: fmt.Sprintf("invalid tool parameters: %v", err),
-		})
-		return false
-	}
-
-	tool := r.findTool(tc.Name)
-	if tool == nil {
-		r.queueAction(&toolResponseAction{
-			request:  &toolCallAction{ToolName: tc.Name, ValidationResult: event.ValidationResult{Values: args}, Group: group},
-			response: fmt.Sprintf("tool not found: %s", tc.Name),
-		})
-		return false
-	}
-
-	values, err := tool.validateInput(r, args)
-	if err != nil {
-		r.queueAction(&toolResponseAction{
-			request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: event.ValidationResult{Values: args}, Group: group},
-			response: fmt.Sprintf("invalid tool parameters: %v", err),
-		})
-		return false
-	}
-
-	if tool.RequireApproval {
-		approvalID := uuid.New().String()
-		r.pendingApprovals[approvalID] = pendingApproval{
-			ApprovalID:       approvalID,
-			Tool:             tool,
-			ToolCallID:       tc.ID,
-			ValidationResult: values,
-			Group:            group,
-			deadline:         time.Now().Add(r.approvalTimeout),
-		}
-		approvalEvent := &event.ApprovalEvent{
-			RunID:            r.id,
-			ApprovalID:       approvalID,
-			ToolName:         tc.Name,
-			ValidationResult: values,
-		}
-		r.queueEvent(approvalEvent)
-		return true
-	}
-
-	r.queueAction(&toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: values, Group: group})
-	return false
-}
-
-// processToolCallsFromChunk processes tool calls from a streaming chunk using the shared stream group
-func (r *AgentRun) processToolCallsFromChunk(toolCalls []ai.ToolCall) {
-	for _, tc := range toolCalls {
-		if r.processToolCall(tc, r.currentStreamGroup) {
-			return
-		}
-	}
-}
-
-// groupToolCalls processes a slice of tool calls and queues the appropriate actions
-func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, existingGroup *ToolCallGroup) {
-	var group *ToolCallGroup
-	if existingGroup != nil {
-		group = existingGroup
-		group.AIMessage = &msg
-	} else {
-		group = &ToolCallGroup{
-			AIMessage: &msg,
-			Responses: make(map[string]ai.ToolMessage),
-		}
-	}
-
-	for _, tc := range toolCalls {
-		if r.processToolCall(tc, group) {
-			return
-		}
-	}
 }
 
 func (r *AgentRun) queueEvent(event event.Event) {

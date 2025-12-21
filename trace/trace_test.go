@@ -10,7 +10,7 @@ import (
 )
 
 func createTestAgentRun(agentName, modelName string) *run.AgentRun {
-	a := run.NewAgentRun("testAgent", "", "", "")
+	a := run.NewAgentRun("testAgent", "", "")
 	a.SetModel(&ai.Model{ModelName: modelName})
 	return a
 }

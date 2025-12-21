@@ -72,7 +72,7 @@ func WrapTool(tool ai.Tool) AgentTool {
 //	    Expression string `json:"expression" description:"Mathematical expression to evaluate"`
 //	}
 //
-//	tool := aigentic.NewTool(
+//	tool := NewTool(
 //	    "calculator",
 //	    "Performs mathematical calculations",
 //	    func(run *AgentRun, input CalculatorInput) (string, error) {

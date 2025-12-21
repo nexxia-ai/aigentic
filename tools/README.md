@@ -4,7 +4,7 @@ This directory contains tools designed to work with the `aigentic.Agent` type. A
 
 ## Available Tools
 
-1. **MemoryTool** (`memory.go`) - Stores and manages persistent memory entries at the session level
+1. **MemoryTool** (`memory.go`) - Stores and manages persistent memory entries
 2. **ReadFileTool** (`readfile.go`) - Reads files from a specified store
 3. **WriteFileTool** (`writefile.go`) - Writes files to a specified store
 4. **PythonSandboxTool** (`pythonsandbox.go`) - Executes Python code in a sandboxed environment
@@ -14,7 +14,7 @@ This directory contains tools designed to work with the `aigentic.Agent` type. A
 The MemoryTool provides a single `update_memory` tool that allows the LLM to store, update, and delete memory entries.
 
 **Key Features:**
-- **Session-scoped**: All memories are stored at the session level and persist across multiple agent runs
+- **Persistent**: Memories persist across multiple agent runs with the same agent instance
 - **Automatic injection**: Memories are automatically included in the system prompt for every LLM call
 - **Upsert operation**: Calling `update_memory` with an existing ID updates that memory entry
 - **Insertion order**: Memories maintain the order in which they were created
@@ -27,9 +27,7 @@ The MemoryTool provides a single `update_memory` tool that allows the LLM to sto
 
 **Example Usage:**
 ```go
-session := aigentic.NewSession(context.Background())
 agent := aigentic.Agent{
-    Session:    session,
     AgentTools: []aigentic.AgentTool{tools.NewMemoryTool()},
 }
 
@@ -37,7 +35,7 @@ agent := aigentic.Agent{
 agent.Execute("Remember that my favorite color is blue")
 ```
 
-Memories are stored in the session and automatically injected into the system prompt, so the LLM always has access to them without needing explicit retrieval operations.
+Memories are automatically injected into the system prompt, so the LLM always has access to them without needing explicit retrieval operations.
 
 ## Using Tools with Agents
 
@@ -113,7 +111,6 @@ Execute func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error)
 
 The `AgentRun` parameter provides access to:
 - Agent configuration
-- Session state
 - Memory
 - Trace information
 - Other agent context
@@ -122,19 +119,21 @@ For simple tests, you can pass an empty `&aigentic.AgentRun{}`.
 
 ## Creating New Agent Tools
 
-Use the `aigentic.NewTool` helper function:
+Use the `run.NewTool` helper function:
 
 ```go
+import "github.com/nexxia-ai/aigentic/run"
+
 func NewMyTool() aigentic.AgentTool {
     type MyToolInput struct {
         Param1 string `json:"param1" description:"Description of param1"`
         Param2 int    `json:"param2,omitempty" description:"Optional param2"`
     }
 
-    return aigentic.NewTool(
+    return run.NewTool(
         "my_tool",
         "Description of what my tool does",
-        func(run *aigentic.AgentRun, input MyToolInput) (string, error) {
+        func(run *run.AgentRun, input MyToolInput) (string, error) {
             // Tool logic here
             // Return (output_string, error)
             return fmt.Sprintf("Processed: %s", input.Param1), nil
@@ -143,7 +142,7 @@ func NewMyTool() aigentic.AgentTool {
 }
 ```
 
-The `aigentic.NewTool` function:
+The `run.NewTool` function:
 - Auto-generates JSON schema from your input struct
 - Handles parameter marshaling
 - Wraps your simple `func(*AgentRun, T) (string, error)` into the full `AgentTool` interface
@@ -161,7 +160,7 @@ All tools have comprehensive test coverage:
   - System prompt injection
   - Multiple memory entries
   - Upsert operations (update existing memories)
-  - Session persistence across runs
+  - Memory persistence across runs
 - **readfile_test.go** (13 tests + 1 benchmark) - Comprehensive tests for file reading
   - Schema validation
   - Successful reads (text, multiline, empty, large files)
@@ -212,7 +211,7 @@ If you encounter build errors related to dependencies, the tool code itself is c
 ## Tool Migration Notes
 
 All tools were migrated from `ai.Tool` to `aigentic.AgentTool` to:
-- Support agent-specific context (session, memory, trace)
+- Support agent-specific context (memory, trace)
 - Enable approval workflows
 - Provide validation capabilities
 - Simplify tool creation with auto-schema generation

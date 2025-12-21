@@ -27,7 +27,7 @@ The declarative approach means you focus on agent configuration and event handli
 - **🛠️ Tool Integration** - Custom tools (including MCP) with validation and approval workflows
 - **📄 Document Support** - Multi-modal document processing (PDF, images, text)
 - **👥 Multi-Agent Teams** - Coordinated agent collaboration
-- **💾 Persistent Memory** - Context retention across sessions
+- **💾 Persistent Memory** - Context retention across agent runs
 - **🔍 Built-in Tracing** - Comprehensive execution monitoring
 - **⚡ Event-Driven** - Real-time progress updates and user interaction
 - **🔒 Human-in-the-Loop** - Approval workflows for sensitive operations
@@ -118,18 +118,20 @@ go run github.com/nexxia-ai/aigentic-examples/streaming@latest
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/tools)
 
-Use `aigentic.NewTool()` for type-safe tools with automatic JSON schema generation:
+Use `run.NewTool()` for type-safe tools with automatic JSON schema generation:
 
 ```go
+import "github.com/nexxia-ai/aigentic/run"
+
 func createCalculatorTool() aigentic.AgentTool {
     type CalculatorInput struct {
         Expression string `json:"expression" description:"Mathematical expression to evaluate"`
     }
 
-    return aigentic.NewTool(
+    return run.NewTool(
         "calculator",
         "Performs mathematical calculations",
-        func(run *aigentic.AgentRun, input CalculatorInput) (string, error) {
+        func(run *run.AgentRun, input CalculatorInput) (string, error) {
             result := evaluateExpression(input.Expression)
             return fmt.Sprintf("Result: %v", result), nil
         },
@@ -159,9 +161,11 @@ go run github.com/nexxia-ai/aigentic-examples/tools@latest
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/approval)
 
-To enable approval for tools, create the tool with `aigentic.NewTool()` and set `RequireApproval: true`. This will generate an `ApprovalEvent` in the event stream.
+To enable approval for tools, create the tool with `run.NewTool()` and set `RequireApproval: true`. This will generate an `ApprovalEvent` in the event stream.
 
 ```go
+import "github.com/nexxia-ai/aigentic/run"
+
 func createSendEmailTool() aigentic.AgentTool {
     type SendEmailInput struct {
         To      string `json:"to" description:"Email recipient address"`
@@ -169,10 +173,10 @@ func createSendEmailTool() aigentic.AgentTool {
         Body    string `json:"body" description:"Email body content"`
     }
 
-    emailTool := aigentic.NewTool(
+    emailTool := run.NewTool(
         "send_email",
         "Sends an email to a recipient with subject and body. Requires approval before sending.",
-        func(run *aigentic.AgentRun, input SendEmailInput) (string, error) {
+        func(run *run.AgentRun, input SendEmailInput) (string, error) {
             return fmt.Sprintf("Email sent to %s", input.To), nil
         },
     )
@@ -303,27 +307,23 @@ go run github.com/nexxia-ai/aigentic-examples/multi-agent@latest
 
 **→ [Explore all examples](https://github.com/nexxia-ai/aigentic-examples)** for MCP integration, memory systems, document processing, and production-ready patterns.
 
-### Memory and Sessions
+### Memory
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/memory)
 
-Use sessions to share context across multiple agent runs, and enable memory tools for persistent context:
+Enable memory tools for persistent context across agent runs:
 
 ```go
 import (
-    "context"
     "github.com/nexxia-ai/aigentic"
     "github.com/nexxia-ai/aigentic/tools"
 )
-
-session := aigentic.NewSession(context.Background())
 
 agent := aigentic.Agent{
     Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
     Name:         "PersonalAssistant",
     Description:  "A personal assistant that remembers user preferences",
     Instructions: "Remember user preferences and context using the memory tools.",
-    Session:      session,                                  // Shared session across conversations
     AgentTools:   []aigentic.AgentTool{tools.NewMemoryTool()}, // Enable memory tools
 }
 
@@ -338,7 +338,7 @@ The memory system provides a single tool that the agent can use:
 - `update_memory` - Store or update memory entries. Set both description and content to empty strings to delete.
 
 **How Memory Works:**
-- Memories are stored at the session level and persist across multiple agent runs
+- Memories persist across multiple agent runs with the same agent instance
 - All memories are automatically injected into the system prompt for every LLM call
 - The agent can use `update_memory` to store information with an ID, description, and content
 - To update an existing memory, call `update_memory` with the same ID
@@ -350,30 +350,6 @@ The LLM automatically decides when to use the memory tool based on your instruct
 **Run this example:**
 ```bash
 go run github.com/nexxia-ai/aigentic-examples/memory@latest
-```
-
-### Sharing Memory Across Agents
-
-Create a shared session and memory tools to enable multiple agents to access the same memory:
-
-```go
-session := aigentic.NewSession(context.Background())
-
-agent1 := aigentic.Agent{
-    Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Session:      session,
-    AgentTools:   []aigentic.AgentTool{tools.NewMemoryTool()},
-}
-
-agent2 := aigentic.Agent{
-    Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Session:      session, // Same session
-    AgentTools:   []aigentic.AgentTool{tools.NewMemoryTool()}, // Same memory tools
-}
-
-// Both agents can access the same session memory
-agent1.Execute("Save my preference: I like coffee")
-agent2.Execute("What's my preference?") // Agent2 can access what Agent1 saved
 ```
 
 ### Conversation History
@@ -537,7 +513,7 @@ agent := aigentic.Agent{
 }
 ```
 
-Create custom tools using `aigentic.NewTool()` for type-safe tool definitions with automatic schema generation.
+Create custom tools using `run.NewTool()` for type-safe tool definitions with automatic schema generation.
 
 ---
 

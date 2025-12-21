@@ -333,13 +333,13 @@ func TestPythonSandbox_ToolIntegration(t *testing.T) {
 	// Test using the tool through the AgentTool interface
 	tool := NewPythonSandboxTool()
 
-	// Test AgentRun is passed (matches aigentic.NewTool pattern)
+	// Test AgentRun is passed (matches run.NewTool pattern)
 	type PythonSandboxInput struct {
 		Code    string `json:"code" description:"Python code to execute"`
 		Timeout int    `json:"timeout,omitempty" description:"Timeout in seconds"`
 	}
 
-	// Simulate what aigentic.NewTool's Execute function does
+	// Simulate what run.NewTool's Execute function does
 	args := map[string]interface{}{
 		"code": "print('Integration test')",
 	}

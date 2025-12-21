@@ -1,4 +1,4 @@
-package aigentic
+package trace
 
 import (
 	"os"
@@ -16,18 +16,13 @@ func createTestAgentRun(agentName, modelName string) *run.AgentRun {
 }
 
 func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
-	// Create a temporary trace file
 	tempDir := t.TempDir()
 
-	// Create tracer with custom directory
-	tracer := run.NewTracer(run.TraceConfig{Directory: tempDir})
-	trace := tracer.NewTraceRun()
+	trace := NewTracer(TraceConfig{Directory: tempDir})
 	defer trace.Close()
 
-	// Create test AgentRun
 	run := createTestAgentRun("test-agent", "test-model")
 
-	// Create test messages including a ResourceMessage
 	messages := []ai.Message{
 		ai.UserMessage{
 			Role:    ai.UserRole,
@@ -44,27 +39,24 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 		},
 	}
 
-	// Call BeforeCall (implements Interceptor)
 	_, _, err := trace.BeforeCall(run, messages, nil)
 	if err != nil {
 		t.Fatalf("BeforeCall failed: %v", err)
 	}
 
-	// Read the trace file content
-	content, err := os.ReadFile(trace.Filepath())
+	traceRun := trace.(*TraceRun)
+	content, err := os.ReadFile(traceRun.Filepath())
 	if err != nil {
 		t.Fatalf("Failed to read trace file: %v", err)
 	}
 
 	contentStr := string(content)
 
-	// Check that ResourceMessage was logged correctly
 	expectedResourceLog := "resource: test-document.pdf"
 	if !strings.Contains(contentStr, expectedResourceLog) {
 		t.Errorf("Expected trace to contain '%s', but got: %s", expectedResourceLog, contentStr)
 	}
 
-	// Check that other messages were logged normally
 	if !strings.Contains(contentStr, "Hello, world!") {
 		t.Error("Expected trace to contain user message content")
 	}
@@ -77,18 +69,13 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 }
 
 func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
-	// Create a temporary trace file
 	tempDir := t.TempDir()
 
-	// Create tracer with custom directory
-	tracer := run.NewTracer(run.TraceConfig{Directory: tempDir})
-	trace := tracer.NewTraceRun()
+	trace := NewTracer(TraceConfig{Directory: tempDir})
 	defer trace.Close()
 
-	// Create test AgentRun
 	run := createTestAgentRun("test-agent", "test-model")
 
-	// Create a ResourceMessage with content
 	messages := []ai.Message{
 		ai.ResourceMessage{
 			Role:     ai.UserRole,
@@ -98,21 +85,19 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 		},
 	}
 
-	// Call BeforeCall (implements Interceptor)
 	_, _, err := trace.BeforeCall(run, messages, nil)
 	if err != nil {
 		t.Fatalf("BeforeCall failed: %v", err)
 	}
 
-	// Read the trace file content
-	content, err := os.ReadFile(trace.Filepath())
+	traceRun := trace.(*TraceRun)
+	content, err := os.ReadFile(traceRun.Filepath())
 	if err != nil {
 		t.Fatalf("Failed to read trace file: %v", err)
 	}
 
 	contentStr := string(content)
 
-	// Check that ResourceMessage was logged with correct content length
 	expectedResourceLog := "resource: large-image.png (content length: 34)"
 	if !strings.Contains(contentStr, expectedResourceLog) {
 		t.Errorf("Expected trace to contain '%s', but got: %s", expectedResourceLog, contentStr)

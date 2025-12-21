@@ -53,7 +53,7 @@ type Agent struct {
 	DocumentReferences []*document.Document
 
 	// Tracer defines the trace factory for the agent.
-	// Set "Tracer: aigentic.NewTracer()" to create trace files for each run.
+	// Set "Tracer: trace.NewTracer()" to create trace files for each run.
 	// Each run gets its own independent trace file.
 	Tracer run.Trace
 

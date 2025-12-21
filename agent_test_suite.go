@@ -11,6 +11,7 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
+	"github.com/nexxia-ai/aigentic/trace"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -549,7 +550,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
-		Tracer: run.NewTracer(),
+		Tracer: trace.NewTracer(),
 		// LogLevel: slog.LevelDebug,
 	}
 
@@ -692,7 +693,7 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 		},
 	}
 
-	tracer := run.NewTracer()
+	tracer := trace.NewTracer()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := Agent{
@@ -751,7 +752,7 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		Return the final names as received from the last expert. do not add any additional text or commentary.`,
 		Model:  model,
 		Agents: experts,
-		Tracer: run.NewTracer(),
+		Tracer: trace.NewTracer(),
 	}
 
 	agentRun, err := coordinator.Start("call the names of expert1, expert2 and expert3 and return them in order, do not add any additional text or commentary.")
@@ -782,7 +783,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
 		AgentTools:   []run.AgentTool{NewLookupCompanyNumberTool(&counter)},
-		Tracer:       run.NewTracer(),
+		Tracer:       trace.NewTracer(),
 	}
 
 	// Define multiple sequential runs
@@ -1089,7 +1090,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 			"CRITICAL: Execute step 1, then step 2, then step 3, etc. - NEVER execute multiple steps simultaneously.",
 		AgentTools: []run.AgentTool{newMemoryTool()},
 		Agents:     []Agent{lookupCompany, lookupSupplier},
-		Tracer:     run.NewTracer(),
+		Tracer:     trace.NewTracer(),
 	}
 
 	agentRun, err := coordinator.Start(

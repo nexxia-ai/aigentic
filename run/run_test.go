@@ -11,6 +11,36 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type noOpTrace struct{}
+
+func (n *noOpTrace) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
+	return messages, tools, nil
+}
+
+func (n *noOpTrace) AfterCall(run *AgentRun, request []ai.Message, response ai.AIMessage) (ai.AIMessage, error) {
+	return response, nil
+}
+
+func (n *noOpTrace) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult) (event.ValidationResult, error) {
+	return validationResult, nil
+}
+
+func (n *noOpTrace) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
+	return result, nil
+}
+
+func (n *noOpTrace) RecordError(err error) error {
+	return nil
+}
+
+func (n *noOpTrace) Close() error {
+	return nil
+}
+
+func newTestTracer() Trace {
+	return &noOpTrace{}
+}
+
 func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -70,7 +100,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 			agentRun := NewAgentRun("test-streaming-agent", tt.description, "", "Test message")
 			agentRun.SetModel(tt.streamingModel)
 			agentRun.SetStreaming(true)
-			agentRun.SetTracer(NewTracer())
+			agentRun.SetTracer(newTestTracer())
 			defer agentRun.stop()
 
 			var events []event.Event
@@ -141,7 +171,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 		}, nil
 	}))
 	agentRun.SetStreaming(false)
-	agentRun.SetTracer(NewTracer())
+	agentRun.SetTracer(newTestTracer())
 	defer agentRun.stop()
 
 	var contentEvents []*event.ContentEvent
@@ -190,7 +220,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 		}, nil
 	}))
 	agentRun.SetStreaming(true)
-	agentRun.SetTracer(NewTracer())
+	agentRun.SetTracer(newTestTracer())
 	defer agentRun.stop()
 
 	var contentEvents []*event.ContentEvent
@@ -240,7 +270,7 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 	}))
 	agentRun.SetStreaming(true)
 	agentRun.SetMaxLLMCalls(2)
-	agentRun.SetTracer(NewTracer())
+	agentRun.SetTracer(newTestTracer())
 	defer agentRun.stop()
 
 	var actions []action
@@ -320,7 +350,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 	agentRun := NewAgentRun("test-chunk-agent", "Test agent with controlled chunking", "", "Test chunking")
 	agentRun.SetModel(streamingModel)
 	agentRun.SetStreaming(true)
-	agentRun.SetTracer(NewTracer())
+	agentRun.SetTracer(newTestTracer())
 	defer agentRun.stop()
 
 	var contentEvents []*event.ContentEvent
@@ -427,7 +457,7 @@ func TestToolApprovalTimeout(t *testing.T) {
 	ar := NewAgentRun("timeout_test_agent", "Test agent for approval timeout functionality", "Use the test_approval_tool when requested.", "Please execute the test tool with action 'test_action'")
 	ar.SetModel(model)
 	ar.SetTools([]AgentTool{approvalTool})
-	ar.SetTracer(NewTracer())
+	ar.SetTracer(newTestTracer())
 	ar.approvalTimeout = approvalTimeout
 	ar.Start()
 	defer func() {

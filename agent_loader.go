@@ -9,6 +9,7 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/conversation"
 	"github.com/nexxia-ai/aigentic/run"
+	"github.com/nexxia-ai/aigentic/trace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -189,7 +190,7 @@ func (cfg *ConfigFile) InstantiateAgents(
 		}
 		// Configure tracing if enabled
 		if ac.EnableTrace {
-			a.Tracer = run.NewTracer()
+			a.Tracer = trace.NewTracer()
 		}
 		// Configure conversation history if enabled
 		if ac.ConversationHistory {

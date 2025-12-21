@@ -2,14 +2,15 @@ package run
 
 import (
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/conversation"
 	"github.com/nexxia-ai/aigentic/event"
 )
 
 type historyInterceptor struct {
-	history *ConversationHistory
+	history *conversation.ConversationHistory
 }
 
-func newHistoryInterceptor(history *ConversationHistory) *historyInterceptor {
+func newHistoryInterceptor(history *conversation.ConversationHistory) *historyInterceptor {
 	return &historyInterceptor{
 		history: history,
 	}

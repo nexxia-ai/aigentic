@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/conversation"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
@@ -95,7 +96,7 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 }
 
 func TestDocumentsAddedToConversationTurn(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "report.pdf", []byte("Report content"), nil)
@@ -168,7 +169,7 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 }
 
 func TestMultipleDocumentsFromSingleTool(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	doc1 := document.NewInMemoryDocument("doc1", "file1.pdf", []byte("Content 1"), nil)
@@ -236,7 +237,7 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 }
 
 func TestMultipleToolsWithDocuments(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	doc1 := document.NewInMemoryDocument("doc1", "pdf1.pdf", []byte("PDF 1"), nil)
@@ -312,7 +313,7 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 }
 
 func TestToolWithNoDocuments(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	testTool := run.AgentTool{
@@ -366,7 +367,7 @@ func TestToolWithNoDocuments(t *testing.T) {
 }
 
 func TestDocumentsPersistInConversationHistory(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "persistent.pdf", []byte("Persistent content"), nil)
@@ -424,7 +425,7 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 }
 
 func TestDocumentMetadataPreserved(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "metadata.pdf", []byte("Metadata test"), nil)
@@ -494,7 +495,7 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 }
 
 func TestEmptyToolResultDocuments(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	testTool := run.AgentTool{
@@ -546,7 +547,7 @@ func TestEmptyToolResultDocuments(t *testing.T) {
 }
 
 func TestAgentRunConversationTurnAccess(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "accessible.pdf", []byte("Accessible content"), nil)
@@ -609,7 +610,7 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 }
 
 func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 
 	testTool := run.AgentTool{
@@ -745,7 +746,7 @@ func verifyMessageOrder(t *testing.T, messages []ai.Message) {
 }
 
 func TestConversationHistoryIncludedInFutureConversations(t *testing.T) {
-	history := run.NewConversationHistory()
+	history := conversation.NewConversationHistory()
 	callCount := 0
 	var receivedMessages []ai.Message
 

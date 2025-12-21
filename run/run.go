@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/conversation"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 )
@@ -44,7 +45,7 @@ type AgentRun struct {
 	maxLLMCalls             int
 	llmCallCount            int
 	approvalTimeout         time.Duration
-	currentConversationTurn *ConversationTurn
+	currentConversationTurn *conversation.ConversationTurn
 
 	// ContextManager defines the context manager for the agent.
 	// If set, this context manager will be used instead of the default BasicContextManager.
@@ -79,7 +80,7 @@ func (r *AgentRun) Model() *ai.Model {
 	return r.model
 }
 
-func (r *AgentRun) ConversationTurn() *ConversationTurn {
+func (r *AgentRun) ConversationTurn() *conversation.ConversationTurn {
 	return r.currentConversationTurn
 }
 
@@ -114,7 +115,7 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 		return fmt.Errorf("invalid scope: %s (must be 'local', 'model', or 'session')", scope)
 	}
 
-	entry := DocumentEntry{
+	entry := conversation.DocumentEntry{
 		Document: doc,
 		Scope:    scope,
 		ToolID:   toolID,
@@ -160,7 +161,7 @@ func NewAgentRun(name, description, instructions, message string) *AgentRun {
 		interceptors:            make([]Interceptor, 0),
 		tools:                   make([]AgentTool, 0),
 		streaming:               false,
-		currentConversationTurn: NewConversationTurn(message, runID, "", ""),
+		currentConversationTurn: conversation.NewConversationTurn(message, runID, "", ""),
 		Logger:                  slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With("agent", name),
 	}
 
@@ -201,7 +202,7 @@ func (r *AgentRun) EnableHistory() {
 	r.interceptors = append(r.interceptors, newHistoryInterceptor(r.agentContext.conversationHistory))
 }
 
-func (r *AgentRun) SetConversationHistory(history *ConversationHistory) {
+func (r *AgentRun) SetConversationHistory(history *conversation.ConversationHistory) {
 	r.agentContext.SetConversationHistory(history)
 	if history != nil {
 		r.interceptors = append(r.interceptors, newHistoryInterceptor(history))
@@ -496,9 +497,9 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 	var err error
 	var msgs []ai.Message
 	if r.ContextManager != nil {
-		msgs, err = r.ContextManager.BuildPrompt(r, r.currentConversationTurn.getCurrentMessages(), tools)
+		msgs, err = r.ContextManager.BuildPrompt(r, r.currentConversationTurn.GetCurrentMessages(), tools)
 	} else {
-		msgs, err = r.agentContext.BuildPrompt(r, r.currentConversationTurn.getCurrentMessages(), tools)
+		msgs, err = r.agentContext.BuildPrompt(r, r.currentConversationTurn.GetCurrentMessages(), tools)
 	}
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
@@ -685,7 +686,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 		// add all tool responses and queue their events
 		for _, tc := range action.Group.AIMessage.ToolCalls {
 			if response, exists := action.Group.Responses[tc.ID]; exists {
-				r.currentConversationTurn.addMessage(response)
+				r.currentConversationTurn.AddMessage(response)
 				var docs []*document.Document
 				for _, entry := range r.currentConversationTurn.Documents {
 					if entry.ToolID == tc.ID || entry.ToolID == "" {
@@ -769,14 +770,14 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 	// this not a chunk, which means the model Call/Stream is complete
 	// add to history and fire tool calls
 	if len(msg.ToolCalls) == 0 {
-		r.currentConversationTurn.addMessage(msg)
+		r.currentConversationTurn.AddMessage(msg)
 		r.currentConversationTurn.Reply = msg
-		r.currentConversationTurn.compact()
+		r.currentConversationTurn.Compact()
 		r.queueAction(&stopAction{Error: nil})
 		return
 	}
 
-	r.currentConversationTurn.addMessage(msg)
+	r.currentConversationTurn.AddMessage(msg)
 
 	// If we have a stream group from chunks, update it with the final message, otherwise create new group
 	if r.currentStreamGroup != nil {
@@ -787,7 +788,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			// add all tool responses and queue their events
 			for _, tc := range r.currentStreamGroup.AIMessage.ToolCalls {
 				if response, exists := r.currentStreamGroup.Responses[tc.ID]; exists {
-					r.currentConversationTurn.addMessage(response)
+					r.currentConversationTurn.AddMessage(response)
 					var docs []*document.Document
 					for _, entry := range r.currentConversationTurn.Documents {
 						if entry.ToolID == tc.ID || entry.ToolID == "" {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/conversation"
 	"github.com/nexxia-ai/aigentic/document"
 )
 
@@ -25,7 +26,7 @@ type AgentContext struct {
 	memories            []MemoryEntry
 	documents           []*document.Document
 	documentReferences  []*document.Document
-	conversationHistory *ConversationHistory
+	conversationHistory *conversation.ConversationHistory
 }
 
 var _ ContextManager = &AgentContext{}
@@ -33,7 +34,7 @@ var _ ContextManager = &AgentContext{}
 func NewAgentContext(description, instructions, userMsg string) *AgentContext {
 	cm := &AgentContext{description: description, instructions: instructions, userMsg: userMsg}
 
-	cm.conversationHistory = NewConversationHistory()
+	cm.conversationHistory = conversation.NewConversationHistory()
 	cm.SetDefaultTemplates()
 	return cm
 }
@@ -309,6 +310,6 @@ func (r *AgentContext) SetDocumentReferences(docRefs []*document.Document) {
 	r.documentReferences = docRefs
 }
 
-func (r *AgentContext) SetConversationHistory(history *ConversationHistory) {
+func (r *AgentContext) SetConversationHistory(history *conversation.ConversationHistory) {
 	r.conversationHistory = history
 }

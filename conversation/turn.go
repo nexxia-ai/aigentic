@@ -1,4 +1,4 @@
-package run
+package conversation
 
 import (
 	"time"
@@ -37,11 +37,11 @@ func NewConversationTurn(userMessage, runID, agentName, traceFile string) *Conve
 	}
 }
 
-func (t *ConversationTurn) addMessage(msg ai.Message) {
+func (t *ConversationTurn) AddMessage(msg ai.Message) {
 	t.messages = append(t.messages, msg)
 }
 
-func (t *ConversationTurn) getCurrentMessages() []ai.Message {
+func (t *ConversationTurn) GetCurrentMessages() []ai.Message {
 	result := make([]ai.Message, len(t.messages))
 	copy(result, t.messages)
 	return result
@@ -57,6 +57,6 @@ func (t *ConversationTurn) GetMessages() []ai.Message {
 	return result
 }
 
-func (t *ConversationTurn) compact() {
+func (t *ConversationTurn) Compact() {
 	t.messages = nil
 }

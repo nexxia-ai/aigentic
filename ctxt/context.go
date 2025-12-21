@@ -1,19 +1,18 @@
-package run
+package ctxt
 
 import (
 	"bytes"
 	"fmt"
-	"strings"
 	"sync"
 	"text/template"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/conversation"
 	"github.com/nexxia-ai/aigentic/document"
 )
 
 type AgentContext struct {
+	id             string
 	description    string
 	instructions   string
 	userMsg        string
@@ -26,47 +25,15 @@ type AgentContext struct {
 	memories            []MemoryEntry
 	documents           []*document.Document
 	documentReferences  []*document.Document
-	conversationHistory *conversation.ConversationHistory
+	conversationHistory *ConversationHistory
 }
 
-var _ ContextManager = &AgentContext{}
+func NewAgentContext(id, description, instructions, userMsg string) *AgentContext {
+	cm := &AgentContext{id: id, description: description, instructions: instructions, userMsg: userMsg}
 
-func NewAgentContext(description, instructions, userMsg string) *AgentContext {
-	cm := &AgentContext{description: description, instructions: instructions, userMsg: userMsg}
-
-	cm.conversationHistory = conversation.NewConversationHistory()
-	cm.SetDefaultTemplates()
+	cm.conversationHistory = NewConversationHistory()
+	cm.SetTemplates(DefaultSystemTemplate, DefaultUserTemplate)
 	return cm
-}
-
-func collectContextFunctions(run *AgentRun) string {
-	var parts []string
-
-	for _, fn := range run.ContextFunctions {
-		output, err := fn(run)
-		if err != nil {
-			parts = append(parts, fmt.Sprintf("Error in context function: %v", err))
-		} else if output != "" {
-			parts = append(parts, output)
-		}
-	}
-
-	for _, tool := range run.tools {
-		for _, fn := range tool.ContextFunctions {
-			output, err := fn(run)
-			if err != nil {
-				parts = append(parts, fmt.Sprintf("Error in tool context function: %v", err))
-			} else if output != "" {
-				parts = append(parts, output)
-			}
-		}
-	}
-
-	if len(parts) == 0 {
-		return ""
-	}
-
-	return strings.Join(parts, "\n\n")
 }
 
 const DefaultSystemTemplate = `
@@ -108,19 +75,13 @@ You have access to the following tools:
 {{end}}`
 
 const DefaultUserTemplate = `
-{{if .HasSessionContext}}
-<session_context>
-{{.SessionContext}}
-</session_context>
-{{end}}
-
 {{if .HasMessage}}Please answer the following request or task:
 {{.Message}} 
 {{end}}`
 
-func (r *AgentContext) SetDefaultTemplates() {
-	r.SystemTemplate = template.Must(template.New("system").Parse(DefaultSystemTemplate))
-	r.UserTemplate = template.Must(template.New("user").Parse(DefaultUserTemplate))
+func (r *AgentContext) SetTemplates(systemTemplate, userTemplate string) {
+	r.SystemTemplate = template.Must(template.New("system").Parse(systemTemplate))
+	r.UserTemplate = template.Must(template.New("user").Parse(userTemplate))
 }
 
 func (r *AgentContext) ParseSystemTemplate(templateStr string) error {
@@ -141,11 +102,11 @@ func (r *AgentContext) ParseUserTemplate(templateStr string) error {
 	return nil
 }
 
-func (r *AgentContext) BuildPrompt(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
+func (r *AgentContext) BuildPrompt(messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
 	r.currentMsg = len(r.msgHistory)
 	r.msgHistory = append(r.msgHistory, messages...)
 
-	systemVars := r.createSystemVariables(tools, run)
+	systemVars := r.createSystemVariables(tools)
 	var systemBuf bytes.Buffer
 	if err := r.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
 		return nil, fmt.Errorf("failed to execute system template: %w", err)
@@ -155,7 +116,7 @@ func (r *AgentContext) BuildPrompt(run *AgentRun, messages []ai.Message, tools [
 		ai.SystemMessage{Role: ai.SystemRole, Content: systemBuf.String()},
 	}
 
-	userVars := r.createUserVariables(r.userMsg, run)
+	userVars := r.createUserVariables(r.userMsg)
 	var userBuf bytes.Buffer
 	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user template: %w", err)
@@ -172,24 +133,18 @@ func (r *AgentContext) BuildPrompt(run *AgentRun, messages []ai.Message, tools [
 	return msgs, nil
 }
 
-func (r *AgentContext) createSystemVariables(tools []ai.Tool, run *AgentRun) map[string]interface{} {
-	return createSystemVariables(r, tools, run)
+func (r *AgentContext) createSystemVariables(tools []ai.Tool) map[string]interface{} {
+	return createSystemVariables(r, tools)
 }
 
-func (r *AgentContext) createUserVariables(message string, run *AgentRun) map[string]interface{} {
-	return createUserVariables(r, message, run)
+func (r *AgentContext) createUserVariables(message string) map[string]interface{} {
+	return createUserVariables(r, message)
 }
 
-func createSystemVariables(ac *AgentContext, tools []ai.Tool, run *AgentRun) map[string]interface{} {
-	memories := run.agentContext.GetMemories()
+func createSystemVariables(ac *AgentContext, tools []ai.Tool) map[string]interface{} {
+	memories := ac.GetMemories()
 	var filteredMemories []MemoryEntry
-	for _, mem := range memories {
-		if mem.Scope == "session" {
-			filteredMemories = append(filteredMemories, mem)
-		} else if mem.Scope == "run" && mem.RunID == run.ID() {
-			filteredMemories = append(filteredMemories, mem)
-		}
-	}
+	filteredMemories = append(filteredMemories, memories...)
 	hasMemories := len(filteredMemories) > 0
 
 	return map[string]interface{}{
@@ -204,17 +159,13 @@ func createSystemVariables(ac *AgentContext, tools []ai.Tool, run *AgentRun) map
 	}
 }
 
-func createUserVariables(ac *AgentContext, message string, run *AgentRun) map[string]interface{} {
-	sessionContext := collectContextFunctions(run)
-	hasSessionContext := sessionContext != ""
+func createUserVariables(ac *AgentContext, message string) map[string]interface{} {
 
 	return map[string]interface{}{
 		"Message":            message,
 		"HasMessage":         message != "",
 		"Documents":          ac.documents,
 		"DocumentReferences": ac.documentReferences,
-		"SessionContext":     sessionContext,
-		"HasSessionContext":  hasSessionContext,
 	}
 }
 
@@ -251,6 +202,14 @@ func (r *AgentContext) insertDocuments(docs []*document.Document, docRefs []*doc
 	}
 
 	return msgs
+}
+
+func (r *AgentContext) AddDocument(doc *document.Document) error {
+	if doc == nil {
+		return fmt.Errorf("document cannot be nil")
+	}
+	r.documents = append(r.documents, doc)
+	return nil
 }
 
 func (r *AgentContext) AddMemory(id, description, content, scope, runID string) error {
@@ -310,6 +269,10 @@ func (r *AgentContext) SetDocumentReferences(docRefs []*document.Document) {
 	r.documentReferences = docRefs
 }
 
-func (r *AgentContext) SetConversationHistory(history *conversation.ConversationHistory) {
+func (r *AgentContext) SetConversationHistory(history *ConversationHistory) {
 	r.conversationHistory = history
+}
+
+func (r *AgentContext) ConversationHistory() *ConversationHistory {
+	return r.conversationHistory
 }

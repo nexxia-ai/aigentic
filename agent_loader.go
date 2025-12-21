@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/conversation"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/run"
 	"github.com/nexxia-ai/aigentic/trace"
 	"gopkg.in/yaml.v3"
@@ -194,7 +194,7 @@ func (cfg *ConfigFile) InstantiateAgents(
 		}
 		// Configure conversation history if enabled
 		if ac.ConversationHistory {
-			a.ConversationHistory = conversation.NewConversationHistory()
+			a.ConversationHistory = ctxt.NewConversationHistory()
 		}
 		// Attach tools from tool servers listed by name using resolver
 		for _, tname := range ac.Tools {

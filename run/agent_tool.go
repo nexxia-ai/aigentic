@@ -12,14 +12,13 @@ import (
 )
 
 type AgentTool struct {
-	RequireApproval  bool
-	Name             string
-	Description      string
-	InputSchema      map[string]interface{}
-	Execute          func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error)
-	Validate         func(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error)
-	NewExecute       func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error)
-	ContextFunctions []ContextFunction
+	RequireApproval bool
+	Name            string
+	Description     string
+	InputSchema     map[string]interface{}
+	Execute         func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error)
+	Validate        func(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error)
+	NewExecute      func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error)
 }
 
 func (t *AgentTool) validateInput(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error) {

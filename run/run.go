@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/conversation"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 )
@@ -30,7 +30,7 @@ type AgentRun struct {
 
 	tools []AgentTool
 
-	agentContext *AgentContext
+	agentContext *ctxt.AgentContext
 	interceptors []Interceptor
 
 	eventQueue              chan event.Event
@@ -45,17 +45,7 @@ type AgentRun struct {
 	maxLLMCalls             int
 	llmCallCount            int
 	approvalTimeout         time.Duration
-	currentConversationTurn *conversation.ConversationTurn
-
-	// ContextManager defines the context manager for the agent.
-	// If set, this context manager will be used instead of the default BasicContextManager.
-	// Set "ContextManager: aigentic.NewEnhancedSystemContextManager(agent, message)" to use a custom context manager.
-	ContextManager ContextManager
-
-	// ContextFunctions contains functions that provide dynamic context for the agent.
-	// These functions are called before each LLM call and their output is included
-	// as a separate user message wrapped in <Session context> tags.
-	ContextFunctions []ContextFunction
+	currentConversationTurn *ctxt.ConversationTurn
 
 	streaming bool
 
@@ -80,7 +70,7 @@ func (r *AgentRun) Model() *ai.Model {
 	return r.model
 }
 
-func (r *AgentRun) ConversationTurn() *conversation.ConversationTurn {
+func (r *AgentRun) ConversationTurn() *ctxt.ConversationTurn {
 	return r.currentConversationTurn
 }
 
@@ -88,31 +78,6 @@ func (r *AgentRun) Cancel() {
 	if r.cancelFunc != nil {
 		r.cancelFunc()
 	}
-}
-
-// AddDocument adds a document to the conversation turn and optionally to the session
-func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope string) error {
-	if doc == nil {
-		return fmt.Errorf("document cannot be nil")
-	}
-
-	if scope != "local" && scope != "model" && scope != "session" {
-		return fmt.Errorf("invalid scope: %s (must be 'local', 'model', or 'session')", scope)
-	}
-
-	entry := conversation.DocumentEntry{
-		Document: doc,
-		Scope:    scope,
-		ToolID:   toolID,
-	}
-
-	r.currentConversationTurn.Documents = append(r.currentConversationTurn.Documents, entry)
-
-	if scope == "model" || scope == "session" {
-		r.agentContext.documents = append(r.agentContext.documents, doc)
-	}
-
-	return nil
 }
 
 func (r *AgentRun) SetRetrievers(retrievers []Retriever) {
@@ -128,7 +93,7 @@ func NewAgentRun(name, description, instructions, message string) *AgentRun {
 		return ai.AIMessage{}, fmt.Errorf("agent model is not set")
 	})
 
-	ac := NewAgentContext(description, instructions, message)
+	ac := ctxt.NewAgentContext(runID, description, instructions, message)
 	run := &AgentRun{
 		agentName:               name,
 		id:                      runID,
@@ -146,14 +111,14 @@ func NewAgentRun(name, description, instructions, message string) *AgentRun {
 		interceptors:            make([]Interceptor, 0),
 		tools:                   make([]AgentTool, 0),
 		streaming:               false,
-		currentConversationTurn: conversation.NewConversationTurn(message, runID, "", ""),
+		currentConversationTurn: ctxt.NewConversationTurn(message, runID, "", ""),
 		Logger:                  slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With("agent", name),
 	}
 
 	return run
 }
 
-func (r *AgentRun) AgentContext() *AgentContext {
+func (r *AgentRun) AgentContext() *ctxt.AgentContext {
 	return r.agentContext
 }
 
@@ -182,14 +147,39 @@ func (r *AgentRun) SetTools(tools []AgentTool) {
 }
 
 func (r *AgentRun) EnableHistory() {
-	r.interceptors = append(r.interceptors, newHistoryInterceptor(r.agentContext.conversationHistory))
+	r.interceptors = append(r.interceptors, newHistoryInterceptor(r.agentContext.ConversationHistory()))
 }
 
-func (r *AgentRun) SetConversationHistory(history *conversation.ConversationHistory) {
+func (r *AgentRun) SetConversationHistory(history *ctxt.ConversationHistory) {
 	r.agentContext.SetConversationHistory(history)
 	if history != nil {
 		r.interceptors = append(r.interceptors, newHistoryInterceptor(history))
 	}
+}
+
+// AddDocument adds a document to the conversation turn and optionally to the session
+func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope string) error {
+	if doc == nil {
+		return fmt.Errorf("document cannot be nil")
+	}
+
+	if scope != "local" && scope != "model" && scope != "session" {
+		return fmt.Errorf("invalid scope: %s (must be 'local', 'model', or 'session')", scope)
+	}
+
+	entry := ctxt.DocumentEntry{
+		Document: doc,
+		Scope:    scope,
+		ToolID:   toolID,
+	}
+
+	r.currentConversationTurn.Documents = append(r.currentConversationTurn.Documents, entry)
+
+	if scope == "model" || scope == "session" {
+		r.agentContext.AddDocument(doc)
+	}
+
+	return nil
 }
 
 func (r *AgentRun) Start() {
@@ -472,11 +462,7 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	var err error
 	var msgs []ai.Message
-	if r.ContextManager != nil {
-		msgs, err = r.ContextManager.BuildPrompt(r, r.currentConversationTurn.GetCurrentMessages(), tools)
-	} else {
-		msgs, err = r.agentContext.BuildPrompt(r, r.currentConversationTurn.GetCurrentMessages(), tools)
-	}
+	msgs, err = r.agentContext.BuildPrompt(r.currentConversationTurn.GetCurrentMessages(), tools)
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
 		return

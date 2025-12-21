@@ -28,21 +28,6 @@ func newMemoryTool() run.AgentTool {
 	data := make(map[string]string)
 	var mutex sync.RWMutex
 
-	formatAll := func() string {
-		mutex.RLock()
-		defer mutex.RUnlock()
-
-		if len(data) == 0 {
-			return ""
-		}
-
-		var parts []string
-		for name, content := range data {
-			parts = append(parts, fmt.Sprintf("## Memory: %s\n%s", name, content))
-		}
-		return strings.Join(parts, "\n\n")
-	}
-
 	update := func(name, content string) error {
 		mutex.Lock()
 		defer mutex.Unlock()
@@ -53,10 +38,6 @@ func newMemoryTool() run.AgentTool {
 			data[name] = content
 		}
 		return nil
-	}
-
-	contextFn := func(agentRun *run.AgentRun) (string, error) {
-		return formatAll(), nil
 	}
 
 	return run.AgentTool{
@@ -76,7 +57,6 @@ func newMemoryTool() run.AgentTool {
 			},
 			"required": []string{"memory_name", "memory_content"},
 		},
-		ContextFunctions: []run.ContextFunction{contextFn},
 		NewExecute: func(agentRun *run.AgentRun, result event.ValidationResult) (*ai.ToolResult, error) {
 			args := result.Values.(map[string]interface{})
 			name := args["memory_name"].(string)

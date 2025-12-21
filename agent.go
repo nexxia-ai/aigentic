@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/conversation"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/run"
 )
@@ -36,7 +36,7 @@ type Agent struct {
 	// ConversationHistory enables automatic conversation history tracking across multiple Start() calls.
 	// Messages are captured with metadata (trace file, run ID, timestamp) for correlation and debugging.
 	// Set to a ConversationHistory object to share history across multiple agents or conversation sessions.
-	ConversationHistory *conversation.ConversationHistory
+	ConversationHistory *ctxt.ConversationHistory
 
 	// Retries is the number of times to retry the agent if it fails.
 	Retries int

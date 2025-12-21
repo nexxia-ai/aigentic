@@ -1,4 +1,4 @@
-package aigentic
+package run
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
-	"github.com/nexxia-ai/aigentic/run"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -20,14 +19,14 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 	doc.FilePath = "/path/to/test.pdf"
 	doc.MimeType = "application/pdf"
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "create_pdf",
 		Description: "Creates a PDF document",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
@@ -37,37 +36,34 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:        "test-document-agent",
-		Description: "Agent that creates documents",
-		AgentTools:  []run.AgentTool{testTool},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role:    ai.AssistantRole,
-					Content: "I'll create a PDF for you.",
-					ToolCalls: []ai.ToolCall{
-						{
-							ID:   "call_123",
-							Type: "function",
-							Name: "create_pdf",
-							Args: "{}",
-						},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
 				Role:    ai.AssistantRole,
-				Content: "PDF has been created successfully.",
+				Content: "I'll create a PDF for you.",
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Name: "create_pdf",
+						Args: "{}",
+					},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	ag, err := agent.Start("Please create a PDF")
-	assert.NoError(t, err)
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "PDF has been created successfully.",
+		}, nil
+	})
+
+	ag := NewAgentRun("test-document-agent", "Agent that creates documents", "")
+	ag.SetModel(model)
+	ag.SetTools([]AgentTool{testTool})
+	ag.Start(context.Background(), "Please create a PDF")
 
 	for evt := range ag.Next() {
 		switch ev := evt.(type) {
@@ -103,14 +99,14 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 	doc.FilePath = "/path/to/report.pdf"
 	doc.MimeType = "application/pdf"
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "create_report",
 		Description: "Creates a report document",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
@@ -120,50 +116,47 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-history-agent",
-		Description:         "Agent that creates documents in history",
-		AgentTools:          []run.AgentTool{testTool},
-		ConversationHistory: history,
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role:    ai.AssistantRole,
-					Content: "Creating report...",
-					ToolCalls: []ai.ToolCall{
-						{
-							ID:   "call_456",
-							Type: "function",
-							Name: "create_report",
-							Args: "{}",
-						},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
 				Role:    ai.AssistantRole,
-				Content: "Report is ready.",
+				Content: "Creating report...",
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_456",
+						Type: "function",
+						Name: "create_report",
+						Args: "{}",
+					},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	run, err := agent.Start("Create a report")
-	assert.NoError(t, err)
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Report is ready.",
+		}, nil
+	})
 
-	result, err := run.Wait(0)
+	agentRun := NewAgentRun("test-history-agent", "Agent that creates documents in history", "")
+	agentRun.SetModel(model)
+	agentRun.SetTools([]AgentTool{testTool})
+	agentRun.SetConversationHistory(history)
+	agentRun.Start(context.Background(), "Create a report")
+
+	result, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "Report is ready")
 
-	entry := run.ConversationTurn()
+	entry := agentRun.ConversationTurn()
 	assert.NotNil(t, entry, "ConversationTurn should not be nil")
 	assert.Equal(t, 1, len(entry.Documents), "Should have one document in ConversationTurn")
 	assert.Equal(t, "report.pdf", entry.Documents[0].Document.Filename)
 	assert.Equal(t, "application/pdf", entry.Documents[0].Document.MimeType)
 
-	conversationTurn, err := history.GetByRunID(run.ID())
+	conversationTurn, err := history.GetByRunID(agentRun.ID())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(conversationTurn.Documents), "Document should persist in ConversationHistory")
 }
@@ -177,14 +170,14 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 	doc2 := document.NewInMemoryDocument("doc2", "file2.txt", []byte("Content 2"), nil)
 	doc2.MimeType = "text/plain"
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "create_files",
 		Description: "Creates multiple files",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc1, "model")
 			run.AddDocument("", doc2, "model")
 			return &ai.ToolResult{
@@ -195,41 +188,39 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-multiple-docs-agent",
-		ConversationHistory: history,
-		AgentTools:          []run.AgentTool{testTool},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role: ai.AssistantRole,
-					ToolCalls: []ai.ToolCall{
-						{
-							ID:   "call_789",
-							Type: "function",
-							Name: "create_files",
-							Args: "{}",
-						},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Files ready",
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_789",
+						Type: "function",
+						Name: "create_files",
+						Args: "{}",
+					},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	run, err := agent.Start("Create files")
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Files ready",
+		}, nil
+	})
+
+	agentRun := NewAgentRun("test-multiple-docs-agent", "", "")
+	agentRun.SetModel(model)
+	agentRun.SetTools([]AgentTool{testTool})
+	agentRun.SetConversationHistory(history)
+	agentRun.Start(context.Background(), "Create files")
+
+	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 
-	_, err = run.Wait(0)
-	assert.NoError(t, err)
-
-	entry := run.ConversationTurn()
+	entry := agentRun.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 2, len(entry.Documents), "Should have two documents")
 	assert.Equal(t, "file1.pdf", entry.Documents[0].Document.Filename)
@@ -245,14 +236,14 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 	doc2 := document.NewInMemoryDocument("doc2", "pdf2.pdf", []byte("PDF 2"), nil)
 	doc2.MimeType = "application/pdf"
 
-	tool1 := run.AgentTool{
+	tool1 := AgentTool{
 		Name:        "create_pdf1",
 		Description: "Creates first PDF",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc1, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "PDF1 ready"}},
@@ -260,14 +251,14 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 		},
 	}
 
-	tool2 := run.AgentTool{
+	tool2 := AgentTool{
 		Name:        "create_pdf2",
 		Description: "Creates second PDF",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc2, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "PDF2 ready"}},
@@ -275,37 +266,35 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-multi-tool-agent",
-		ConversationHistory: history,
-		AgentTools:          []run.AgentTool{tool1, tool2},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role: ai.AssistantRole,
-					ToolCalls: []ai.ToolCall{
-						{ID: "call_1", Type: "function", Name: "create_pdf1", Args: "{}"},
-						{ID: "call_2", Type: "function", Name: "create_pdf2", Args: "{}"},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Both PDFs ready",
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{ID: "call_1", Type: "function", Name: "create_pdf1", Args: "{}"},
+					{ID: "call_2", Type: "function", Name: "create_pdf2", Args: "{}"},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	run, err := agent.Start("Create both PDFs")
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Both PDFs ready",
+		}, nil
+	})
+
+	agentRun := NewAgentRun("test-multi-tool-agent", "", "")
+	agentRun.SetModel(model)
+	agentRun.SetTools([]AgentTool{tool1, tool2})
+	agentRun.SetConversationHistory(history)
+	agentRun.Start(context.Background(), "Create both PDFs")
+
+	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 
-	_, err = run.Wait(0)
-	assert.NoError(t, err)
-
-	entry := run.ConversationTurn()
+	entry := agentRun.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 2, len(entry.Documents), "Should have documents from both tools")
 	assert.Equal(t, "pdf1.pdf", entry.Documents[0].Document.Filename)
@@ -316,14 +305,14 @@ func TestToolWithNoDocuments(t *testing.T) {
 	history := ctxt.NewConversationHistory()
 	callCount := 0
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "simple_tool",
 		Description: "A simple tool with no documents",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "Simple response"},
@@ -332,36 +321,34 @@ func TestToolWithNoDocuments(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-no-docs-agent",
-		ConversationHistory: history,
-		AgentTools:          []run.AgentTool{testTool},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role: ai.AssistantRole,
-					ToolCalls: []ai.ToolCall{
-						{ID: "call_simple", Type: "function", Name: "simple_tool", Args: "{}"},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Done",
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{ID: "call_simple", Type: "function", Name: "simple_tool", Args: "{}"},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	run, err := agent.Start("Use simple tool")
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Done",
+		}, nil
+	})
+
+	agentRun := NewAgentRun("test-no-docs-agent", "", "")
+	agentRun.SetModel(model)
+	agentRun.SetTools([]AgentTool{testTool})
+	agentRun.SetConversationHistory(history)
+	agentRun.Start(context.Background(), "Use simple tool")
+
+	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 
-	_, err = run.Wait(0)
-	assert.NoError(t, err)
-
-	entry := run.ConversationTurn()
+	entry := agentRun.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 0, len(entry.Documents), "Should have no documents")
 }
@@ -373,14 +360,14 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 	doc := document.NewInMemoryDocument("doc1", "persistent.pdf", []byte("Persistent content"), nil)
 	doc.MimeType = "application/pdf"
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "create_persistent",
 		Description: "Creates a persistent document",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
@@ -388,34 +375,32 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-persist-agent",
-		ConversationHistory: history,
-		AgentTools:          []run.AgentTool{testTool},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role: ai.AssistantRole,
-					ToolCalls: []ai.ToolCall{
-						{ID: "call_persist", Type: "function", Name: "create_persistent", Args: "{}"},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Ready",
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{ID: "call_persist", Type: "function", Name: "create_persistent", Args: "{}"},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	run, err := agent.Start("Create persistent document")
-	assert.NoError(t, err)
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Ready",
+		}, nil
+	})
 
-	runID := run.ID()
-	_, err = run.Wait(0)
+	agentRun := NewAgentRun("test-persist-agent", "", "")
+	agentRun.SetModel(model)
+	agentRun.SetTools([]AgentTool{testTool})
+	agentRun.SetConversationHistory(history)
+	agentRun.Start(context.Background(), "Create persistent document")
+
+	runID := agentRun.ID()
+	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 
 	conversationTurn, err := history.GetByRunID(runID)
@@ -434,14 +419,14 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 	doc.FileSize = 12345
 	doc.URL = "https://example.com/metadata.pdf"
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "create_with_metadata",
 		Description: "Creates document with metadata",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
@@ -449,36 +434,34 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-metadata-agent",
-		ConversationHistory: history,
-		AgentTools:          []run.AgentTool{testTool},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role: ai.AssistantRole,
-					ToolCalls: []ai.ToolCall{
-						{ID: "call_meta", Type: "function", Name: "create_with_metadata", Args: "{}"},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Ready",
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{ID: "call_meta", Type: "function", Name: "create_with_metadata", Args: "{}"},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	run, err := agent.Start("Create document with metadata")
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Ready",
+		}, nil
+	})
+
+	agentRun := NewAgentRun("test-metadata-agent", "", "")
+	agentRun.SetModel(model)
+	agentRun.SetTools([]AgentTool{testTool})
+	agentRun.SetConversationHistory(history)
+	agentRun.Start(context.Background(), "Create document with metadata")
+
+	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 
-	_, err = run.Wait(0)
-	assert.NoError(t, err)
-
-	entry := run.ConversationTurn()
+	entry := agentRun.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 1, len(entry.Documents), "Should have one document")
 
@@ -498,50 +481,48 @@ func TestEmptyToolResultDocuments(t *testing.T) {
 	history := ctxt.NewConversationHistory()
 	callCount := 0
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "empty_docs_tool",
 		Description: "Tool with empty documents",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Response"}},
 			}, nil
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-empty-docs-agent",
-		ConversationHistory: history,
-		AgentTools:          []run.AgentTool{testTool},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role: ai.AssistantRole,
-					ToolCalls: []ai.ToolCall{
-						{ID: "call_empty", Type: "function", Name: "empty_docs_tool", Args: "{}"},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Done",
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{ID: "call_empty", Type: "function", Name: "empty_docs_tool", Args: "{}"},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	run, err := agent.Start("Use empty docs tool")
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Done",
+		}, nil
+	})
+
+	agentRun := NewAgentRun("test-empty-docs-agent", "", "")
+	agentRun.SetModel(model)
+	agentRun.SetTools([]AgentTool{testTool})
+	agentRun.SetConversationHistory(history)
+	agentRun.Start(context.Background(), "Use empty docs tool")
+
+	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 
-	_, err = run.Wait(0)
-	assert.NoError(t, err)
-
-	entry := run.ConversationTurn()
+	entry := agentRun.ConversationTurn()
 	assert.NotNil(t, entry)
 	assert.Equal(t, 0, len(entry.Documents), "Should have no documents")
 }
@@ -553,14 +534,14 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 	doc := document.NewInMemoryDocument("doc1", "accessible.pdf", []byte("Accessible content"), nil)
 	doc.MimeType = "application/pdf"
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "create_accessible",
 		Description: "Creates accessible document",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
@@ -568,43 +549,41 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-accessible-agent",
-		ConversationHistory: history,
-		AgentTools:          []run.AgentTool{testTool},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role: ai.AssistantRole,
-					ToolCalls: []ai.ToolCall{
-						{ID: "call_acc", Type: "function", Name: "create_accessible", Args: "{}"},
-					},
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Ready",
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{ID: "call_acc", Type: "function", Name: "create_accessible", Args: "{}"},
+				},
 			}, nil
-		}),
-	}
+		}
 
-	run, err := agent.Start("Create accessible document")
-	assert.NoError(t, err)
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Ready",
+		}, nil
+	})
 
-	result, err := run.Wait(0)
+	agentRun := NewAgentRun("test-accessible-agent", "", "")
+	agentRun.SetModel(model)
+	agentRun.SetTools([]AgentTool{testTool})
+	agentRun.SetConversationHistory(history)
+	agentRun.Start(context.Background(), "Create accessible document")
+
+	result, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "Ready")
 
-	entry := run.ConversationTurn()
+	entry := agentRun.ConversationTurn()
 	assert.NotNil(t, entry, "ConversationTurn should be accessible after completion")
-	assert.Equal(t, run.ID(), entry.RunID, "Turn should have correct RunID")
+	assert.Equal(t, agentRun.ID(), entry.RunID, "Turn should have correct RunID")
 	assert.Equal(t, 1, len(entry.Documents), "Should have document in turn")
 	assert.Equal(t, "accessible.pdf", entry.Documents[0].Document.Filename)
 
-	entry2 := run.ConversationTurn()
+	entry2 := agentRun.ConversationTurn()
 	assert.NotNil(t, entry2, "ConversationTurn should still be accessible on second call")
 	assert.Equal(t, entry, entry2, "Should return same turn")
 }
@@ -613,7 +592,7 @@ func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
 	history := ctxt.NewConversationHistory()
 	callCount := 0
 
-	testTool := run.AgentTool{
+	testTool := AgentTool{
 		Name:        "echo",
 		Description: "Echoes back the input",
 		InputSchema: map[string]interface{}{
@@ -625,7 +604,7 @@ func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
 			},
 			"required": []string{"text"},
 		},
-		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "echoed: test"},
@@ -634,50 +613,51 @@ func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
 		},
 	}
 
-	agent := Agent{
-		Name:                "test-agent",
-		ConversationHistory: history,
-		AgentTools:          []run.AgentTool{testTool},
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role: ai.AssistantRole,
-					ToolCalls: []ai.ToolCall{
-						{
-							ID:   "call_123",
-							Type: "function",
-							Name: "echo",
-							Args: `{"text": "test"}`,
-						},
+		if callCount == 1 {
+			return ai.AIMessage{
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Name: "echo",
+						Args: `{"text": "test"}`,
 					},
-				}, nil
-			}
+				},
+			}, nil
+		}
 
-			if callCount == 2 {
-				verifyMessageOrder(t, messages)
-				verifyToolCallIDsMatch(t, messages)
-				return ai.AIMessage{
-					Role:    ai.AssistantRole,
-					Content: "Second call completed",
-				}, nil
-			}
-
+		if callCount == 2 {
+			verifyMessageOrder(t, messages)
+			verifyToolCallIDsMatch(t, messages)
 			return ai.AIMessage{
 				Role:    ai.AssistantRole,
-				Content: "Final response",
+				Content: "Second call completed",
 			}, nil
-		}),
-	}
+		}
 
-	run1, err := agent.Start("First message - use echo tool")
-	assert.NoError(t, err)
-	_, err = run1.Wait(0)
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Final response",
+		}, nil
+	})
+
+	run1 := NewAgentRun("test-agent", "", "")
+	run1.SetModel(model)
+	run1.SetTools([]AgentTool{testTool})
+	run1.SetConversationHistory(history)
+	run1.Start(context.Background(), "First message - use echo tool")
+	_, err := run1.Wait(0)
 	assert.NoError(t, err)
 
-	run2, err := agent.Start("Second message")
-	assert.NoError(t, err)
+	run2 := NewAgentRun("test-agent", "", "")
+	run2.SetModel(model)
+	run2.SetTools([]AgentTool{testTool})
+	run2.SetConversationHistory(history)
+	run2.Start(context.Background(), "Second message")
 	_, err = run2.Wait(0)
 	assert.NoError(t, err)
 }
@@ -750,55 +730,52 @@ func TestConversationHistoryIncludedInFutureConversations(t *testing.T) {
 	callCount := 0
 	var receivedMessages []ai.Message
 
-	agent := Agent{
-		Name:                "test-history-agent",
-		Description:         "Agent that remembers conversation history",
-		ConversationHistory: history,
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			callCount++
-			receivedMessages = append(receivedMessages, messages...)
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
+		receivedMessages = append(receivedMessages, messages...)
 
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role:    ai.AssistantRole,
-					Content: "Hello, I'm the assistant. First response.",
-				}, nil
-			}
-
-			if callCount == 2 {
-				hasPreviousMessage := false
-				for _, msg := range messages {
-					if userMsg, ok := msg.(ai.UserMessage); ok {
-						if userMsg.Content == "First message" {
-							hasPreviousMessage = true
-							break
-						}
-					}
-					if aiMsg, ok := msg.(ai.AIMessage); ok {
-						if aiMsg.Content == "Hello, I'm the assistant. First response." {
-							hasPreviousMessage = true
-							break
-						}
-					}
-				}
-				if !hasPreviousMessage {
-					t.Errorf("Previous conversation messages not found in second conversation. Received %d messages", len(messages))
-				}
-				return ai.AIMessage{
-					Role:    ai.AssistantRole,
-					Content: "Hello again, I remember our previous conversation.",
-				}, nil
-			}
-
+		if callCount == 1 {
 			return ai.AIMessage{
 				Role:    ai.AssistantRole,
-				Content: "Unexpected call",
+				Content: "Hello, I'm the assistant. First response.",
 			}, nil
-		}),
-	}
+		}
 
-	run1, err := agent.Start("First message")
-	assert.NoError(t, err)
+		if callCount == 2 {
+			hasPreviousMessage := false
+			for _, msg := range messages {
+				if userMsg, ok := msg.(ai.UserMessage); ok {
+					if userMsg.Content == "First message" {
+						hasPreviousMessage = true
+						break
+					}
+				}
+				if aiMsg, ok := msg.(ai.AIMessage); ok {
+					if aiMsg.Content == "Hello, I'm the assistant. First response." {
+						hasPreviousMessage = true
+						break
+					}
+				}
+			}
+			if !hasPreviousMessage {
+				t.Errorf("Previous conversation messages not found in second conversation. Received %d messages", len(messages))
+			}
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Hello again, I remember our previous conversation.",
+			}, nil
+		}
+
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Unexpected call",
+		}, nil
+	})
+
+	run1 := NewAgentRun("test-history-agent", "Agent that remembers conversation history", "")
+	run1.SetModel(model)
+	run1.SetConversationHistory(history)
+	run1.Start(context.Background(), "First message")
 	result1, err := run1.Wait(0)
 	assert.NoError(t, err)
 	assert.Contains(t, result1, "First response")
@@ -807,8 +784,10 @@ func TestConversationHistoryIncludedInFutureConversations(t *testing.T) {
 
 	receivedMessages = nil
 
-	run2, err := agent.Start("Second message")
-	assert.NoError(t, err)
+	run2 := NewAgentRun("test-history-agent", "Agent that remembers conversation history", "")
+	run2.SetModel(model)
+	run2.SetConversationHistory(history)
+	run2.Start(context.Background(), "Second message")
 	result2, err := run2.Wait(0)
 	assert.NoError(t, err)
 	assert.Contains(t, result2, "remember our previous conversation")

@@ -38,7 +38,7 @@ type AgentRun struct {
 	pendingApprovals        map[string]pendingApproval
 	processedToolCallIDs    map[string]bool
 	currentStreamGroup      *ToolCallGroup
-	trace                   *TraceRun
+	trace                   Trace
 	userMessage             string
 	parentRun               *AgentRun
 	Logger                  *slog.Logger
@@ -188,10 +188,8 @@ func (r *AgentRun) SetMaxLLMCalls(maxLLMCalls int) {
 	r.maxLLMCalls = maxLLMCalls
 }
 
-func (r *AgentRun) SetTracer(tracer *Tracer) {
-	if tracer != nil {
-		r.trace = tracer.NewTraceRun()
-	}
+func (r *AgentRun) SetTracer(tracer Trace) {
+	r.trace = tracer
 }
 
 func (r *AgentRun) SetTools(tools []AgentTool) {
@@ -359,13 +357,6 @@ func (r *AgentRun) Approve(approvalID string, approved bool) {
 
 func (r *AgentRun) Next() <-chan event.Event {
 	return r.eventQueue
-}
-
-func (r *AgentRun) TraceFilepath() string {
-	if r.trace == nil {
-		return ""
-	}
-	return r.trace.Filepath()
 }
 
 // keep it a variable to make it easier to test

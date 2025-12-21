@@ -21,6 +21,12 @@ var (
 	traceSync = sync.Mutex{}
 )
 
+type Trace interface {
+	Interceptor
+	RecordError(err error) error
+	Close() error
+}
+
 type TraceConfig struct {
 	Directory         string
 	RetentionDuration time.Duration
@@ -65,7 +71,7 @@ const (
 	defaultMaxTraceFiles     = 10
 )
 
-func NewTracer(config ...TraceConfig) *Tracer {
+func NewTracer(config ...TraceConfig) Trace {
 	defaultDir := filepath.Join(os.TempDir(), "aigentic-traces")
 
 	cfg := TraceConfig{
@@ -93,7 +99,7 @@ func NewTracer(config ...TraceConfig) *Tracer {
 
 	os.MkdirAll(cfg.Directory, 0755)
 
-	return t
+	return t.NewTraceRun()
 }
 
 func (tr *Tracer) NewTraceRun() *TraceRun {
@@ -368,25 +374,6 @@ func (tr *TraceRun) logAIMessage(msg ai.AIMessage) {
 			fmt.Fprintf(tr.file, "   tool_args: %s\n", tc.Args)
 		}
 	}
-}
-
-func (tr *TraceRun) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content string) error {
-	traceSync.Lock()
-	defer traceSync.Unlock()
-
-	fmt.Fprintf(tr.file, "🛠️️  %s tool response:\n", agentName)
-	fmt.Fprintf(tr.file, "   • %s(%s)\n",
-		toolCall.Name,
-		toolCall.Args)
-
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		if line != "" {
-			fmt.Fprintf(tr.file, "     %s\n", line)
-		}
-	}
-	tr.file.Sync()
-	return nil
 }
 
 func (tr *TraceRun) RecordError(err error) error {

@@ -55,7 +55,7 @@ type Agent struct {
 	// Tracer defines the trace factory for the agent.
 	// Set "Tracer: aigentic.NewTracer()" to create trace files for each run.
 	// Each run gets its own independent trace file.
-	Tracer *run.Tracer
+	Tracer run.Trace
 
 	// Interceptors chain allows inspection and modification of model calls
 	Interceptors []run.Interceptor

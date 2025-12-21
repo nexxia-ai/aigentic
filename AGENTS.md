@@ -2,17 +2,33 @@
 
 ## Project Structure & Module Organization
 - Root Go module: `aigentic` (see `go.mod`).
-- Core package files at repo root: `agent.go`, `run.go`, `context_manager.go`, etc.
+- Core package files at repo root: `agent.go`, `interface.go`, etc.
 - Packages/directories:
   - `ai/` model/tool interfaces and helpers
-  - `memory/` persistent and run/session memory logic
+  - `run/` agent runtime execution engine - contains `AgentRun`, events, tools, context management, conversation history, interceptors, tracing, and execution orchestration
   - `tools/` built-in tool implementations
   - `utils/` utility helpers
-  - `etc/` specs and docs - not code
-  - `etc/specs/*` contains design notes
-  - `run/` agent runtime 
-  - `document/` document manipulation 
-- Tests live alongside code as `*_test.go` (e.g., `agent_test.go`, `run_test.go`).
+  - `document/` document manipulation
+- Tests live alongside code as `*_test.go` (e.g., `agent_test.go`, `run/run_test.go`).
+
+### The `run` Package
+
+The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runtime execution engine. It contains:
+
+- **AgentRun** (`run.go`) - Main execution runtime type that orchestrates agent execution, handles LLM calls, tool execution, and event streaming
+- **Events** (`event.go`) - Event types for execution lifecycle: `ContentEvent`, `ToolEvent`, `ThinkingEvent`, `ErrorEvent`, `ApprovalEvent`, `LLMCallEvent`, `EvalEvent`, etc.
+- **AgentTool** (`agent_tool.go`) - Tool definition type and `NewTool()` helper for creating type-safe tools
+- **AgentContext** (`context.go`) - Context management for agent state, messages, memories, and documents
+- **ContextManager** (`context_manager.go`) - Interface for custom context management implementations
+- **ContextFunction** (`context_function.go`) - Function type for dynamic context injection
+- **ConversationHistory** (`conversation_history.go`) - Conversation tracking across multiple agent runs
+- **ConversationTurn** (`conversation_turn.go`) - Individual conversation turn representation
+- **Interceptor** (`interceptor.go`) - Interface for intercepting and modifying LLM calls
+- **Tracer** (`trace_run.go`) - Tracing support for debugging agent execution
+- **Retriever** (`retriever.go`) - Interface for document retrieval systems
+- **MemoryEntry** (`memory_entry.go`) - Memory entry representation
+
+The root `aigentic` package (`agent.go`) provides the declarative `Agent` type that users configure, which internally creates and manages `run.AgentRun` instances for execution.
 
 ## Build, Test, and Development Commands
 - Build library: `go build ./...` — compile all packages.
@@ -27,7 +43,7 @@
 - Naming: exported identifiers use PascalCase; unexported use camelCase.
 - Files: tests end with `_test.go`; examples may use `example_*.go`.
 - Imports: standard → external → internal; keep groups separated.
-- Prefer small, focused files; keep package boundaries clear (`memory` must not depend on `aigentic`).
+- Prefer small, focused files; keep package boundaries clear. The `run` package depends on `ai` and `document` packages. Lower-level packages (`ai`, `document`, `tools`, `utils`) should not depend on the root `aigentic` package.
 
 ## Testing Guidelines
 - Framework: standard `testing` package; use `assert` only where already present.

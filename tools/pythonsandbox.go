@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 const (
@@ -64,16 +64,16 @@ const (
 	maxTimeout     = 300 // 5 minutes
 )
 
-func NewPythonSandboxTool() aigentic.AgentTool {
+func NewPythonSandboxTool() run.AgentTool {
 	type PythonSandboxInput struct {
 		Code    string `json:"code" description:"Python code to execute in the sandbox"`
 		Timeout int    `json:"timeout,omitempty" description:"Execution timeout in seconds (default: 30, max: 300)"`
 	}
 
-	return aigentic.NewTool(
+	return run.NewTool(
 		PythonSandboxToolName,
 		pythonSandboxDescription,
-		func(run *aigentic.AgentRun, input PythonSandboxInput) (string, error) {
+		func(agentRun *run.AgentRun, input PythonSandboxInput) (string, error) {
 			return executePython(input.Code, input.Timeout)
 		},
 	)

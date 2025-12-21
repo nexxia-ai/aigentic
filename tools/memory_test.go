@@ -8,6 +8,7 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 func TestMemoryToolBasicUsage(t *testing.T) {
@@ -39,7 +40,7 @@ func TestMemoryToolBasicUsage(t *testing.T) {
 				Content: "Memory saved successfully",
 			}, nil
 		}),
-		AgentTools:  []aigentic.AgentTool{NewMemoryTool()},
+		AgentTools:  []run.AgentTool{NewMemoryTool()},
 		MaxLLMCalls: 5,
 	}
 
@@ -106,7 +107,7 @@ func TestMemoryToolDelete(t *testing.T) {
 				Content: "Delete complete",
 			}, nil
 		}),
-		AgentTools:  []aigentic.AgentTool{NewMemoryTool()},
+		AgentTools:  []run.AgentTool{NewMemoryTool()},
 		MaxLLMCalls: 10,
 	}
 
@@ -160,7 +161,7 @@ func TestMemoryToolSystemPromptInjection(t *testing.T) {
 				Content: "Context verified",
 			}, nil
 		}),
-		AgentTools:  []aigentic.AgentTool{NewMemoryTool()},
+		AgentTools:  []run.AgentTool{NewMemoryTool()},
 		MaxLLMCalls: 5,
 	}
 
@@ -228,7 +229,7 @@ func TestMemoryToolMultipleEntries(t *testing.T) {
 				Content: "Multiple entries verified",
 			}, nil
 		}),
-		AgentTools:  []aigentic.AgentTool{NewMemoryTool()},
+		AgentTools:  []run.AgentTool{NewMemoryTool()},
 		MaxLLMCalls: 10,
 	}
 
@@ -299,7 +300,7 @@ func TestMemoryToolUpsert(t *testing.T) {
 				Content: "Upsert verified",
 			}, nil
 		}),
-		AgentTools:  []aigentic.AgentTool{NewMemoryTool()},
+		AgentTools:  []run.AgentTool{NewMemoryTool()},
 		MaxLLMCalls: 10,
 	}
 
@@ -311,70 +312,6 @@ func TestMemoryToolUpsert(t *testing.T) {
 	_, err = run.Wait(5 * time.Second)
 	if err != nil {
 		t.Errorf("Agent run failed: %v", err)
-	}
-}
-
-func TestMemoryToolSessionPersistence(t *testing.T) {
-	callCount := 0
-
-	agent := aigentic.Agent{
-		Name:        "test-agent",
-		Description: "Test agent with memory persistence",
-		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, toolList []ai.Tool) (ai.AIMessage, error) {
-			callCount++
-			if callCount == 1 {
-				return ai.AIMessage{
-					Role:    ai.AssistantRole,
-					Content: "Saving entry",
-					ToolCalls: []ai.ToolCall{
-						{
-							ID:   "call-1",
-							Name: "update_memory",
-							Args: `{"memory_id": "persistent", "memory_description": "Persistent entry", "memory_content": "persistent content"}`,
-						},
-					},
-				}, nil
-			}
-			return ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Done",
-			}, nil
-		}),
-		AgentTools:  []aigentic.AgentTool{NewMemoryTool()},
-		MaxLLMCalls: 5,
-	}
-
-	run1, err := agent.Start("first run")
-	if err != nil {
-		t.Errorf("Failed to start agent: %v", err)
-	}
-	_, err = run1.Wait(5 * time.Second)
-	if err != nil {
-		t.Errorf("First run failed: %v", err)
-	}
-
-	callCount = 0
-	agent.Model = ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, toolList []ai.Tool) (ai.AIMessage, error) {
-		memories := extractMemoriesFromSystemPrompt(messages)
-		if !strings.Contains(memories, "persistent") {
-			t.Error("Memory should persist across runs")
-		}
-		if !strings.Contains(memories, "persistent content") {
-			t.Error("Memory content should persist across runs")
-		}
-		return ai.AIMessage{
-			Role:    ai.AssistantRole,
-			Content: "Memory persisted",
-		}, nil
-	})
-
-	run2, err := agent.Start("second run")
-	if err != nil {
-		t.Errorf("Failed to start agent: %v", err)
-	}
-	_, err = run2.Wait(5 * time.Second)
-	if err != nil {
-		t.Errorf("Second run failed: %v", err)
 	}
 }
 

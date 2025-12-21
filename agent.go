@@ -6,19 +6,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 // ContextFunction is a function that provides dynamic context for the agent.
 // It receives the AgentRun and returns a context string to be included in every LLM call.
 // If an error occurs, the error message will be included in the context.
-type ContextFunction func(*AgentRun) (string, error)
+type ContextFunction func(*run.AgentRun) (string, error)
 
 // Agent is the main declarative type for an agent.
 type Agent struct {
 	Model      *ai.Model
 	Name       string
 	Agents     []Agent
-	AgentTools []AgentTool
+	AgentTools []run.AgentTool
 
 	// Description should contain a description of the agent's role and capabilities.
 	// It will be added to the system prompt. If this is a sub-agent, the Description is passed to the parent agent.
@@ -34,7 +35,7 @@ type Agent struct {
 	// ConversationHistory enables automatic conversation history tracking across multiple Start() calls.
 	// Messages are captured with metadata (trace file, run ID, timestamp) for correlation and debugging.
 	// Set to a ConversationHistory object to share history across multiple agents or conversation sessions.
-	ConversationHistory *ConversationHistory
+	ConversationHistory *run.ConversationHistory
 
 	// Retries is the number of times to retry the agent if it fails.
 	Retries int
@@ -53,10 +54,10 @@ type Agent struct {
 	// Tracer defines the trace factory for the agent.
 	// Set "Tracer: aigentic.NewTracer()" to create trace files for each run.
 	// Each run gets its own independent trace file.
-	Tracer *Tracer
+	Tracer *run.Tracer
 
 	// Interceptors chain allows inspection and modification of model calls
-	Interceptors []Interceptor
+	Interceptors []run.Interceptor
 
 	LogLevel    slog.Level
 	MaxLLMCalls int // Maximum number of LLM calls (0 = unlimited)
@@ -66,23 +67,34 @@ type Agent struct {
 	// These can be used to evaluate the agent's prompt performance using the eval package.
 	EnableEvaluation bool
 
-	Retrievers []Retriever
-
-	// ContextFunctions contains functions that provide dynamic context for the agent.
-	// These functions are called before each LLM call and their output is included
-	// as a separate user message wrapped in <Session context> tags.
-	ContextFunctions []ContextFunction
+	Retrievers []run.Retriever
 }
 
 // Start starts a new agent run.
 // The agent is passed by value and is not modified during the run.
-func (a Agent) Start(message string) (*AgentRun, error) {
+func (a Agent) Start(message string) (*run.AgentRun, error) {
 	if a.Name == "" {
 		a.Name = "noname_" + uuid.New().String()
 	}
-	run := newAgentRun(a, message)
-	run.start()
-	return run, nil
+	ar := run.NewAgentRun(a.Name, a.Description, a.Instructions, message)
+	ar.SetModel(a.Model)
+	ar.SetInterceptors(a.Interceptors)
+	ar.SetMaxLLMCalls(a.MaxLLMCalls)
+	ar.SetTracer(a.Tracer)
+	ar.SetTools(a.AgentTools)
+	ar.SetRetrievers(a.Retrievers)
+	ar.SetStreaming(a.Stream)
+	for _, agent := range a.Agents {
+		ar.AddSubAgent(agent.Name, agent.Description, agent.Instructions, agent.Model, agent.AgentTools)
+	}
+
+	ar.AgentContext().SetDocuments(a.Documents)
+	ar.AgentContext().SetDocumentReferences(a.DocumentReferences)
+	if a.ConversationHistory != nil {
+		ar.SetConversationHistory(a.ConversationHistory)
+	}
+	ar.Start()
+	return ar, nil
 }
 
 // Execute is a convenience method that starts a new agent run and waits for the result.

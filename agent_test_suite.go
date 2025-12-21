@@ -1,7 +1,5 @@
 package aigentic
 
-// This file contains reusable integration tests to test various model providers.
-
 import (
 	"fmt"
 	"strings"
@@ -11,6 +9,8 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/event"
+	"github.com/nexxia-ai/aigentic/run"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,7 +23,7 @@ type IntegrationTestSuite struct {
 
 // TODO: fix this - this is a hack and does not test the real tool
 // newMemoryTool creates a memory tool for testing without importing tools package to avoid import cycles
-func newMemoryTool() AgentTool {
+func newMemoryTool() run.AgentTool {
 	data := make(map[string]string)
 	var mutex sync.RWMutex
 
@@ -54,11 +54,11 @@ func newMemoryTool() AgentTool {
 		return nil
 	}
 
-	contextFn := func(run *AgentRun) (string, error) {
+	contextFn := func(agentRun *run.AgentRun) (string, error) {
 		return formatAll(), nil
 	}
 
-	return AgentTool{
+	return run.AgentTool{
 		Name:        "update_memory",
 		Description: "Update or delete memory entries. Set memory_content to empty string to delete.",
 		InputSchema: map[string]interface{}{
@@ -75,8 +75,8 @@ func newMemoryTool() AgentTool {
 			},
 			"required": []string{"memory_name", "memory_content"},
 		},
-		ContextFunctions: []ContextFunction{contextFn},
-		NewExecute: func(run *AgentRun, result ValidationResult) (*ai.ToolResult, error) {
+		ContextFunctions: []run.ContextFunction{contextFn},
+		NewExecute: func(agentRun *run.AgentRun, result event.ValidationResult) (*ai.ToolResult, error) {
 			args := result.Values.(map[string]interface{})
 			name := args["memory_name"].(string)
 			content := args["memory_content"].(string)
@@ -187,15 +187,15 @@ func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
 }
 
 // NewLookupCompanyNumberTool returns an AgentTool struct for testing
-func NewLookupCompanyNumberTool(counter *int) AgentTool {
+func NewLookupCompanyNumberTool(counter *int) run.AgentTool {
 	type LookupCompanyNumberInput struct {
 		CompanyNumber string `json:"company_number" description:"The company number to lookup"`
 	}
 
-	return NewTool(
+	return run.NewTool(
 		"lookup_company_name",
 		"A tool that looks up the name of a company based on a company number",
-		func(run *AgentRun, input LookupCompanyNumberInput) (string, error) {
+		func(agentRun *run.AgentRun, input LookupCompanyNumberInput) (string, error) {
 			*counter++
 			return "Nexxia", nil
 		},
@@ -227,30 +227,30 @@ func NewSecretNumberToolLegacy() ai.Tool {
 }
 
 // NewSecretSupplierTool returns an AgentTool struct for testing supplier lookup
-func NewSecretSupplierTool() AgentTool {
+func NewSecretSupplierTool() run.AgentTool {
 	type LookupSupplierInput struct {
 		SupplierNumber string `json:"supplier_number" description:"The supplier number to lookup"`
 	}
 
-	return NewTool(
+	return run.NewTool(
 		"lookup_supplier_name",
 		"A tool that looks up the name of a supplier based on a supplier number",
-		func(run *AgentRun, input LookupSupplierInput) (string, error) {
+		func(agentRun *run.AgentRun, input LookupSupplierInput) (string, error) {
 			return "Phoenix", nil
 		},
 	)
 }
 
 // NewLookupCompanyByNameTool simulates looking up a company by name and returning an ID or not found
-func NewLookupCompanyByNameTool() AgentTool {
+func NewLookupCompanyByNameTool() run.AgentTool {
 	type LookupCompanyByNameInput struct {
 		Name string `json:"name" description:"The company name to lookup"`
 	}
 
-	return NewTool(
+	return run.NewTool(
 		"lookup_company_id",
 		"Lookup a company ID by its name. Returns 'COMPANY_ID: <id>; NAME: <name>' if found, otherwise 'NOT_FOUND'",
-		func(run *AgentRun, input LookupCompanyByNameInput) (string, error) {
+		func(agentRun *run.AgentRun, input LookupCompanyByNameInput) (string, error) {
 			content := "NOT_FOUND"
 			if strings.EqualFold(strings.TrimSpace(input.Name), "Nexxia") {
 				content = "COMPANY_ID: COMP-001; NAME: Nexxia"
@@ -261,15 +261,15 @@ func NewLookupCompanyByNameTool() AgentTool {
 }
 
 // NewCreateCompanyTool simulates creating a company, returning a deterministic ID for testing
-func NewCreateCompanyTool() AgentTool {
+func NewCreateCompanyTool() run.AgentTool {
 	type CreateCompanyInput struct {
 		Name string `json:"name" description:"The company name to create"`
 	}
 
-	return NewTool(
+	return run.NewTool(
 		"create_company",
 		"Create a new company by name. Returns 'COMPANY_ID: <id>; NAME: <name>'",
-		func(run *AgentRun, input CreateCompanyInput) (string, error) {
+		func(agentRun *run.AgentRun, input CreateCompanyInput) (string, error) {
 			// Deterministic ID derived from name for test stability
 			id := "COMP-NEW-001"
 			if strings.EqualFold(strings.TrimSpace(input.Name), "Contoso") {
@@ -285,16 +285,16 @@ func NewCreateCompanyTool() AgentTool {
 }
 
 // NewCreateInvoiceTool simulates creating an invoice for a company ID and amount
-func NewCreateInvoiceTool() AgentTool {
+func NewCreateInvoiceTool() run.AgentTool {
 	type CreateInvoiceInput struct {
 		CompanyID string  `json:"company_id" description:"The company ID to invoice"`
 		Amount    float64 `json:"amount" description:"The invoice amount"`
 	}
 
-	return NewTool(
+	return run.NewTool(
 		"create_invoice",
 		"Create an invoice for a company. Returns 'INVOICE_ID: <id>; AMOUNT: <amount>'",
-		func(run *AgentRun, input CreateInvoiceInput) (string, error) {
+		func(agentRun *run.AgentRun, input CreateInvoiceInput) (string, error) {
 			amountStr := fmt.Sprintf("%.0f", input.Amount)
 			content := fmt.Sprintf("INVOICE_ID: INV-1001; AMOUNT: %s", amountStr)
 			return content, nil
@@ -309,7 +309,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 		name          string
 		message       string
 		expectedError bool
-		validate      func(t *testing.T, content string, run *AgentRun)
+		validate      func(t *testing.T, content string, agentRun *run.AgentRun)
 		attachments   []*document.Document
 		tools         []ai.Tool
 	}{
@@ -318,10 +318,10 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			name:          "empty agent",
 			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
-			validate: func(t *testing.T, content string, run *AgentRun) {
+			validate: func(t *testing.T, content string, agentRun *run.AgentRun) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, run.ID())
-				assert.NotEmpty(t, run.agent.Name)
+				assert.NotEmpty(t, agentRun.ID())
+				assert.NotEmpty(t, agentRun.AgentName())
 				assert.Contains(t, strings.ToLower(content), "sydney")
 			},
 			tools: []ai.Tool{},
@@ -331,10 +331,10 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			name:          "basic conversation",
 			message:       "What is the capital of New South Wales, Australia?",
 			expectedError: false,
-			validate: func(t *testing.T, content string, run *AgentRun) {
+			validate: func(t *testing.T, content string, agentRun *run.AgentRun) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, run.ID())
-				assert.NotEmpty(t, run.agent.Name)
+				assert.NotEmpty(t, agentRun.ID())
+				assert.NotEmpty(t, agentRun.AgentName())
 				assert.Contains(t, strings.ToLower(content), "sydney")
 			},
 			tools: []ai.Tool{},
@@ -346,28 +346,28 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 			tt.agent.Documents = tt.attachments
 			// Convert ai.Tools to AgentTools
 			for _, tool := range tt.tools {
-				tt.agent.AgentTools = append(tt.agent.AgentTools, WrapTool(tool))
+				tt.agent.AgentTools = append(tt.agent.AgentTools, run.WrapTool(tool))
 			}
 
-			run, err := tt.agent.Start(tt.message)
+			agentRun, err := tt.agent.Start(tt.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
 			var chunks []string
-			for ev := range run.Next() {
+			for ev := range agentRun.Next() {
 				switch e := ev.(type) {
-				case *ContentEvent:
+				case *event.ContentEvent:
 					chunks = append(chunks, e.Content)
-				case *ToolEvent:
-				case *ApprovalEvent:
-					run.Approve(e.ApprovalID, true)
-				case *ErrorEvent:
+				case *event.ToolEvent:
+				case *event.ApprovalEvent:
+					agentRun.Approve(e.ApprovalID, true)
+				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
 			finalContent := strings.Join(chunks, "")
 			if tt.validate != nil {
-				tt.validate(t, finalContent, run)
+				tt.validate(t, finalContent, agentRun)
 			}
 		})
 	}
@@ -387,17 +387,17 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 	tests := []struct {
 		name        string
 		message     string
-		validate    func(t *testing.T, content string, run *AgentRun)
+		validate    func(t *testing.T, content string, agentRun *run.AgentRun)
 		attachments []*document.Document
 		tools       []ai.Tool
 	}{
 		{
 			name:    "basic conversation",
 			message: "What is the capital of Australia?",
-			validate: func(t *testing.T, content string, run *AgentRun) {
+			validate: func(t *testing.T, content string, agentRun *run.AgentRun) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, run.ID())
-				assert.NotEmpty(t, run.agent.Name)
+				assert.NotEmpty(t, agentRun.ID())
+				assert.NotEmpty(t, agentRun.AgentName())
 				assert.Contains(t, strings.ToLower(content), "canberra")
 			},
 			tools: []ai.Tool{},
@@ -405,10 +405,10 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 		{
 			name:    "conversation with instructions",
 			message: "Explain the concept of recursion",
-			validate: func(t *testing.T, content string, run *AgentRun) {
+			validate: func(t *testing.T, content string, agentRun *run.AgentRun) {
 				assert.NotEmpty(t, content)
-				assert.NotEmpty(t, run.ID())
-				assert.NotEmpty(t, run.agent.Name)
+				assert.NotEmpty(t, agentRun.ID())
+				assert.NotEmpty(t, agentRun.AgentName())
 				assert.Contains(t, strings.ToLower(content), "recursion")
 			},
 			tools: []ai.Tool{},
@@ -420,28 +420,28 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 			agent := newAgent()
 			// Convert ai.Tools to AgentTools
 			for _, tool := range test.tools {
-				agent.AgentTools = append(agent.AgentTools, WrapTool(tool))
+				agent.AgentTools = append(agent.AgentTools, run.WrapTool(tool))
 			}
 			agent.Documents = test.attachments
-			run, err := agent.Start(test.message)
+			agentRun, err := agent.Start(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
 			var chunks []string
-			for ev := range run.Next() {
+			for ev := range agentRun.Next() {
 				switch e := ev.(type) {
-				case *ContentEvent:
+				case *event.ContentEvent:
 					chunks = append(chunks, e.Content)
-				case *ToolEvent:
-				case *ApprovalEvent:
-					run.Approve(e.ApprovalID, true)
-				case *ErrorEvent:
+				case *event.ToolEvent:
+				case *event.ApprovalEvent:
+					agentRun.Approve(e.ApprovalID, true)
+				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
 			finalContent := strings.Join(chunks, "")
 			if test.validate != nil {
-				test.validate(t, finalContent, run)
+				test.validate(t, finalContent, agentRun)
 			}
 		})
 	}
@@ -485,22 +485,22 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 		t.Run(test.name, func(t *testing.T) {
 			// Convert ai.Tools to AgentTools
 			for _, tool := range test.tools {
-				test.agent.AgentTools = append(test.agent.AgentTools, WrapTool(tool))
+				test.agent.AgentTools = append(test.agent.AgentTools, run.WrapTool(tool))
 			}
 			test.agent.Documents = test.attachments
-			run, err := test.agent.Start(test.message)
+			agentRun, err := test.agent.Start(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
 			var chunks []string
-			for ev := range run.Next() {
+			for ev := range agentRun.Next() {
 				switch e := ev.(type) {
-				case *ContentEvent:
+				case *event.ContentEvent:
 					chunks = append(chunks, e.Content)
-				case *ToolEvent:
-				case *ApprovalEvent:
-					run.Approve(e.ApprovalID, true)
-				case *ErrorEvent:
+				case *event.ToolEvent:
+				case *event.ApprovalEvent:
+					agentRun.Approve(e.ApprovalID, true)
+				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
@@ -519,7 +519,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 		Name:         "lookup",
 		Description:  "Lookup company details by name. Return either 'COMPANY_ID: <id>; NAME: <name>' or 'NOT_FOUND' only.",
 		Instructions: "Use tools to perform the lookup and return the canonical format only.",
-		AgentTools:   []AgentTool{NewLookupCompanyByNameTool()},
+		AgentTools:   []run.AgentTool{NewLookupCompanyByNameTool()},
 	}
 
 	companyCreator := Agent{
@@ -527,7 +527,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 		Name:         "company_creator",
 		Description:  "Create a new company by name and return 'COMPANY_ID: <id>; NAME: <name>' only.",
 		Instructions: "Use tools to create the company and return the canonical format only.",
-		AgentTools:   []AgentTool{NewCreateCompanyTool()},
+		AgentTools:   []run.AgentTool{NewCreateCompanyTool()},
 	}
 
 	invoiceCreator := Agent{
@@ -535,7 +535,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 		Name:         "invoice_creator",
 		Description:  "Create an invoice for a given company_id and amount. Return 'INVOICE_ID: <id>; AMOUNT: <amount>' only.",
 		Instructions: "Use tools to create the invoice and return the canonical format only.",
-		AgentTools:   []AgentTool{NewCreateInvoiceTool()},
+		AgentTools:   []run.AgentTool{NewCreateInvoiceTool()},
 	}
 
 	coordinator := Agent{
@@ -549,7 +549,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
-		Tracer: NewTracer(),
+		Tracer: run.NewTracer(),
 		// LogLevel: slog.LevelDebug,
 	}
 
@@ -589,21 +589,21 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			toolOrder := []string{}
 
 			msg := fmt.Sprintf("Create an invoice for company '%s' for the amount %s. Return the final canonical line only.", tc.companyName, tc.amount)
-			run, err := coordinator.Start(msg)
+			agentRun, err := coordinator.Start(msg)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
 
 			var chunks []string
-			for ev := range run.Next() {
+			for ev := range agentRun.Next() {
 				switch e := ev.(type) {
-				case *ContentEvent:
+				case *event.ContentEvent:
 					chunks = append(chunks, e.Content)
-				case *ToolEvent:
+				case *event.ToolEvent:
 					toolOrder = append(toolOrder, e.ToolName)
-				case *ApprovalEvent:
-					run.Approve(e.ApprovalID, true)
-				case *ErrorEvent:
+				case *event.ApprovalEvent:
+					agentRun.Approve(e.ApprovalID, true)
+				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
@@ -692,7 +692,7 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 		},
 	}
 
-	tracer := NewTracer()
+	tracer := run.NewTracer()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := Agent{
@@ -703,11 +703,11 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 				Documents:    tc.attachments,
 			}
 
-			run, err := agent.Start("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
+			agentRun, err := agent.Start("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
-			response, err := run.Wait(10 * time.Second)
+			response, err := agentRun.Wait(10 * time.Second)
 			if err != nil {
 				t.Fatalf("Agent wait failed: %v", err)
 			}
@@ -751,14 +751,14 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		Return the final names as received from the last expert. do not add any additional text or commentary.`,
 		Model:  model,
 		Agents: experts,
-		Tracer: NewTracer(),
+		Tracer: run.NewTracer(),
 	}
 
-	run, err := coordinator.Start("call the names of expert1, expert2 and expert3 and return them in order, do not add any additional text or commentary.")
+	agentRun, err := coordinator.Start("call the names of expert1, expert2 and expert3 and return them in order, do not add any additional text or commentary.")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
-	response, err := run.Wait(0)
+	response, err := agentRun.Wait(0)
 	if err != nil {
 		t.Fatalf("Agent wait failed: %v", err)
 	}
@@ -781,8 +781,8 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		Model:        model,
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
-		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
-		Tracer:       NewTracer(),
+		AgentTools:   []run.AgentTool{NewLookupCompanyNumberTool(&counter)},
+		Tracer:       run.NewTracer(),
 	}
 
 	// Define multiple sequential runs
@@ -809,11 +809,11 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 	}
 
 	// Start all runs first (parallel execution)
-	var agentRuns []*AgentRun
-	for i, run := range runs {
-		t.Logf("Starting run %d: %s", i+1, run.name)
+	var agentRuns []*run.AgentRun
+	for i, testRun := range runs {
+		t.Logf("Starting run %d: %s", i+1, testRun.name)
 
-		agentRun, err := agent.Start(run.message)
+		agentRun, err := agent.Start(testRun.message)
 		if err != nil {
 			t.Fatalf("Run %d failed to start: %v", i+1, err)
 		}
@@ -880,28 +880,28 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 	}
 
 	message := "What is the capital of France what give me a brief summary of the city"
-	run, err := agent.Start(message)
+	agentRun, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
 	var chunks []string
-	for ev := range run.Next() {
+	for ev := range agentRun.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
-		case *ToolEvent:
-		case *ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *ErrorEvent:
+		case *event.ToolEvent:
+		case *event.ApprovalEvent:
+			agentRun.Approve(e.ApprovalID, true)
+		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}
 	finalContent := strings.Join(chunks, "")
 
 	assert.NotEmpty(t, finalContent)
-	assert.NotEmpty(t, run.ID())
-	assert.NotEmpty(t, run.agent.Name)
+	assert.NotEmpty(t, agentRun.ID())
+	assert.NotEmpty(t, agentRun.AgentName())
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 }
@@ -916,27 +916,27 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 	}
 
 	message := "What is the capital of France?"
-	run, err := agent.Start(message)
+	agentRun, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
 	var chunks []string
-	for ev := range run.Next() {
+	for ev := range agentRun.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
-		case *ToolEvent:
-		case *ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *ErrorEvent:
+		case *event.ToolEvent:
+		case *event.ApprovalEvent:
+			agentRun.Approve(e.ApprovalID, true)
+		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}
 
 	finalContent := strings.Join(chunks, "")
 	assert.NotEmpty(t, finalContent)
-	assert.NotEmpty(t, run.ID)
+	assert.NotEmpty(t, agentRun.ID())
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 }
@@ -951,27 +951,27 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 	}
 
 	message := "Give me a brief summary of Paris"
-	run, err := agent.Start(message)
+	agentRun, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
 	var chunks []string
-	for ev := range run.Next() {
+	for ev := range agentRun.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
-		case *ToolEvent:
-		case *ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *ErrorEvent:
+		case *event.ToolEvent:
+		case *event.ApprovalEvent:
+			agentRun.Approve(e.ApprovalID, true)
+		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}
 
 	finalContent := strings.Join(chunks, "")
 	assert.NotEmpty(t, finalContent)
-	assert.NotEmpty(t, run.ID)
+	assert.NotEmpty(t, agentRun.ID())
 	assert.Contains(t, strings.ToLower(finalContent), "paris")
 	assert.Greater(t, len(chunks), 2, "Should have received streaming chunks")
 }
@@ -984,24 +984,24 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 		Description:  "You are a helpful assistant that provides clear and concise answers.",
 		Instructions: "Always explain your reasoning and provide examples when possible.",
 		Stream:       true,
-		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
+		AgentTools:   []run.AgentTool{NewLookupCompanyNumberTool(&counter)},
 	}
 
 	message := "tell me the name of the company with the number 150. Use tools. "
-	run, err := agent.Start(message)
+	agentRun, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
 	var chunks []string
-	for ev := range run.Next() {
+	for ev := range agentRun.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
-		case *ToolEvent:
-		case *ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *ErrorEvent:
+		case *event.ToolEvent:
+		case *event.ApprovalEvent:
+			agentRun.Approve(e.ApprovalID, true)
+		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}
@@ -1021,26 +1021,26 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Use the lookup tool to find company information when asked.",
 		Stream:       true,
-		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
+		AgentTools:   []run.AgentTool{NewLookupCompanyNumberTool(&counter)},
 	}
 
 	message := "What company has the number 150?"
-	run, err := agent.Start(message)
+	agentRun, err := agent.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
 	var chunks []string
 	var toolCalls int
-	for ev := range run.Next() {
+	for ev := range agentRun.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
-		case *ToolEvent:
+		case *event.ToolEvent:
 			toolCalls++
-		case *ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *ErrorEvent:
+		case *event.ApprovalEvent:
+			agentRun.Approve(e.ApprovalID, true)
+		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}
@@ -1062,7 +1062,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		Name:         "lookup_company",
 		Description:  "This agent allows you to look up a company name by company number. Please provide the request as 'lookup the company name for xxx'",
 		Instructions: "Use tools to look up the company name. Return exactly 'COMPANY: <name>' and nothing else.",
-		AgentTools:   []AgentTool{NewLookupCompanyNumberTool(&counter)},
+		AgentTools:   []run.AgentTool{NewLookupCompanyNumberTool(&counter)},
 	}
 
 	lookupSupplier := Agent{
@@ -1070,7 +1070,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		Name:         "lookup_company_supplier",
 		Description:  "This agent allows you to look up a supplier name by supplier number. The request should be in the format 'lookup the supplier name for xxx'",
 		Instructions: "Use tools to look up the supplier name. Return exactly 'SUPPLIER: <name>' and nothing else.",
-		AgentTools:   []AgentTool{NewSecretSupplierTool()},
+		AgentTools:   []run.AgentTool{NewSecretSupplierTool()},
 	}
 
 	// Coordinator executes the plan, saves each result to memory, then replies with full memory content
@@ -1087,12 +1087,12 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 			"6) When saving memory, include all previous memory content plus the new result\n" +
 			"7) After all tasks are complete, return only the final memory content (no commentary)\n" +
 			"CRITICAL: Execute step 1, then step 2, then step 3, etc. - NEVER execute multiple steps simultaneously.",
-		AgentTools: []AgentTool{newMemoryTool()},
+		AgentTools: []run.AgentTool{newMemoryTool()},
 		Agents:     []Agent{lookupCompany, lookupSupplier},
-		Tracer:     NewTracer(),
+		Tracer:     run.NewTracer(),
 	}
 
-	run, err := coordinator.Start(
+	agentRun, err := coordinator.Start(
 		"Execute the following plan: " +
 			"1) Call 'lookup_company' with input 'Look up company 150'. " +
 			"2) Save the result to memory using update_memory tool. " +
@@ -1110,11 +1110,11 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	var supplierToolInput string
 	var chunks []string
 
-	for ev := range run.Next() {
+	for ev := range agentRun.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
-		case *ToolEvent:
+		case *event.ToolEvent:
 			args := e.ValidationResult.Values.(map[string]any)
 			toolOrder = append(toolOrder, e.ToolName)
 			if e.ToolName == "update_memory" {
@@ -1131,9 +1131,9 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 					supplierToolInput = v
 				}
 			}
-		case *ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *ErrorEvent:
+		case *event.ApprovalEvent:
+			agentRun.Approve(e.ApprovalID, true)
+		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}

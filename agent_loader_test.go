@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 func TestDecodeConfigYAML_Valid(t *testing.T) {
@@ -101,7 +102,7 @@ agents:
 	}
 
 	modelResolver := func(s string) (*ai.Model, error) { return &ai.Model{ModelName: s}, nil }
-	toolResolver := func(name string, sc ai.ServerConfig) ([]AgentTool, error) { return []AgentTool{}, nil }
+	toolResolver := func(name string, sc ai.ServerConfig) ([]run.AgentTool, error) { return []run.AgentTool{}, nil }
 
 	agents, err := cfg.InstantiateAgents(modelResolver, toolResolver)
 	if err != nil {
@@ -204,7 +205,7 @@ agents:
 	}
 
 	modelResolver := func(s string) (*ai.Model, error) { return &ai.Model{ModelName: s}, nil }
-	toolResolver := func(name string, sc ai.ServerConfig) ([]AgentTool, error) { return []AgentTool{}, nil }
+	toolResolver := func(name string, sc ai.ServerConfig) ([]run.AgentTool, error) { return []run.AgentTool{}, nil }
 
 	agents, err := cfg.InstantiateAgents(modelResolver, toolResolver)
 	if err != nil {
@@ -251,7 +252,7 @@ agents:
 	}
 
 	modelResolver := func(s string) (*ai.Model, error) { return &ai.Model{ModelName: s}, nil }
-	toolResolver := func(name string, sc ai.ServerConfig) ([]AgentTool, error) { return []AgentTool{}, nil }
+	toolResolver := func(name string, sc ai.ServerConfig) ([]run.AgentTool, error) { return []run.AgentTool{}, nil }
 
 	agents, err := cfg.InstantiateAgents(modelResolver, toolResolver)
 	if err != nil {

@@ -6,18 +6,13 @@ import (
 	"testing"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
-// createTestAgentRun creates a minimal AgentRun for testing
-func createTestAgentRun(agentName, modelName string) *AgentRun {
-	return &AgentRun{
-		agent: Agent{
-			Name: agentName,
-		},
-		model: &ai.Model{
-			ModelName: modelName,
-		},
-	}
+func createTestAgentRun(agentName, modelName string) *run.AgentRun {
+	a := run.NewAgentRun("testAgent", "", "", "")
+	a.SetModel(&ai.Model{ModelName: modelName})
+	return a
 }
 
 func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
@@ -25,7 +20,7 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create tracer with custom directory
-	tracer := NewTracer(TraceConfig{Directory: tempDir})
+	tracer := run.NewTracer(run.TraceConfig{Directory: tempDir})
 	trace := tracer.NewTraceRun()
 	defer trace.Close()
 
@@ -86,7 +81,7 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create tracer with custom directory
-	tracer := NewTracer(TraceConfig{Directory: tempDir})
+	tracer := run.NewTracer(run.TraceConfig{Directory: tempDir})
 	trace := tracer.NewTraceRun()
 	defer trace.Close()
 

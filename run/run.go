@@ -1,4 +1,4 @@
-package aigentic
+package run
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/event"
 )
 
 var approvalTimeout = time.Minute * 60
@@ -20,8 +21,8 @@ var approvalTimeout = time.Minute * 60
 type AgentRun struct {
 	id        string
 	sessionID string // a unique identifier for multiple runs
-	agent     Agent
 	model     *ai.Model
+	agentName string
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -31,11 +32,11 @@ type AgentRun struct {
 	agentContext *AgentContext
 	interceptors []Interceptor
 
-	eventQueue              chan Event
+	eventQueue              chan event.Event
 	actionQueue             chan action
 	pendingApprovals        map[string]pendingApproval
 	processedToolCallIDs    map[string]bool
-	currentStreamGroup      *toolCallGroup
+	currentStreamGroup      *ToolCallGroup
 	trace                   *TraceRun
 	userMessage             string
 	parentRun               *AgentRun
@@ -49,10 +50,29 @@ type AgentRun struct {
 	// If set, this context manager will be used instead of the default BasicContextManager.
 	// Set "ContextManager: aigentic.NewEnhancedSystemContextManager(agent, message)" to use a custom context manager.
 	ContextManager ContextManager
+
+	// ContextFunctions contains functions that provide dynamic context for the agent.
+	// These functions are called before each LLM call and their output is included
+	// as a separate user message wrapped in <Session context> tags.
+	ContextFunctions []ContextFunction
+
+	streaming bool
+
+	retrievers []Retriever
+
+	subAgents []AgentTool
 }
 
 func (r *AgentRun) ID() string {
 	return r.id
+}
+
+func (r *AgentRun) AgentName() string {
+	return r.agentName
+}
+
+func (r *AgentRun) SetStreaming(streaming bool) {
+	r.streaming = streaming
 }
 
 func (r *AgentRun) Model() *ai.Model {
@@ -109,78 +129,90 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 	return nil
 }
 
-func newAgentRun(a Agent, message string) *AgentRun {
+func (r *AgentRun) SetRetrievers(retrievers []Retriever) {
+	r.retrievers = retrievers
+}
+
+func NewAgentRun(name, description, instructions, message string) *AgentRun {
 	runID := uuid.New().String()
 	sessionID := uuid.New().String()
 	runCtx, cancelFunc := context.WithCancel(context.Background())
-	model := a.Model
-	if model == nil {
-		model = ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-			return ai.AIMessage{}, fmt.Errorf("agent model is not set")
-		})
-	}
-	// Create TraceRun from factory if tracer is set
-	var traceRun *TraceRun
-	if a.Tracer != nil {
-		traceRun = a.Tracer.NewTraceRun()
-	}
-	// Build interceptor chain: copy from agent
-	interceptors := make([]Interceptor, len(a.Interceptors))
-	copy(interceptors, a.Interceptors)
 
-	// Add history interceptor if present
-	if a.ConversationHistory != nil {
-		interceptors = append(interceptors, newHistoryInterceptor(a.ConversationHistory))
-	}
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{}, fmt.Errorf("agent model is not set")
+	})
 
-	// Add trace interceptor if present
-	if traceRun != nil {
-		interceptors = append(interceptors, traceRun)
-	}
-
-	// Always add LoggerInterceptor as the last interceptor
-	interceptors = append(interceptors, newLoggerInterceptor())
-	// Apply a conservative default to prevent runaway tool/LLM loops.
-	maxLLMCalls := 20
-	if a.MaxLLMCalls != 0 {
-		maxLLMCalls = a.MaxLLMCalls
-	}
-
+	ac := NewAgentContext(description, instructions, message)
 	run := &AgentRun{
-		id:                   runID,
-		agent:                a,
-		model:                model,
-		sessionID:            sessionID,
-		ctx:                  runCtx,
-		cancelFunc:           cancelFunc,
-		userMessage:          message,
-		trace:                traceRun,
-		interceptors:         interceptors,
-		maxLLMCalls:          maxLLMCalls,
-		eventQueue:           make(chan Event, 100),
-		actionQueue:          make(chan action, 100),
-		pendingApprovals:     make(map[string]pendingApproval),
-		processedToolCallIDs: make(map[string]bool),
-		approvalTimeout:      approvalTimeout,
-		agentContext:         NewAgentContext(a, message),
-		Logger:               slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.LogLevel})).With("agent", a.Name),
+		agentName:               name,
+		id:                      runID,
+		sessionID:               sessionID,
+		ctx:                     runCtx,
+		cancelFunc:              cancelFunc,
+		agentContext:            ac,
+		model:                   model,
+		maxLLMCalls:             20,
+		eventQueue:              make(chan event.Event, 100),
+		actionQueue:             make(chan action, 100),
+		pendingApprovals:        make(map[string]pendingApproval),
+		processedToolCallIDs:    make(map[string]bool),
+		approvalTimeout:         approvalTimeout,
+		interceptors:            make([]Interceptor, 0),
+		tools:                   make([]AgentTool, 0),
+		streaming:               false,
+		currentConversationTurn: NewConversationTurn(message, runID, "", ""),
+		Logger:                  slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With("agent", name),
 	}
 
-	// Copy agent.Documents to session.documents during initialization
-	if len(a.Documents) > 0 {
-		copy(run.agentContext.documents, a.Documents)
-	}
-
-	run.tools = run.addTools()
-	traceFile := ""
-	if run.trace != nil {
-		traceFile = run.trace.Filepath()
-	}
-	run.currentConversationTurn = NewConversationTurn(run.userMessage, run.id, run.agent.Name, traceFile)
 	return run
 }
 
-func (r *AgentRun) start() {
+func (r *AgentRun) AgentContext() *AgentContext {
+	return r.agentContext
+}
+
+func (r *AgentRun) SetModel(model *ai.Model) {
+	r.model = model
+}
+
+func (r *AgentRun) SetAgentName(agentName string) {
+	r.agentName = agentName
+}
+
+func (r *AgentRun) SetInterceptors(interceptors []Interceptor) {
+	r.interceptors = interceptors
+}
+
+func (r *AgentRun) SetMaxLLMCalls(maxLLMCalls int) {
+	r.maxLLMCalls = maxLLMCalls
+}
+
+func (r *AgentRun) SetTracer(tracer *Tracer) {
+	if tracer != nil {
+		r.trace = tracer.NewTraceRun()
+	}
+}
+
+func (r *AgentRun) SetTools(tools []AgentTool) {
+	r.tools = tools
+}
+
+func (r *AgentRun) EnableHistory() {
+	r.interceptors = append(r.interceptors, newHistoryInterceptor(r.agentContext.conversationHistory))
+}
+
+func (r *AgentRun) SetConversationHistory(history *ConversationHistory) {
+	r.agentContext.SetConversationHistory(history)
+	if history != nil {
+		r.interceptors = append(r.interceptors, newHistoryInterceptor(history))
+	}
+}
+
+func (r *AgentRun) Start() {
+	// Add trace interceptor if present - this must be the last interceptor to capture the full response
+	if r.trace != nil {
+		r.interceptors = append(r.interceptors, r.trace)
+	}
 
 	// goroutine to read the action queue and process actions.
 	// it will terminate when the action queue is closed and the agent is finished.
@@ -200,86 +232,88 @@ func (r *AgentRun) stop() {
 	}
 }
 
-func (r *AgentRun) addTools() []AgentTool {
-	totalToolsCount := len(r.agent.AgentTools) + len(r.agent.Agents)
-	tools := make([]AgentTool, 0, totalToolsCount)
-	tools = append(tools, r.agent.AgentTools...)
-
-	for _, aa := range r.agent.Agents {
-		// tool adapter for sub-agent
-		agentTool := AgentTool{
-			Name:        aa.Name,
-			Description: aa.Description,
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"input": map[string]interface{}{
-						"type":        "string",
-						"description": "The input to send to the agent",
-					},
+func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Model, tools []AgentTool) {
+	agentTool := AgentTool{
+		Name:        name,
+		Description: description,
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"input": map[string]interface{}{
+					"type":        "string",
+					"description": "The input to send to the agent",
 				},
-				"required": []string{"input"},
 			},
-			Validate: func(run *AgentRun, args map[string]interface{}) (ValidationResult, error) {
-				return ValidationResult{Values: args}, nil
-			},
-			NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
-				input := ""
-				if v, ok := validationResult.Values.(map[string]any)["input"].(string); ok {
-					input = v
-				}
-				// Inherit Stream setting from parent if child agent doesn't have it explicitly set
-				if !aa.Stream && r.agent.Stream {
-					aa.Stream = true
-				}
-				subRun := newAgentRun(aa, input)
-				subRun.trace = r.trace
-				subRun.Logger = r.Logger.With("sub-agent", aa.Name)
-				subRun.parentRun = r
+			"required": []string{"input"},
+		},
+		Validate: func(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error) {
+			return event.ValidationResult{Values: args}, nil
+		},
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+			input := ""
+			if v, ok := validationResult.Values.(map[string]any)["input"].(string); ok {
+				input = v
+			}
+			subRun := NewAgentRun(name, description, message, input)
+			subRun.SetModel(model)
+			subRun.SetTools(tools)
+			subRun.trace = r.trace
+			subRun.Logger = r.Logger.With("sub-agent", name)
+			subRun.parentRun = r
+			// Inherit Stream setting from parent
+			if r.streaming {
+				subRun.SetStreaming(true)
+			}
 
-				subRun.start()
-				content, err := subRun.Wait(0)
+			subRun.Start()
+			content, err := subRun.Wait(0)
 
-				// Record sub-agent errors to trace
-				if r.trace != nil && err != nil {
-					r.trace.RecordError(fmt.Errorf("sub-agent %s error: %v", aa.Name, err))
-				}
+			// Record sub-agent errors to trace
+			if r.trace != nil && err != nil {
+				r.trace.RecordError(fmt.Errorf("sub-agent %s error: %v", name, err))
+			}
 
-				if err != nil {
-					return &ai.ToolResult{
-						Content: []ai.ToolContent{{
-							Type:    "text",
-							Content: fmt.Sprintf("Error: %v", err),
-						}},
-						Error: true,
-					}, nil
-				}
+			if err != nil {
 				return &ai.ToolResult{
 					Content: []ai.ToolContent{{
 						Type:    "text",
-						Content: content,
+						Content: fmt.Sprintf("Error: %v", err),
 					}},
-					Error: false,
+					Error: true,
 				}, nil
-			},
-		}
-		tools = append(tools, agentTool)
+			}
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{{
+					Type:    "text",
+					Content: content,
+				}},
+				Error: false,
+			}, nil
+		},
 	}
+	r.subAgents = append(r.subAgents, agentTool)
+}
+
+func (r *AgentRun) addTools() []AgentTool {
+	totalToolsCount := len(r.tools) + len(r.subAgents)
+	tools := make([]AgentTool, 0, totalToolsCount)
+	tools = append(tools, r.tools...)
+	tools = append(tools, r.subAgents...)
 
 	// Retriever tools
-	for _, retriever := range r.agent.Retrievers {
+	for _, retriever := range r.retrievers {
 		tools = append(tools, retriever.ToTool())
 	}
 
 	// make sure all tools have a validation and execute function
 	for i := range tools {
 		if tools[i].Validate == nil {
-			tools[i].Validate = func(run *AgentRun, args map[string]interface{}) (ValidationResult, error) {
-				return ValidationResult{Values: args, Message: ""}, nil
+			tools[i].Validate = func(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error) {
+				return event.ValidationResult{Values: args, Message: ""}, nil
 			}
 		}
 		if tools[i].NewExecute == nil {
-			tools[i].NewExecute = func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+			tools[i].NewExecute = func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 				return nil, nil
 			}
 		}
@@ -293,6 +327,11 @@ func (r *AgentRun) findTool(tcName string) *AgentTool {
 			return &r.tools[i]
 		}
 	}
+	for i := range r.subAgents {
+		if r.subAgents[i].Name == tcName {
+			return &r.subAgents[i]
+		}
+	}
 	return nil
 }
 
@@ -301,12 +340,12 @@ func (r *AgentRun) Wait(d time.Duration) (string, error) {
 	var err error
 	for evt := range r.eventQueue {
 		switch event := evt.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			// only append content that is for the same run ID so you don't append sub-agent content to the parent agent
 			if r.ID() == event.RunID {
 				content += event.Content
 			}
-		case *ErrorEvent:
+		case *event.ErrorEvent:
 			err = event.Err
 		}
 	}
@@ -317,7 +356,7 @@ func (r *AgentRun) Approve(approvalID string, approved bool) {
 	r.queueAction(&approvalAction{ApprovalID: approvalID, Approved: approved})
 }
 
-func (r *AgentRun) Next() <-chan Event {
+func (r *AgentRun) Next() <-chan event.Event {
 	return r.eventQueue
 }
 
@@ -348,7 +387,13 @@ func (r *AgentRun) processLoop() {
 				return
 
 			case *llmCallAction:
-				r.runLLMCallAction(act.Message, r.tools)
+				allTools := make([]AgentTool, 0, len(r.tools)+len(r.subAgents))
+				allTools = append(allTools, r.tools...)
+				allTools = append(allTools, r.subAgents...)
+				for _, retriever := range r.retrievers {
+					allTools = append(allTools, retriever.ToTool())
+				}
+				r.runLLMCallAction(act.Message, allTools)
 
 			case *toolResponseAction:
 				r.runToolResponseAction(act.request, act.response)
@@ -375,9 +420,9 @@ func (r *AgentRun) processLoop() {
 func (r *AgentRun) runStopAction(act *stopAction) {
 	if act.Error != nil {
 		r.Logger.Error("stopping agent", "error", act.Error)
-		event := &ErrorEvent{
+		event := &event.ErrorEvent{
 			RunID:     r.id,
-			AgentName: r.agent.Name,
+			AgentName: r.AgentName(),
 			SessionID: r.sessionID,
 			Err:       act.Error,
 		}
@@ -421,7 +466,6 @@ func (r *AgentRun) runApprovalAction(act *approvalAction) {
 }
 
 func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
-
 	// Check limit before making any LLM call
 	if r.maxLLMCalls > 0 && r.llmCallCount >= r.maxLLMCalls {
 		err := fmt.Errorf("LLM call limit exceeded: %d calls (configured limit: %d)",
@@ -440,9 +484,9 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		tools[i] = agentTool.toTool(r)
 	}
 
-	event := &LLMCallEvent{
+	event := &event.LLMCallEvent{
 		RunID:     r.id,
-		AgentName: r.agent.Name,
+		AgentName: r.AgentName(),
 		SessionID: r.sessionID,
 		Message:   message,
 		Tools:     tools,
@@ -451,7 +495,11 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 
 	var err error
 	var msgs []ai.Message
-	msgs, err = r.agentContext.BuildPrompt(r, r.currentConversationTurn.getCurrentMessages(), tools)
+	if r.ContextManager != nil {
+		msgs, err = r.ContextManager.BuildPrompt(r, r.currentConversationTurn.getCurrentMessages(), tools)
+	} else {
+		msgs, err = r.agentContext.BuildPrompt(r, r.currentConversationTurn.getCurrentMessages(), tools)
+	}
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
 		return
@@ -468,12 +516,9 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 		}
 	}
 
-	// Capture timing for evaluation
-	callStart := time.Now()
-
 	var respMsg ai.AIMessage
 
-	switch r.agent.Stream {
+	switch r.streaming {
 	case true:
 		respMsg, err = r.model.Stream(r.ctx, currentMsgs, currentTools, func(chunk ai.AIMessage) error {
 			// Handle each chunk as a non-final message
@@ -481,44 +526,9 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 			return nil
 		})
 
-		if r.agent.EnableEvaluation {
-			evalEvent := &EvalEvent{
-				RunID:     r.id,
-				AgentName: r.agent.Name,
-				SessionID: r.sessionID,
-				Sequence:  r.llmCallCount,
-				Timestamp: callStart,
-				Duration:  time.Since(callStart),
-				Messages:  currentMsgs,
-				Tools:     currentTools,
-				Response:  respMsg,
-				Error:     err,
-				ModelName: r.model.ModelName,
-			}
-			r.queueEvent(evalEvent)
-		}
-
 	default:
 		respMsg, err = r.model.Call(r.ctx, currentMsgs, currentTools)
 
-		// Emit evaluation event if enabled
-		if r.agent.EnableEvaluation {
-			evalEvent := &EvalEvent{
-				RunID:     r.id,
-				AgentName: r.agent.Name,
-				SessionID: r.sessionID,
-				Sequence:  r.llmCallCount,
-				Timestamp: callStart,
-				Duration:  time.Since(callStart),
-				Messages:  currentMsgs,
-				Tools:     currentTools,
-				Response:  respMsg,
-				Error:     err,
-				ModelName: r.model.ModelName,
-			}
-
-			r.queueEvent(evalEvent)
-		}
 	}
 
 	if err != nil {
@@ -545,7 +555,6 @@ func (r *AgentRun) runLLMCallAction(message string, agentTools []AgentTool) {
 func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	tool := r.findTool(act.ToolName)
 	if tool == nil {
-		// r.fireToolResponseAction(act, fmt.Sprintf("tool not found: %s", act.ToolName))
 		r.queueAction(&toolResponseAction{
 			request:  act,
 			response: fmt.Sprintf("tool not found: %s", act.ToolName),
@@ -554,10 +563,10 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	}
 
 	eventID := uuid.New().String()
-	toolEvent := &ToolEvent{
+	toolEvent := &event.ToolEvent{
 		RunID:            r.id,
 		EventID:          eventID,
-		AgentName:        r.agent.Name,
+		AgentName:        r.AgentName(),
 		SessionID:        r.sessionID,
 		ToolName:         act.ToolName,
 		ValidationResult: act.ValidationResult,
@@ -663,7 +672,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 		ToolCallID: action.ToolCallID,
 		ToolName:   action.ToolName,
 	}
-	action.Group.responses[action.ToolCallID] = toolMsg
+	action.Group.Responses[action.ToolCallID] = toolMsg
 
 	// Don't check completion if we're still streaming (will be checked when final message arrives)
 	if r.currentStreamGroup != nil && r.currentStreamGroup == action.Group {
@@ -671,11 +680,11 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 	}
 
 	// Check if all tool calls in this group are completed
-	if len(action.Group.responses) == len(action.Group.aiMessage.ToolCalls) {
+	if len(action.Group.Responses) == len(action.Group.AIMessage.ToolCalls) {
 
 		// add all tool responses and queue their events
-		for _, tc := range action.Group.aiMessage.ToolCalls {
-			if response, exists := action.Group.responses[tc.ID]; exists {
+		for _, tc := range action.Group.AIMessage.ToolCalls {
+			if response, exists := action.Group.Responses[tc.ID]; exists {
 				r.currentConversationTurn.addMessage(response)
 				var docs []*document.Document
 				for _, entry := range r.currentConversationTurn.Documents {
@@ -683,9 +692,9 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 						docs = append(docs, entry.Document)
 					}
 				}
-				event := &ToolResponseEvent{
+				event := &event.ToolResponseEvent{
 					RunID:      r.id,
-					AgentName:  r.agent.Name,
+					AgentName:  r.AgentName(),
 					SessionID:  r.sessionID,
 					ToolCallID: response.ToolCallID,
 					ToolName:   response.ToolName,
@@ -697,12 +706,12 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 		}
 
 		// Notify any content from the AI message
-		if action.Group.aiMessage.Content != "" {
-			event := &ContentEvent{
+		if action.Group.AIMessage.Content != "" {
+			event := &event.ContentEvent{
 				RunID:     r.id,
-				AgentName: r.agent.Name,
+				AgentName: r.AgentName(),
 				SessionID: r.sessionID,
-				Content:   action.Group.aiMessage.Content,
+				Content:   action.Group.AIMessage.Content,
 			}
 			r.queueEvent(event)
 		}
@@ -713,14 +722,13 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 
 // handleAIMessage handles the response from the LLM, whether it's a complete message or a chunk
 func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
-
 	// only fire events if not streaming or if this is a chunk in streaming.
 	// do not fire event if this is the last chunk (streaming) to prevent duplicate content
-	if !r.agent.Stream || isChunk {
+	if !r.streaming || isChunk {
 		if msg.Think != "" {
-			event := &ThinkingEvent{
+			event := &event.ThinkingEvent{
 				RunID:     r.id,
-				AgentName: r.agent.Name,
+				AgentName: r.AgentName(),
 				SessionID: r.sessionID,
 				Thought:   msg.Think,
 			}
@@ -728,9 +736,9 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		}
 
 		if msg.Content != "" {
-			event := &ContentEvent{
+			event := &event.ContentEvent{
 				RunID:     r.id,
-				AgentName: r.agent.Name,
+				AgentName: r.AgentName(),
 				SessionID: r.sessionID,
 				Content:   msg.Content,
 			}
@@ -747,9 +755,9 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 					Role:      msg.Role,
 					ToolCalls: msg.ToolCalls,
 				}
-				r.currentStreamGroup = &toolCallGroup{
-					aiMessage: &chunkMsg,
-					responses: make(map[string]ai.ToolMessage),
+				r.currentStreamGroup = &ToolCallGroup{
+					AIMessage: &chunkMsg,
+					Responses: make(map[string]ai.ToolMessage),
 				}
 			}
 			// Process tool calls using the shared group
@@ -772,13 +780,13 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 
 	// If we have a stream group from chunks, update it with the final message, otherwise create new group
 	if r.currentStreamGroup != nil {
-		r.currentStreamGroup.aiMessage = &msg
+		r.currentStreamGroup.AIMessage = &msg
 		r.groupToolCalls(msg.ToolCalls, msg, r.currentStreamGroup)
 		// Check if all tool calls in the group are now completed (now that we have the final message)
-		if len(r.currentStreamGroup.responses) == len(r.currentStreamGroup.aiMessage.ToolCalls) {
+		if len(r.currentStreamGroup.Responses) == len(r.currentStreamGroup.AIMessage.ToolCalls) {
 			// add all tool responses and queue their events
-			for _, tc := range r.currentStreamGroup.aiMessage.ToolCalls {
-				if response, exists := r.currentStreamGroup.responses[tc.ID]; exists {
+			for _, tc := range r.currentStreamGroup.AIMessage.ToolCalls {
+				if response, exists := r.currentStreamGroup.Responses[tc.ID]; exists {
 					r.currentConversationTurn.addMessage(response)
 					var docs []*document.Document
 					for _, entry := range r.currentConversationTurn.Documents {
@@ -786,9 +794,9 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 							docs = append(docs, entry.Document)
 						}
 					}
-					event := &ToolResponseEvent{
+					event := &event.ToolResponseEvent{
 						RunID:      r.id,
-						AgentName:  r.agent.Name,
+						AgentName:  r.AgentName(),
 						SessionID:  r.sessionID,
 						ToolCallID: response.ToolCallID,
 						ToolName:   response.ToolName,
@@ -800,12 +808,12 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			}
 
 			// Notify any content from the AI message
-			if r.currentStreamGroup.aiMessage.Content != "" {
-				event := &ContentEvent{
+			if r.currentStreamGroup.AIMessage.Content != "" {
+				event := &event.ContentEvent{
 					RunID:     r.id,
-					AgentName: r.agent.Name,
+					AgentName: r.AgentName(),
 					SessionID: r.sessionID,
-					Content:   r.currentStreamGroup.aiMessage.Content,
+					Content:   r.currentStreamGroup.AIMessage.Content,
 				}
 				r.queueEvent(event)
 			}
@@ -818,8 +826,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 	}
 }
 
-// processToolCallsFromChunk processes tool calls from a streaming chunk using the shared stream group
-func (r *AgentRun) processToolCall(tc ai.ToolCall, group *toolCallGroup) bool {
+func (r *AgentRun) processToolCall(tc ai.ToolCall, group *ToolCallGroup) bool {
 	if r.processedToolCallIDs[tc.ID] {
 		return false
 	}
@@ -834,7 +841,7 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *toolCallGroup) bool {
 			request: &toolCallAction{
 				ToolCallID:       tc.ID,
 				ToolName:         tc.Name,
-				ValidationResult: ValidationResult{Values: args},
+				ValidationResult: event.ValidationResult{Values: args},
 				Group:            group,
 			},
 			response: fmt.Sprintf("invalid tool parameters: %v", err),
@@ -845,7 +852,7 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *toolCallGroup) bool {
 	tool := r.findTool(tc.Name)
 	if tool == nil {
 		r.queueAction(&toolResponseAction{
-			request:  &toolCallAction{ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
+			request:  &toolCallAction{ToolName: tc.Name, ValidationResult: event.ValidationResult{Values: args}, Group: group},
 			response: fmt.Sprintf("tool not found: %s", tc.Name),
 		})
 		return false
@@ -854,7 +861,7 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *toolCallGroup) bool {
 	values, err := tool.validateInput(r, args)
 	if err != nil {
 		r.queueAction(&toolResponseAction{
-			request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: ValidationResult{Values: args}, Group: group},
+			request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: event.ValidationResult{Values: args}, Group: group},
 			response: fmt.Sprintf("invalid tool parameters: %v", err),
 		})
 		return false
@@ -870,7 +877,7 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *toolCallGroup) bool {
 			Group:            group,
 			deadline:         time.Now().Add(r.approvalTimeout),
 		}
-		approvalEvent := &ApprovalEvent{
+		approvalEvent := &event.ApprovalEvent{
 			RunID:            r.id,
 			ApprovalID:       approvalID,
 			ToolName:         tc.Name,
@@ -884,6 +891,7 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *toolCallGroup) bool {
 	return false
 }
 
+// processToolCallsFromChunk processes tool calls from a streaming chunk using the shared stream group
 func (r *AgentRun) processToolCallsFromChunk(toolCalls []ai.ToolCall) {
 	for _, tc := range toolCalls {
 		if r.processToolCall(tc, r.currentStreamGroup) {
@@ -893,15 +901,15 @@ func (r *AgentRun) processToolCallsFromChunk(toolCalls []ai.ToolCall) {
 }
 
 // groupToolCalls processes a slice of tool calls and queues the appropriate actions
-func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, existingGroup *toolCallGroup) {
-	var group *toolCallGroup
+func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, existingGroup *ToolCallGroup) {
+	var group *ToolCallGroup
 	if existingGroup != nil {
 		group = existingGroup
-		group.aiMessage = &msg
+		group.AIMessage = &msg
 	} else {
-		group = &toolCallGroup{
-			aiMessage: &msg,
-			responses: make(map[string]ai.ToolMessage),
+		group = &ToolCallGroup{
+			AIMessage: &msg,
+			Responses: make(map[string]ai.ToolMessage),
 		}
 	}
 
@@ -912,8 +920,7 @@ func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, exi
 	}
 }
 
-// Add queueEvent and queueAction methods to AgentRun
-func (r *AgentRun) queueEvent(event Event) {
+func (r *AgentRun) queueEvent(event event.Event) {
 	// if this is a sub-agent, queue the event to the parent agent
 	if r.parentRun != nil {
 		r.parentRun.queueEvent(event)

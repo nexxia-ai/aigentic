@@ -3,12 +3,13 @@ package tools
 import (
 	"fmt"
 
-	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/event"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
-func NewMemoryTool() aigentic.AgentTool {
-	return aigentic.AgentTool{
+func NewMemoryTool() run.AgentTool {
+	return run.AgentTool{
 		Name:        "update_memory",
 		Description: "This is your transient memory. Use it to store or update memory entries. Set description and content to empty strings to delete.",
 		InputSchema: map[string]interface{}{
@@ -29,14 +30,14 @@ func NewMemoryTool() aigentic.AgentTool {
 			},
 			"required": []string{"memory_id", "memory_description", "memory_content"},
 		},
-		NewExecute: func(run *aigentic.AgentRun, result aigentic.ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(agentRun *run.AgentRun, result event.ValidationResult) (*ai.ToolResult, error) {
 			args := result.Values.(map[string]interface{})
 			id := args["memory_id"].(string)
 			description := args["memory_description"].(string)
 			content := args["memory_content"].(string)
 
 			if description == "" && content == "" {
-				if err := run.DeleteMemory(id); err != nil {
+				if err := agentRun.DeleteMemory(id); err != nil {
 					return &ai.ToolResult{
 						Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error deleting memory: %v", err)}},
 						Error:   true,
@@ -48,7 +49,7 @@ func NewMemoryTool() aigentic.AgentTool {
 				}, nil
 			}
 
-			if err := run.AddMemory(id, description, content, "session"); err != nil {
+			if err := agentRun.AddMemory(id, description, content, "session"); err != nil {
 				return &ai.ToolResult{
 					Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error updating memory: %v", err)}},
 					Error:   true,

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
 	"gopkg.in/yaml.v3"
 )
 
@@ -153,7 +154,7 @@ func validateConfig(cfg *ConfigFile) error {
 // - toolResolver: given a tool server name and its ai.ServerConfig, return []AgentTool to attach
 func (cfg *ConfigFile) InstantiateAgents(
 	modelResolver func(string) (*ai.Model, error),
-	toolResolver func(name string, sc ai.ServerConfig) ([]AgentTool, error),
+	toolResolver func(name string, sc ai.ServerConfig) ([]run.AgentTool, error),
 ) (map[string]Agent, error) {
 	// Pass 1: instantiate top-level agents without sub-agents
 	out := make(map[string]Agent)
@@ -187,11 +188,11 @@ func (cfg *ConfigFile) InstantiateAgents(
 		}
 		// Configure tracing if enabled
 		if ac.EnableTrace {
-			a.Tracer = NewTracer()
+			a.Tracer = run.NewTracer()
 		}
 		// Configure conversation history if enabled
 		if ac.ConversationHistory {
-			a.ConversationHistory = NewConversationHistory()
+			a.ConversationHistory = run.NewConversationHistory()
 		}
 		// Attach tools from tool servers listed by name using resolver
 		for _, tname := range ac.Tools {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 // TestWriteThenRead tests the integration of write and read operations
@@ -26,7 +26,7 @@ func TestWriteThenRead_TextFile(t *testing.T) {
 		"content":    testContent,
 	}
 
-	writeResult, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	writeResult, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestWriteThenRead_TextFile(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestWriteThenRead_BinaryFile(t *testing.T) {
 		"content":    writeContent,
 	}
 
-	writeResult, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	writeResult, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestWriteThenRead_BinaryFile(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestWriteThenRead_MultipleFiles(t *testing.T) {
 			"content":    content,
 		}
 
-		writeResult, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+		writeResult, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 		if err != nil {
 			t.Fatalf("write failed for %s: %v", fileName, err)
 		}
@@ -166,7 +166,7 @@ func TestWriteThenRead_MultipleFiles(t *testing.T) {
 			"store_name": tempDir,
 		}
 
-		readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+		readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 		if err != nil {
 			t.Fatalf("read failed for %s: %v", fileName, err)
 		}
@@ -199,7 +199,7 @@ func TestWriteReadModifyWrite(t *testing.T) {
 		"content":    originalContent,
 	}
 
-	_, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	_, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("initial write failed: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestWriteReadModifyWrite(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
 	}
@@ -222,13 +222,13 @@ func TestWriteReadModifyWrite(t *testing.T) {
 
 	// Modify and write back
 	writeArgs["content"] = modifiedContent
-	_, err = writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	_, err = writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("modified write failed: %v", err)
 	}
 
 	// Read again
-	readResult, err = readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err = readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("second read failed: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestNestedDirectoryOperations(t *testing.T) {
 		"content":    testContent,
 	}
 
-	writeResult, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	writeResult, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("write to nested directory failed: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestNestedDirectoryOperations(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("read from nested directory failed: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestEmptyFileOperations(t *testing.T) {
 		"content":    "",
 	}
 
-	writeResult, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	writeResult, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("write empty file failed: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestEmptyFileOperations(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("read empty file failed: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestLargeFileOperations(t *testing.T) {
 		"content":    testContent,
 	}
 
-	writeResult, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	writeResult, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("write large file failed: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestLargeFileOperations(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("read large file failed: %v", err)
 	}
@@ -409,7 +409,7 @@ func TestUnicodeAndSpecialCharacters(t *testing.T) {
 		"content":    testContent,
 	}
 
-	writeResult, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	writeResult, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestUnicodeAndSpecialCharacters(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestJSONRoundTrip(t *testing.T) {
 		"content":    testContent,
 	}
 
-	writeResult, err := writeTool.Execute(&aigentic.AgentRun{}, writeArgs)
+	writeResult, err := writeTool.Execute(&run.AgentRun{}, writeArgs)
 	if err != nil {
 		t.Fatalf("write JSON failed: %v", err)
 	}
@@ -482,7 +482,7 @@ func TestJSONRoundTrip(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	readResult, err := readTool.Execute(&aigentic.AgentRun{}, readArgs)
+	readResult, err := readTool.Execute(&run.AgentRun{}, readArgs)
 	if err != nil {
 		t.Fatalf("read JSON failed: %v", err)
 	}

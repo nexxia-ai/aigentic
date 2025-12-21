@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 const (
@@ -48,17 +48,17 @@ TIPS:
 - Binary files should be provided with base64 encoding for proper handling`
 )
 
-func NewWriteFileTool() aigentic.AgentTool {
+func NewWriteFileTool() run.AgentTool {
 	type WriteFileInput struct {
 		FileName  string `json:"file_name" description:"The name of the file to write"`
 		StoreName string `json:"store_name" description:"The name of the store where the file should be written"`
 		Content   string `json:"content" description:"The content to write to the file (use base64 encoding for binary files)"`
 	}
 
-	return aigentic.NewTool(
+	return run.NewTool(
 		WriteFileToolName,
 		writeFileDescription,
-		func(run *aigentic.AgentRun, input WriteFileInput) (string, error) {
+		func(agentRun *run.AgentRun, input WriteFileInput) (string, error) {
 			return writeFile(input.FileName, input.StoreName, input.Content)
 		},
 	)

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"unicode/utf8"
 
-	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 const (
@@ -49,16 +49,16 @@ TIPS:
 - Binary files will be automatically detected and base64-encoded for transmission`
 )
 
-func NewReadFileTool() aigentic.AgentTool {
+func NewReadFileTool() run.AgentTool {
 	type ReadFileInput struct {
 		FileName  string `json:"file_name" description:"The name of the file to read"`
 		StoreName string `json:"store_name" description:"The name of the store where the file is located"`
 	}
 
-	return aigentic.NewTool(
+	return run.NewTool(
 		ReadFileToolName,
 		readFileDescription,
-		func(run *aigentic.AgentRun, input ReadFileInput) (string, error) {
+		func(agentRun *run.AgentRun, input ReadFileInput) (string, error) {
 			return readFile(input.FileName, input.StoreName)
 		},
 	)

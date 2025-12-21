@@ -1,4 +1,4 @@
-package aigentic
+package run
 
 import (
 	"encoding/json"
@@ -14,15 +14,11 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
-)
-
-const (
-	defaultRetentionDuration = 7 * 24 * time.Hour
-	defaultMaxTraceFiles     = 10
+	"github.com/nexxia-ai/aigentic/event"
 )
 
 var (
-	traceSync = sync.Mutex{} // keep all trace lines in sync
+	traceSync = sync.Mutex{}
 )
 
 type TraceConfig struct {
@@ -31,30 +27,25 @@ type TraceConfig struct {
 	MaxTraceFiles     int
 }
 
-// Tracer is a factory that creates TraceRun instances for agent runs
 type Tracer struct {
 	config  TraceConfig
 	counter int64
 }
 
-// TraceRun stores the execution trace of an LLM for a single run.
-// TraceRun implements Interceptor for automatic tracing via interceptors.
 type TraceRun struct {
 	tracer    *Tracer
-	startTime time.Time   // Start time of the trace
-	endTime   time.Time   // End time of the trace
-	filepath  string      // Path to the trace file
-	file      traceWriter // File to write traces to (or io.Discard if file creation fails)
+	startTime time.Time
+	endTime   time.Time
+	filepath  string
+	file      traceWriter
 }
 
-// traceWriter interface for writing trace data
 type traceWriter interface {
 	io.Writer
 	Sync() error
 	Close() error
 }
 
-// discardWriter wraps io.Discard to implement traceWriter interface
 type discardWriter struct{}
 
 func (d *discardWriter) Write(p []byte) (n int, err error) {
@@ -69,7 +60,11 @@ func (d *discardWriter) Close() error {
 	return nil
 }
 
-// NewTracer creates a new Tracer factory with default cleanup settings.
+const (
+	defaultRetentionDuration = 7 * 24 * time.Hour
+	defaultMaxTraceFiles     = 10
+)
+
 func NewTracer(config ...TraceConfig) *Tracer {
 	defaultDir := filepath.Join(os.TempDir(), "aigentic-traces")
 
@@ -96,21 +91,17 @@ func NewTracer(config ...TraceConfig) *Tracer {
 		counter: 0,
 	}
 
-	// Create directory if needed
 	os.MkdirAll(cfg.Directory, 0755)
 
 	return t
 }
 
-// NewTraceRun creates a new TraceRun for a specific agent run
 func (tr *Tracer) NewTraceRun() *TraceRun {
-
-	// Generate timestamp and counter for unique filename
 	timestamp := time.Now().Format("20060102150405")
 	counter := atomic.AddInt64(&tr.counter, 1)
 	filepath := filepath.Join(tr.config.Directory, fmt.Sprintf("trace-%s.%03d.txt", timestamp, counter))
 
-	tr.cleanup() // Clean old files based on tracer config
+	tr.cleanup()
 
 	traceRun := &TraceRun{
 		tracer:    tr,
@@ -131,7 +122,6 @@ func (tr *Tracer) NewTraceRun() *TraceRun {
 	return traceRun
 }
 
-// cleanup removes old trace files based on retention policy
 func (tr *Tracer) cleanup() {
 	entries, err := os.ReadDir(tr.config.Directory)
 	if err != nil {
@@ -166,12 +156,10 @@ func (tr *Tracer) cleanup() {
 		})
 	}
 
-	// Sort by modification time (oldest first)
 	sort.Slice(traceFiles, func(i, j int) bool {
 		return traceFiles[i].modTime.Before(traceFiles[j].modTime)
 	})
 
-	// Remove files older than retention duration
 	if tr.config.RetentionDuration > 0 {
 		for _, file := range traceFiles {
 			if file.modTime.Before(cutoffTime) {
@@ -184,7 +172,6 @@ func (tr *Tracer) cleanup() {
 		}
 	}
 
-	// If we still have too many files, remove the oldest ones
 	if tr.config.MaxTraceFiles > 0 && len(traceFiles) > tr.config.MaxTraceFiles {
 		filesToRemove := len(traceFiles) - tr.config.MaxTraceFiles
 		for i := 0; i < filesToRemove && i < len(traceFiles); i++ {
@@ -197,23 +184,20 @@ func (tr *Tracer) cleanup() {
 	}
 }
 
-// Filepath returns the path to the trace file
 func (tr *TraceRun) Filepath() string {
 	return tr.filepath
 }
 
-// BeforeCall implements Interceptor - records LLM call before invocation
 func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
 	fmt.Fprintf(tr.file, "\n====> [%s] Start %s (%s) runID: %s\n", time.Now().Format("15:04:05"),
-		run.agent.Name, run.model.ModelName, run.ID())
+		run.AgentName(), run.Model().ModelName, run.ID())
 
 	for _, message := range messages {
 		role, _ := message.Value()
 
-		// Handle each message type specifically
 		switch msg := message.(type) {
 		case ai.UserMessage:
 			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
@@ -222,7 +206,7 @@ func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.
 			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
 			tr.logMessageContent("content", msg.Content)
 		case ai.AIMessage:
-			fmt.Fprintf(tr.file, "⬆️  assistant: role=%s\n", msg.Role) // Role might vary by provider
+			fmt.Fprintf(tr.file, "⬆️  assistant: role=%s\n", msg.Role)
 			tr.logAIMessage(msg)
 		case ai.ToolMessage:
 			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
@@ -230,17 +214,14 @@ func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.
 			tr.logMessageContent("content", msg.Content)
 		case ai.ResourceMessage:
 			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
-			// Determine if this is a file ID reference or has content
 			var isFileID bool
 			var contentLen int
 			var contentPreview string
 
 			if body, ok := msg.Body.([]byte); ok && body != nil {
-				// Has actual content
 				isFileID = false
 				contentLen = len(body)
 				if contentLen > 0 {
-					// Show first 64 characters of content
 					previewLen := 64
 					if contentLen < previewLen {
 						previewLen = contentLen
@@ -248,19 +229,16 @@ func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.
 					contentPreview = string(body[:previewLen])
 				}
 			} else {
-				// Likely a file ID reference
 				isFileID = true
 				contentLen = len(msg.Name)
 			}
 
-			// Log the resource type and basic info
 			if isFileID {
 				fmt.Fprintf(tr.file, " resource: %s (file ID reference)\n", msg.Name)
 			} else {
 				fmt.Fprintf(tr.file, " resource: %s (content length: %d)\n", msg.Name, contentLen)
 			}
 
-			// Log additional metadata
 			if msg.URI != "" {
 				fmt.Fprintf(tr.file, " uri: %s\n", msg.URI)
 			}
@@ -271,12 +249,10 @@ func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.
 				fmt.Fprintf(tr.file, " description: %s\n", msg.Description)
 			}
 
-			// Log content preview if available
 			if contentPreview != "" {
 				tr.logMessageContent("content_preview", contentPreview)
 			}
 		default:
-			// Fallback for unknown message types
 			_, content := message.Value()
 			tr.logMessageContent("content", content)
 		}
@@ -286,26 +262,24 @@ func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.
 	return messages, tools, nil
 }
 
-// AfterCall implements Interceptor - records LLM response after invocation
 func (tr *TraceRun) AfterCall(run *AgentRun, request []ai.Message, response ai.AIMessage) (ai.AIMessage, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(tr.file, "⬇️  assistant: role=%s\n", response.Role) // Role might vary by provider
+	fmt.Fprintf(tr.file, "⬇️  assistant: role=%s\n", response.Role)
 	tr.logAIMessage(response)
 	tr.file.Sync()
 
-	fmt.Fprintf(tr.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), run.agent.Name)
+	fmt.Fprintf(tr.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), run.AgentName())
 
 	return response, nil
 }
 
-// BeforeToolCall implements Interceptor - records tool call before execution
-func (tr *TraceRun) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult) (ValidationResult, error) {
+func (tr *TraceRun) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult) (event.ValidationResult, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(tr.file, "\n---- Tool START: %s (callID=%s) agent=%s\n", toolName, toolCallID, run.agent.Name)
+	fmt.Fprintf(tr.file, "\n---- Tool START: %s (callID=%s) agent=%s\n", toolName, toolCallID, run.AgentName())
 
 	argsJSON, _ := json.Marshal(validationResult)
 	fmt.Fprintf(tr.file, " args: %s\n", string(argsJSON))
@@ -314,8 +288,7 @@ func (tr *TraceRun) BeforeToolCall(run *AgentRun, toolName string, toolCallID st
 	return validationResult, nil
 }
 
-// AfterToolCall implements Interceptor - records tool call after execution
-func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
+func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
@@ -356,7 +329,7 @@ func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID str
 	fmt.Fprintf(tr.file, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
 
 	argsJSON, _ := json.Marshal(validationResult)
-	fmt.Fprintf(tr.file, "🛠️️  %s tool response:\n", run.agent.Name)
+	fmt.Fprintf(tr.file, "🛠️️  %s tool response:\n", run.AgentName())
 	fmt.Fprintf(tr.file, "   • %s(%s)\n", toolName, string(argsJSON))
 
 	lines := strings.Split(response, "\n")
@@ -370,7 +343,6 @@ func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID str
 	return result, nil
 }
 
-// logMessageContent is a helper method to format and log message content
 func (tr *TraceRun) logMessageContent(contentType, content string) {
 	if content == "" {
 		fmt.Fprintf(tr.file, " %s: (empty)\n", contentType)
@@ -398,7 +370,6 @@ func (tr *TraceRun) logAIMessage(msg ai.AIMessage) {
 	}
 }
 
-// LLMToolResponse records a single tool call response.
 func (tr *TraceRun) LLMToolResponse(agentName string, toolCall *ai.ToolCall, content string) error {
 	traceSync.Lock()
 	defer traceSync.Unlock()
@@ -408,7 +379,6 @@ func (tr *TraceRun) LLMToolResponse(agentName string, toolCall *ai.ToolCall, con
 		toolCall.Name,
 		toolCall.Args)
 
-	// Format the response content
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		if line != "" {
@@ -419,7 +389,6 @@ func (tr *TraceRun) LLMToolResponse(agentName string, toolCall *ai.ToolCall, con
 	return nil
 }
 
-// RecordError records an error that occurred during the interaction.
 func (tr *TraceRun) RecordError(err error) error {
 	traceSync.Lock()
 	defer traceSync.Unlock()
@@ -429,7 +398,6 @@ func (tr *TraceRun) RecordError(err error) error {
 	return nil
 }
 
-// End ends the trace and saves the trace information to a file.
 func (tr *TraceRun) Close() error {
 	traceSync.Lock()
 	defer traceSync.Unlock()

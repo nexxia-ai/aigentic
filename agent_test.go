@@ -8,6 +8,8 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/event"
+	"github.com/nexxia-ai/aigentic/run"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -54,10 +56,10 @@ func TestAgentToolCalling(t *testing.T) {
 		Message string `json:"message" description:"The message to process"`
 	}
 
-	testTool := NewTool(
+	testTool := run.NewTool(
 		"test_tool",
 		"A test tool that records when it's called",
-		func(run *AgentRun, input TestToolInput) (string, error) {
+		func(agentRun *run.AgentRun, input TestToolInput) (string, error) {
 			toolCalled = true
 			toolArgs = map[string]interface{}{"message": input.Message}
 			return "Tool executed successfully with message: " + input.Message, nil
@@ -67,8 +69,8 @@ func TestAgentToolCalling(t *testing.T) {
 	agent := Agent{
 		Name:        "test-tool-agent",
 		Description: "A test agent that uses tools",
-		Tracer:      NewTracer(),
-		AgentTools:  []AgentTool{testTool},
+		Tracer:      run.NewTracer(),
+		AgentTools:  []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -125,6 +127,7 @@ func TestAgentFileAttachment(t *testing.T) {
 				Content: "I've received your message and the attached files. I can see you've attached a text file and an image.",
 			}, nil
 		}),
+		Tracer: run.NewTracer(),
 	}
 
 	result, err := agent.Execute("Please analyze these attached files")
@@ -235,10 +238,10 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 		Input string `json:"input" description:"The input to lookup"`
 	}
 
-	testTool1 := NewTool(
+	testTool1 := run.NewTool(
 		"lookup_company",
 		"A test tool for looking up companies",
-		func(run *AgentRun, input LookupToolInput) (string, error) {
+		func(agentRun *run.AgentRun, input LookupToolInput) (string, error) {
 			tool1Called++
 			if input.Input == "Look up company 150" {
 				return "COMPANY: Nexxia", nil
@@ -252,10 +255,10 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 		Content string `json:"content" description:"The content to save"`
 	}
 
-	testTool2 := NewTool(
+	testTool2 := run.NewTool(
 		"save_memory",
 		"A test tool for saving to memory",
-		func(run *AgentRun, input SaveMemoryInput) (string, error) {
+		func(agentRun *run.AgentRun, input SaveMemoryInput) (string, error) {
 			tool2Called++
 			return "memory saved successfully", nil
 		},
@@ -267,7 +270,7 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 	agent := Agent{
 		Name:        "test-multi-tool-agent",
 		Description: "A test agent that makes multiple tool calls including same tool with different inputs",
-		AgentTools:  []AgentTool{testTool1, testTool2},
+		AgentTools:  []run.AgentTool{testTool1, testTool2},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -424,11 +427,11 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 		3. Return the summary and the detailed information in markdown format`,
 		Agents: []Agent{childAgent},
 		Stream: true,
-		Tracer: NewTracer(),
+		Tracer: run.NewTracer(),
 	}
 
 	message := "Tell me about artificial intelligence and its applications"
-	run, err := coordinator.Start(message)
+	ar, err := coordinator.Start(message)
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -437,26 +440,26 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 	var childAgentChunks []string
 	var toolCalls []string
 
-	for ev := range run.Next() {
+	for ev := range ar.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			// Check if this is from the coordinator or child agent
 			switch e.AgentName {
 			case "coordinator":
-				assert.True(t, e.RunID == run.ID(), "Content event have a different RunID from the coordinator")
+				assert.True(t, e.RunID == ar.ID(), "Content event have a different RunID from the coordinator")
 				coordinatorChunks = append(coordinatorChunks, e.Content)
 			case "child_agent":
-				assert.True(t, e.RunID != run.ID(), "Content event have a different RunID from the child agent")
+				assert.True(t, e.RunID != ar.ID(), "Content event have a different RunID from the child agent")
 				childAgentChunks = append(childAgentChunks, e.Content)
 			default:
 				// For unknown agent names, we'll still collect the content
 				t.Logf("Received content from unknown agent: %s", e.AgentName)
 			}
-		case *ToolEvent:
+		case *event.ToolEvent:
 			toolCalls = append(toolCalls, e.ToolName)
-		case *ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *ErrorEvent:
+		case *event.ApprovalEvent:
+			ar.Approve(e.ApprovalID, true)
+		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}

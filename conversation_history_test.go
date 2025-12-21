@@ -6,25 +6,27 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/event"
+	"github.com/nexxia-ai/aigentic/run"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestToolReturnsDocumentInToolResult(t *testing.T) {
-	var receivedEvents []*ToolResponseEvent
+	var receivedEvents []*event.ToolResponseEvent
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("PDF content"), nil)
 	doc.FilePath = "/path/to/test.pdf"
 	doc.MimeType = "application/pdf"
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "create_pdf",
 		Description: "Creates a PDF document",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
@@ -37,7 +39,7 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 	agent := Agent{
 		Name:        "test-document-agent",
 		Description: "Agent that creates documents",
-		AgentTools:  []AgentTool{testTool},
+		AgentTools:  []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -63,14 +65,14 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 		}),
 	}
 
-	run, err := agent.Start("Please create a PDF")
+	ag, err := agent.Start("Please create a PDF")
 	assert.NoError(t, err)
 
-	for event := range run.Next() {
-		switch ev := event.(type) {
-		case *ToolResponseEvent:
+	for evt := range ag.Next() {
+		switch ev := evt.(type) {
+		case *event.ToolResponseEvent:
 			receivedEvents = append(receivedEvents, ev)
-		case *ErrorEvent:
+		case *event.ErrorEvent:
 			t.Fatalf("Unexpected error: %v", ev.Err)
 		}
 	}
@@ -93,21 +95,21 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 }
 
 func TestDocumentsAddedToConversationTurn(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "report.pdf", []byte("Report content"), nil)
 	doc.FilePath = "/path/to/report.pdf"
 	doc.MimeType = "application/pdf"
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "create_report",
 		Description: "Creates a report document",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
@@ -120,7 +122,7 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 	agent := Agent{
 		Name:                "test-history-agent",
 		Description:         "Agent that creates documents in history",
-		AgentTools:          []AgentTool{testTool},
+		AgentTools:          []run.AgentTool{testTool},
 		ConversationHistory: history,
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
@@ -166,7 +168,7 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 }
 
 func TestMultipleDocumentsFromSingleTool(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
 	doc1 := document.NewInMemoryDocument("doc1", "file1.pdf", []byte("Content 1"), nil)
@@ -174,14 +176,14 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 	doc2 := document.NewInMemoryDocument("doc2", "file2.txt", []byte("Content 2"), nil)
 	doc2.MimeType = "text/plain"
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "create_files",
 		Description: "Creates multiple files",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc1, "model")
 			run.AddDocument("", doc2, "model")
 			return &ai.ToolResult{
@@ -195,7 +197,7 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 	agent := Agent{
 		Name:                "test-multiple-docs-agent",
 		ConversationHistory: history,
-		AgentTools:          []AgentTool{testTool},
+		AgentTools:          []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -234,7 +236,7 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 }
 
 func TestMultipleToolsWithDocuments(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
 	doc1 := document.NewInMemoryDocument("doc1", "pdf1.pdf", []byte("PDF 1"), nil)
@@ -242,32 +244,32 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 	doc2 := document.NewInMemoryDocument("doc2", "pdf2.pdf", []byte("PDF 2"), nil)
 	doc2.MimeType = "application/pdf"
 
-	tool1 := AgentTool{
+	tool1 := run.AgentTool{
 		Name:        "create_pdf1",
 		Description: "Creates first PDF",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc1, "model")
 			return &ai.ToolResult{
-				Content:   []ai.ToolContent{{Type: "text", Content: "PDF1 ready"}},
+				Content: []ai.ToolContent{{Type: "text", Content: "PDF1 ready"}},
 			}, nil
 		},
 	}
 
-	tool2 := AgentTool{
+	tool2 := run.AgentTool{
 		Name:        "create_pdf2",
 		Description: "Creates second PDF",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc2, "model")
 			return &ai.ToolResult{
-				Content:   []ai.ToolContent{{Type: "text", Content: "PDF2 ready"}},
+				Content: []ai.ToolContent{{Type: "text", Content: "PDF2 ready"}},
 			}, nil
 		},
 	}
@@ -275,7 +277,7 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 	agent := Agent{
 		Name:                "test-multi-tool-agent",
 		ConversationHistory: history,
-		AgentTools:          []AgentTool{tool1, tool2},
+		AgentTools:          []run.AgentTool{tool1, tool2},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -310,17 +312,17 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 }
 
 func TestToolWithNoDocuments(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "simple_tool",
 		Description: "A simple tool with no documents",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "Simple response"},
@@ -332,7 +334,7 @@ func TestToolWithNoDocuments(t *testing.T) {
 	agent := Agent{
 		Name:                "test-no-docs-agent",
 		ConversationHistory: history,
-		AgentTools:          []AgentTool{testTool},
+		AgentTools:          []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -364,23 +366,23 @@ func TestToolWithNoDocuments(t *testing.T) {
 }
 
 func TestDocumentsPersistInConversationHistory(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "persistent.pdf", []byte("Persistent content"), nil)
 	doc.MimeType = "application/pdf"
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "create_persistent",
 		Description: "Creates a persistent document",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
-				Content:   []ai.ToolContent{{Type: "text", Content: "Document created"}},
+				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
 			}, nil
 		},
 	}
@@ -388,7 +390,7 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 	agent := Agent{
 		Name:                "test-persist-agent",
 		ConversationHistory: history,
-		AgentTools:          []AgentTool{testTool},
+		AgentTools:          []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -422,7 +424,7 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 }
 
 func TestDocumentMetadataPreserved(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "metadata.pdf", []byte("Metadata test"), nil)
@@ -431,17 +433,17 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 	doc.FileSize = 12345
 	doc.URL = "https://example.com/metadata.pdf"
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "create_with_metadata",
 		Description: "Creates document with metadata",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
-				Content:   []ai.ToolContent{{Type: "text", Content: "Document created"}},
+				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
 			}, nil
 		},
 	}
@@ -449,7 +451,7 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 	agent := Agent{
 		Name:                "test-metadata-agent",
 		ConversationHistory: history,
-		AgentTools:          []AgentTool{testTool},
+		AgentTools:          []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -492,19 +494,19 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 }
 
 func TestEmptyToolResultDocuments(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "empty_docs_tool",
 		Description: "Tool with empty documents",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
-				Content:   []ai.ToolContent{{Type: "text", Content: "Response"}},
+				Content: []ai.ToolContent{{Type: "text", Content: "Response"}},
 			}, nil
 		},
 	}
@@ -512,7 +514,7 @@ func TestEmptyToolResultDocuments(t *testing.T) {
 	agent := Agent{
 		Name:                "test-empty-docs-agent",
 		ConversationHistory: history,
-		AgentTools:          []AgentTool{testTool},
+		AgentTools:          []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -544,23 +546,23 @@ func TestEmptyToolResultDocuments(t *testing.T) {
 }
 
 func TestAgentRunConversationTurnAccess(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
 	doc := document.NewInMemoryDocument("doc1", "accessible.pdf", []byte("Accessible content"), nil)
 	doc.MimeType = "application/pdf"
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "create_accessible",
 		Description: "Creates accessible document",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			run.AddDocument("", doc, "model")
 			return &ai.ToolResult{
-				Content:   []ai.ToolContent{{Type: "text", Content: "Document created"}},
+				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
 			}, nil
 		},
 	}
@@ -568,7 +570,7 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 	agent := Agent{
 		Name:                "test-accessible-agent",
 		ConversationHistory: history,
-		AgentTools:          []AgentTool{testTool},
+		AgentTools:          []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -607,10 +609,10 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 }
 
 func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 
-	testTool := AgentTool{
+	testTool := run.AgentTool{
 		Name:        "echo",
 		Description: "Echoes back the input",
 		InputSchema: map[string]interface{}{
@@ -622,7 +624,7 @@ func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
 			},
 			"required": []string{"text"},
 		},
-		NewExecute: func(run *AgentRun, validationResult ValidationResult) (*ai.ToolResult, error) {
+		NewExecute: func(run *run.AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "echoed: test"},
@@ -634,7 +636,7 @@ func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
 	agent := Agent{
 		Name:                "test-agent",
 		ConversationHistory: history,
-		AgentTools:          []AgentTool{testTool},
+		AgentTools:          []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
 
@@ -743,7 +745,7 @@ func verifyMessageOrder(t *testing.T, messages []ai.Message) {
 }
 
 func TestConversationHistoryIncludedInFutureConversations(t *testing.T) {
-	history := NewConversationHistory()
+	history := run.NewConversationHistory()
 	callCount := 0
 	var receivedMessages []ai.Message
 

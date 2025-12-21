@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 func TestNewPythonSandboxTool(t *testing.T) {
@@ -62,7 +62,7 @@ func TestPythonSandbox_SimpleExecution(t *testing.T) {
 		"code": "print('Hello, World!')",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ print(f"Result: {result}")
 		"code": code,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestPythonSandbox_WithCustomTimeout(t *testing.T) {
 		"timeout": 5,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestPythonSandbox_SyntaxError(t *testing.T) {
 		"code": "print('missing closing quote",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestPythonSandbox_RuntimeError(t *testing.T) {
 		"code": "x = 1 / 0",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestPythonSandbox_Timeout(t *testing.T) {
 	}
 
 	start := time.Now()
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -198,7 +198,7 @@ func TestPythonSandbox_NoOutput(t *testing.T) {
 		"code": "x = 1 + 1",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestPythonSandbox_EmptyCode(t *testing.T) {
 		"code": "",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -237,7 +237,7 @@ func TestPythonSandbox_MaxTimeoutEnforcement(t *testing.T) {
 		"timeout": 999, // Exceeds maximum
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -254,7 +254,7 @@ func TestPythonSandbox_DefaultTimeout(t *testing.T) {
 		"code": "print('Using default timeout')",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestPythonSandbox_StderrOutput(t *testing.T) {
 		"code": "import sys; print('stdout message'); sys.stderr.write('stderr message\\n')",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -314,7 +314,7 @@ print(f"Fibonacci(10) = {result}")
 		"code": code,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestPythonSandbox_ToolIntegration(t *testing.T) {
 		"code": "print('Integration test')",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("tool.Execute failed: %v", err)
 	}
@@ -368,7 +368,7 @@ func BenchmarkPythonSandbox_SimpleExecution(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := tool.Execute(&aigentic.AgentRun{}, args)
+		_, err := tool.Execute(&run.AgentRun{}, args)
 		if err != nil {
 			b.Fatalf("unexpected error: %v", err)
 		}
@@ -392,7 +392,7 @@ print(f"Python version: {sys.version_info.major}.{sys.version_info.minor}")
 		"code": code,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -420,7 +420,7 @@ func TestPythonSandbox_ExecutionWithTimeout(t *testing.T) {
 		"timeout": 5,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

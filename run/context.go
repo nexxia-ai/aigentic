@@ -1,4 +1,4 @@
-package aigentic
+package run
 
 import (
 	"bytes"
@@ -12,40 +12,36 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 )
 
-type ContextManager interface {
-	BuildPrompt(*AgentRun, []ai.Message, []ai.Tool) ([]ai.Message, error)
-}
-
-// MemoryEntry represents a single memory entry
-type MemoryEntry struct {
-	ID          string
-	Description string
-	Content     string
-	Scope       string
-	RunID       string
-	Timestamp   time.Time
-}
-
 type AgentContext struct {
-	agent          Agent // copy of agent
+	description    string
+	instructions   string
 	userMsg        string
 	msgHistory     []ai.Message
 	currentMsg     int
 	SystemTemplate *template.Template
 	UserTemplate   *template.Template
 
-	// Thread-safe memory storage
-	mutex     sync.RWMutex
-	memories  []MemoryEntry
-	documents []*document.Document
+	mutex               sync.RWMutex
+	memories            []MemoryEntry
+	documents           []*document.Document
+	documentReferences  []*document.Document
+	conversationHistory *ConversationHistory
 }
 
 var _ ContextManager = &AgentContext{}
 
-func collectContextFunctions(agent Agent, run *AgentRun) string {
+func NewAgentContext(description, instructions, userMsg string) *AgentContext {
+	cm := &AgentContext{description: description, instructions: instructions, userMsg: userMsg}
+
+	cm.conversationHistory = NewConversationHistory()
+	cm.SetDefaultTemplates()
+	return cm
+}
+
+func collectContextFunctions(run *AgentRun) string {
 	var parts []string
 
-	for _, fn := range agent.ContextFunctions {
+	for _, fn := range run.ContextFunctions {
 		output, err := fn(run)
 		if err != nil {
 			parts = append(parts, fmt.Sprintf("Error in context function: %v", err))
@@ -121,19 +117,11 @@ const DefaultUserTemplate = `
 {{.Message}} 
 {{end}}`
 
-func NewAgentContext(agent Agent, userMsg string) *AgentContext {
-	cm := &AgentContext{agent: agent, userMsg: userMsg}
-	cm.SetDefaultTemplates()
-	return cm
-}
-
-// SetDefaultTemplates sets the default system and user templates
 func (r *AgentContext) SetDefaultTemplates() {
 	r.SystemTemplate = template.Must(template.New("system").Parse(DefaultSystemTemplate))
 	r.UserTemplate = template.Must(template.New("user").Parse(DefaultUserTemplate))
 }
 
-// ParseSystemTemplate parses and sets a custom system template
 func (r *AgentContext) ParseSystemTemplate(templateStr string) error {
 	tmpl, err := template.New("system").Parse(templateStr)
 	if err != nil {
@@ -143,7 +131,6 @@ func (r *AgentContext) ParseSystemTemplate(templateStr string) error {
 	return nil
 }
 
-// ParseUserTemplate parses and sets a custom user template
 func (r *AgentContext) ParseUserTemplate(templateStr string) error {
 	tmpl, err := template.New("user").Parse(templateStr)
 	if err != nil {
@@ -157,7 +144,6 @@ func (r *AgentContext) BuildPrompt(run *AgentRun, messages []ai.Message, tools [
 	r.currentMsg = len(r.msgHistory)
 	r.msgHistory = append(r.msgHistory, messages...)
 
-	// Generate system prompt using template
 	systemVars := r.createSystemVariables(tools, run)
 	var systemBuf bytes.Buffer
 	if err := r.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
@@ -168,36 +154,32 @@ func (r *AgentContext) BuildPrompt(run *AgentRun, messages []ai.Message, tools [
 		ai.SystemMessage{Role: ai.SystemRole, Content: systemBuf.String()},
 	}
 
-	// Generate user prompt using template
 	userVars := r.createUserVariables(r.userMsg, run)
 	var userBuf bytes.Buffer
 	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user template: %w", err)
 	}
 
-	// Create user message
 	userContent := userBuf.String()
 	if userContent != "" {
 		msgs = append(msgs, ai.UserMessage{Role: ai.UserRole, Content: userContent})
 	}
 
-	// Add documents to the prompt
-	msgs = append(msgs, r.addDocuments(r.agent)...)
+	msgs = append(msgs, r.insertDocuments(r.documents, r.documentReferences)...)
 
 	msgs = append(msgs, r.msgHistory...)
 	return msgs, nil
 }
 
 func (r *AgentContext) createSystemVariables(tools []ai.Tool, run *AgentRun) map[string]interface{} {
-	return createSystemVariables(r.agent, tools, run)
+	return createSystemVariables(r, tools, run)
 }
 
 func (r *AgentContext) createUserVariables(message string, run *AgentRun) map[string]interface{} {
-	return createUserVariables(r.agent, message, run)
+	return createUserVariables(r, message, run)
 }
 
-// Package-level utility functions for reuse across context managers
-func createSystemVariables(agent Agent, tools []ai.Tool, run *AgentRun) map[string]interface{} {
+func createSystemVariables(ac *AgentContext, tools []ai.Tool, run *AgentRun) map[string]interface{} {
 	memories := run.GetMemories()
 	var filteredMemories []MemoryEntry
 	for _, mem := range memories {
@@ -211,38 +193,37 @@ func createSystemVariables(agent Agent, tools []ai.Tool, run *AgentRun) map[stri
 
 	return map[string]interface{}{
 		"HasTools":        len(tools) > 0,
-		"Role":            agent.Description,
-		"Instructions":    agent.Instructions,
+		"Role":            ac.description,
+		"Instructions":    ac.instructions,
 		"Tools":           tools,
-		"HasRole":         agent.Description != "",
-		"HasInstructions": agent.Instructions != "",
+		"HasRole":         ac.description != "",
+		"HasInstructions": ac.instructions != "",
 		"Memories":        filteredMemories,
 		"HasMemories":     hasMemories,
 	}
 }
 
-func createUserVariables(agent Agent, message string, run *AgentRun) map[string]interface{} {
-	sessionContext := collectContextFunctions(agent, run)
+func createUserVariables(ac *AgentContext, message string, run *AgentRun) map[string]interface{} {
+	sessionContext := collectContextFunctions(run)
 	hasSessionContext := sessionContext != ""
 
 	return map[string]interface{}{
 		"Message":            message,
 		"HasMessage":         message != "",
-		"Documents":          agent.Documents,
-		"DocumentReferences": agent.DocumentReferences,
+		"Documents":          ac.documents,
+		"DocumentReferences": ac.documentReferences,
 		"SessionContext":     sessionContext,
 		"HasSessionContext":  hasSessionContext,
 	}
 }
 
-func (r *AgentContext) addDocuments(agent Agent) []ai.Message {
+func (r *AgentContext) insertDocuments(docs []*document.Document, docRefs []*document.Document) []ai.Message {
 	var msgs []ai.Message
 
-	// Add document attachments as separate Resource messages
-	for _, doc := range r.documents {
+	for _, doc := range docs {
 		content, err := doc.Bytes()
 		if err != nil {
-			continue // skip
+			continue
 		}
 
 		attachmentMsg := ai.ResourceMessage{
@@ -255,8 +236,7 @@ func (r *AgentContext) addDocuments(agent Agent) []ai.Message {
 		msgs = append(msgs, attachmentMsg)
 	}
 
-	// Add attachment references as Resource messages with file:// URI
-	for _, docRef := range agent.DocumentReferences {
+	for _, docRef := range docRefs {
 		fileID := docRef.ID()
 
 		refMsg := ai.ResourceMessage{
@@ -272,7 +252,6 @@ func (r *AgentContext) addDocuments(agent Agent) []ai.Message {
 	return msgs
 }
 
-// AddMemory adds a new memory entry or updates an existing one by ID
 func (r *AgentContext) AddMemory(id, description, content, scope, runID string) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -300,7 +279,6 @@ func (r *AgentContext) AddMemory(id, description, content, scope, runID string) 
 	return nil
 }
 
-// DeleteMemory removes a memory entry by ID
 func (r *AgentContext) DeleteMemory(id string) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -314,7 +292,6 @@ func (r *AgentContext) DeleteMemory(id string) error {
 	return nil
 }
 
-// GetMemories returns all memories in insertion order
 func (r *AgentContext) GetMemories() []MemoryEntry {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
@@ -322,4 +299,16 @@ func (r *AgentContext) GetMemories() []MemoryEntry {
 	result := make([]MemoryEntry, len(r.memories))
 	copy(result, r.memories)
 	return result
+}
+
+func (r *AgentContext) SetDocuments(docs []*document.Document) {
+	r.documents = docs
+}
+
+func (r *AgentContext) SetDocumentReferences(docRefs []*document.Document) {
+	r.documentReferences = docRefs
+}
+
+func (r *AgentContext) SetConversationHistory(history *ConversationHistory) {
+	r.conversationHistory = history
 }

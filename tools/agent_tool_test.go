@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 // Test that all tools implement AgentTool correctly
 func TestToolsReturnAgentTool(t *testing.T) {
 	tests := []struct {
 		name     string
-		toolFunc func() aigentic.AgentTool
+		toolFunc func() run.AgentTool
 	}{
 		{"ReadFileTool", NewReadFileTool},
 		{"WriteFileTool", NewWriteFileTool},
@@ -120,7 +121,7 @@ func TestPythonSandboxToolSchema(t *testing.T) {
 // Test that tools can be used with Agent
 func TestToolsWithAgent(t *testing.T) {
 	// This test just verifies the types are compatible
-	var tools []aigentic.AgentTool
+	var tools []run.AgentTool
 
 	tools = append(tools, NewReadFileTool())
 	tools = append(tools, NewWriteFileTool())

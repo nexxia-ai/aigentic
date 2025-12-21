@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 func TestNewWriteFileTool(t *testing.T) {
@@ -79,7 +79,7 @@ func TestWriteFile_Success(t *testing.T) {
 		"content":    testContent,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestWriteFile_OverwriteExisting(t *testing.T) {
 		"content":    newContent,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestWriteFile_EmptyContent(t *testing.T) {
 		"content":    "",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestWriteFile_BinaryContent(t *testing.T) {
 		"content":    content,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -240,7 +240,7 @@ Line 4`
 		"content":    testContent,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestWriteFile_CreateNestedDirectory(t *testing.T) {
 		"content":    testContent,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestWriteFile_MissingFileName(t *testing.T) {
 		"content":    "test",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Error("expected error for missing file_name")
 	}
@@ -334,7 +334,7 @@ func TestWriteFile_MissingStoreName(t *testing.T) {
 		"content":    "test",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Error("expected error for missing store_name")
 	}
@@ -361,7 +361,7 @@ func TestWriteFile_InvalidBase64(t *testing.T) {
 		"content":    content,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Error("expected error for invalid base64")
 	}
@@ -388,7 +388,7 @@ func TestWriteFile_MalformedBase64Header(t *testing.T) {
 		"content":    content,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Error("expected error for malformed base64 header")
 	}
@@ -414,7 +414,7 @@ func TestWriteFile_SpecialCharacters(t *testing.T) {
 		"content":    testContent,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestWriteFile_JSONContent(t *testing.T) {
 		"content":    testContent,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestWriteFile_LargeFile(t *testing.T) {
 		"content":    testContent,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -523,7 +523,7 @@ func BenchmarkWriteFile_SmallText(b *testing.B) {
 			"store_name": tempDir,
 			"content":    testContent,
 		}
-		_, err := tool.Execute(&aigentic.AgentRun{}, args)
+		_, err := tool.Execute(&run.AgentRun{}, args)
 		if err != nil {
 			b.Fatalf("unexpected error: %v", err)
 		}

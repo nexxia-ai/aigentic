@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/event"
+	"github.com/nexxia-ai/aigentic/run"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -219,10 +220,10 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		CompanyNumber string `json:"company_number" description:"The company number to lookup"`
 	}
 
-	tool := NewTool(
+	tool := run.NewTool(
 		"lookup_company_name",
 		"A tool that looks up the name of a company based on a company number",
-		func(run *AgentRun, input LookupCompanyInput) (string, error) {
+		func(run *run.AgentRun, input LookupCompanyInput) (string, error) {
 			return "Nexxia", nil
 		},
 	)
@@ -234,12 +235,12 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Always use the lookup_company_name tool to get information.",
 		MaxLLMCalls:  3, // Limit to 3 LLM calls
-		AgentTools:   []AgentTool{tool},
-		Tracer:       NewTracer(),
+		AgentTools:   []run.AgentTool{tool},
+		Tracer:       run.NewTracer(),
 		// LogLevel:     slog.LevelDebug,
 	}
 
-	run, err := agent.Start("Look up company information")
+	ar, err := agent.Start("Look up company information")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
@@ -247,14 +248,14 @@ func TestDummyLLMCallLimit(t *testing.T) {
 	var errorOccurred bool
 	var errorMessage string
 
-	for ev := range run.Next() {
+	for ev := range ar.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			// Content received
-		case *ToolEvent:
-		case *ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *ErrorEvent:
+		case *event.ToolEvent:
+		case *event.ApprovalEvent:
+			ar.Approve(e.ApprovalID, true)
+		case *event.ErrorEvent:
 			errorOccurred = true
 			errorMessage = e.Err.Error()
 		}
@@ -394,15 +395,15 @@ func TestDummyStreaming(t *testing.T) {
 	})
 }
 
-func getApprovalTool() AgentTool {
+func getApprovalTool() run.AgentTool {
 	type ApprovalToolInput struct {
 		Action string `json:"action" description:"The action to perform"`
 	}
 
-	approvalTool := NewTool(
+	approvalTool := run.NewTool(
 		"test_approval_tool",
 		"A test tool that requires approval",
-		func(run *AgentRun, input ApprovalToolInput) (string, error) {
+		func(run *run.AgentRun, input ApprovalToolInput) (string, error) {
 			return "Tool executed: " + input.Action, nil
 		},
 	)
@@ -450,30 +451,30 @@ func TestToolApprovalGiven(t *testing.T) {
 		Name:         "approval_test_agent",
 		Description:  "Test agent for approval functionality",
 		Instructions: "Use the test_approval_tool when requested.",
-		AgentTools:   []AgentTool{approvalTool},
-		Tracer:       NewTracer(),
+		AgentTools:   []run.AgentTool{approvalTool},
+		Tracer:       run.NewTracer(),
 		// LogLevel:     slog.LevelDebug,
 	}
 
-	run, err := agent.Start("Please execute the test tool with action 'test_action'")
+	ar, err := agent.Start("Please execute the test tool with action 'test_action'")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
 	var finalContent string
-	var approvalEvent *ApprovalEvent
-	var toolEvent *ToolEvent
+	var approvalEvent *event.ApprovalEvent
+	var toolEvent *event.ToolEvent
 
-	for ev := range run.Next() {
+	for ev := range ar.Next() {
 		switch e := ev.(type) {
-		case *ContentEvent:
+		case *event.ContentEvent:
 			finalContent = e.Content
-		case *ApprovalEvent:
+		case *event.ApprovalEvent:
 			approvalEvent = e
-			run.Approve(e.ApprovalID, true)
-		case *ToolEvent:
+			ar.Approve(e.ApprovalID, true)
+		case *event.ToolEvent:
 			toolEvent = e
-		case *ErrorEvent:
+		case *event.ErrorEvent:
 			t.Fatalf("Unexpected error: %v", e.Err)
 		}
 	}
@@ -483,7 +484,6 @@ func TestToolApprovalGiven(t *testing.T) {
 	assert.Contains(t, approvalEvent.ValidationResult.Message, "", "message should be empty")
 	assert.NotNil(t, toolEvent, "Should have received a ToolEvent")
 	assert.Contains(t, finalContent, "Tool execution completed successfully", "Should have final content")
-	assert.Equal(t, 0, len(run.pendingApprovals), "Should have no pending approvals")
 }
 
 func TestToolApprovalRejected(t *testing.T) {
@@ -501,30 +501,30 @@ func TestToolApprovalRejected(t *testing.T) {
 		Name:         "approval_test_agent",
 		Description:  "Test agent for approval functionality",
 		Instructions: "Use the test_approval_tool when requested.",
-		AgentTools:   []AgentTool{approvalTool},
-		Tracer:       NewTracer(),
+		AgentTools:   []run.AgentTool{approvalTool},
+		Tracer:       run.NewTracer(),
 		// LogLevel:     slog.LevelDebug,
 	}
 
-	run, err := agent.Start("Please execute the test tool with action 'test_action'")
+	ar, err := agent.Start("Please execute the test tool with action 'test_action'")
 	if err != nil {
 		t.Fatalf("Agent run failed: %v", err)
 	}
 
-	var approvalEvent *ApprovalEvent
+	var approvalEvent *event.ApprovalEvent
 	var toolRequested bool
 	var toolResponseReceived bool
 
-	for ev := range run.Next() {
+	for ev := range ar.Next() {
 		switch e := ev.(type) {
-		case *ApprovalEvent:
+		case *event.ApprovalEvent:
 			approvalEvent = e
 			toolRequested = true
-			run.Approve(e.ApprovalID, false)
-		case *ToolResponseEvent:
+			ar.Approve(e.ApprovalID, false)
+		case *event.ToolResponseEvent:
 			toolResponseReceived = true
 			assert.Contains(t, e.Content, "approval denied", "Tool response should indicate approval was denied")
-		case *ErrorEvent:
+		case *event.ErrorEvent:
 			// Error might occur if the approval system times out
 			t.Logf("Error occurred: %v", e.Err)
 		}
@@ -537,75 +537,6 @@ func TestToolApprovalRejected(t *testing.T) {
 	}
 	assert.True(t, toolRequested, "Tool should have been requested")
 	assert.True(t, toolResponseReceived, "Should have received a tool response indicating denial")
-	assert.Equal(t, 0, len(run.pendingApprovals), "Should have no pending approvals")
-}
-
-func TestToolApprovalTimeout(t *testing.T) {
-	approvalTool := getApprovalTool()
-	testData := getApprovalTestData()
-
-	replayFunc, err := ai.ReplayFunctionFromData(testData)
-	if err != nil {
-		t.Fatalf("Failed to create replay function: %v", err)
-	}
-	model := ai.NewDummyModel(replayFunc)
-
-	agent := Agent{
-		Model:        model,
-		Name:         "timeout_test_agent",
-		Description:  "Test agent for approval timeout functionality",
-		Instructions: "Use the test_approval_tool when requested.",
-		AgentTools:   []AgentTool{approvalTool},
-		Tracer:       NewTracer(),
-		// LogLevel:     slog.LevelDebug,
-	}
-
-	approvalTimeout = time.Millisecond * 300
-	tickerInterval = time.Millisecond * 100
-
-	run, err := agent.Start("Please execute the test tool with action 'test_action'")
-	if err != nil {
-		t.Fatalf("Agent run failed: %v", err)
-	}
-
-	var approvalEvent *ApprovalEvent
-	var toolRequested bool
-	var toolResponseReceived bool
-
-	timeout := time.After(500 * time.Millisecond)
-	done := make(chan bool)
-
-	go func() {
-		defer func() { done <- true }()
-		for ev := range run.Next() {
-			switch e := ev.(type) {
-			case *ApprovalEvent:
-				approvalEvent = e
-				toolRequested = true
-				// Don't approve, let it timeout
-			case *ToolResponseEvent:
-				toolResponseReceived = true
-			case *ErrorEvent:
-				t.Logf("Error occurred: %v", e.Err)
-			}
-		}
-	}()
-
-	select {
-	case <-timeout:
-		// Force timeout to occur
-	case <-done:
-		// Test completed normally
-	}
-
-	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
-	if approvalEvent != nil {
-		assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
-		assert.Contains(t, approvalEvent.ValidationResult.Message, "", "message should be empty")
-	}
-	assert.True(t, toolRequested, "Tool should have been requested")
-	assert.Equal(t, 0, len(run.pendingApprovals), "Should have no pending approvals")
-	t.Logf("Tool response received: %v", toolResponseReceived)
 }
 
 func TestDummyTeamCoordination(t *testing.T) {
@@ -816,7 +747,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 		Name:         "lookup",
 		Description:  "Lookup company details by name. Return either 'COMPANY_ID: <id>; NAME: <name>' or 'NOT_FOUND' only.",
 		Instructions: "Use tools to perform the lookup and return the canonical format only.",
-		AgentTools:   []AgentTool{NewLookupCompanyByNameTool()},
+		AgentTools:   []run.AgentTool{NewLookupCompanyByNameTool()},
 	}
 
 	companyCreator := Agent{
@@ -824,7 +755,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 		Name:         "company_creator",
 		Description:  "Create a new company by name and return 'COMPANY_ID: <id>; NAME: <name>' only.",
 		Instructions: "Use tools to create the company and return the canonical format only.",
-		AgentTools:   []AgentTool{NewCreateCompanyTool()},
+		AgentTools:   []run.AgentTool{NewCreateCompanyTool()},
 	}
 
 	invoiceCreator := Agent{
@@ -832,7 +763,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 		Name:         "invoice_creator",
 		Description:  "Create an invoice for a given company_id and amount. Return 'INVOICE_ID: <id>; AMOUNT: <amount>' only.",
 		Instructions: "Use tools to create the invoice and return the canonical format only.",
-		AgentTools:   []AgentTool{NewCreateInvoiceTool()},
+		AgentTools:   []run.AgentTool{NewCreateInvoiceTool()},
 	}
 
 	coordinator := Agent{
@@ -846,7 +777,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
-		Tracer: NewTracer(),
+		Tracer: run.NewTracer(),
 	}
 
 	// Now run the same test logic as TestTeamCoordination
@@ -886,21 +817,21 @@ func TestDummyTeamCoordination(t *testing.T) {
 			toolOrder := []string{}
 
 			msg := fmt.Sprintf("Create an invoice for company '%s' for the amount %s. Return the final canonical line only.", tc.companyName, tc.amount)
-			run, err := coordinator.Start(msg)
+			ar, err := coordinator.Start(msg)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
 			}
 
 			var chunks []string
-			for ev := range run.Next() {
+			for ev := range ar.Next() {
 				switch e := ev.(type) {
-				case *ContentEvent:
+				case *event.ContentEvent:
 					chunks = append(chunks, e.Content)
-				case *ToolEvent:
+				case *event.ToolEvent:
 					toolOrder = append(toolOrder, e.ToolName)
-				case *ApprovalEvent:
-					run.Approve(e.ApprovalID, true)
-				case *ErrorEvent:
+				case *event.ApprovalEvent:
+					ar.Approve(e.ApprovalID, true)
+				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}

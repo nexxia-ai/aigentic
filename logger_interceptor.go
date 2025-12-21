@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/event"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 type loggerInterceptor struct {
@@ -20,23 +22,19 @@ func newLoggerInterceptor() *loggerInterceptor {
 	}
 }
 
-func (l *loggerInterceptor) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
-	callID := run.ID()
+func (l *loggerInterceptor) BeforeCall(agentRun *run.AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
+	callID := agentRun.ID()
 	l.mu.Lock()
 	l.llmCallTimers[callID] = time.Now()
 	l.mu.Unlock()
 
-	if run.parentRun == nil {
-		run.Logger.Debug("calling LLM", "model", run.model.ModelName, "messages", len(messages), "tools", len(tools))
-	} else {
-		run.Logger.Debug("calling sub-agent LLM", "model", run.model.ModelName, "messages", len(messages), "tools", len(tools))
-	}
+	agentRun.Logger.Debug("calling LLM", "model", agentRun.Model().ModelName, "messages", len(messages), "tools", len(tools))
 
 	return messages, tools, nil
 }
 
-func (l *loggerInterceptor) AfterCall(run *AgentRun, request []ai.Message, response ai.AIMessage) (ai.AIMessage, error) {
-	callID := run.ID()
+func (l *loggerInterceptor) AfterCall(agentRun *run.AgentRun, request []ai.Message, response ai.AIMessage) (ai.AIMessage, error) {
+	callID := agentRun.ID()
 	l.mu.Lock()
 	startTime, exists := l.llmCallTimers[callID]
 	var duration time.Duration
@@ -46,35 +44,27 @@ func (l *loggerInterceptor) AfterCall(run *AgentRun, request []ai.Message, respo
 	}
 	l.mu.Unlock()
 
-	if run.parentRun == nil {
-		if exists {
-			run.Logger.Debug("LLM call completed", "model", run.model.ModelName, "duration", duration, "tool_calls", len(response.ToolCalls))
-		} else {
-			run.Logger.Debug("LLM call completed", "model", run.model.ModelName, "tool_calls", len(response.ToolCalls))
-		}
+	if exists {
+		agentRun.Logger.Debug("LLM call completed", "model", agentRun.Model().ModelName, "duration", duration, "tool_calls", len(response.ToolCalls))
 	} else {
-		if exists {
-			run.Logger.Debug("sub-agent LLM call completed", "model", run.model.ModelName, "duration", duration, "tool_calls", len(response.ToolCalls))
-		} else {
-			run.Logger.Debug("sub-agent LLM call completed", "model", run.model.ModelName, "tool_calls", len(response.ToolCalls))
-		}
+		agentRun.Logger.Debug("LLM call completed", "model", agentRun.Model().ModelName, "tool_calls", len(response.ToolCalls))
 	}
 
 	return response, nil
 }
 
-func (l *loggerInterceptor) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult) (ValidationResult, error) {
+func (l *loggerInterceptor) BeforeToolCall(agentRun *run.AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult) (event.ValidationResult, error) {
 	timerKey := toolCallID
 	l.mu.Lock()
 	l.toolTimers[timerKey] = time.Now()
 	l.mu.Unlock()
 
-	run.Logger.Debug("calling tool", "tool", toolName, "tool_call_id", toolCallID, "args", validationResult)
+	agentRun.Logger.Debug("calling tool", "tool", toolName, "tool_call_id", toolCallID, "args", validationResult)
 
 	return validationResult, nil
 }
 
-func (l *loggerInterceptor) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
+func (l *loggerInterceptor) AfterToolCall(agentRun *run.AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
 	timerKey := toolCallID
 	l.mu.Lock()
 	startTime, exists := l.toolTimers[timerKey]
@@ -87,15 +77,15 @@ func (l *loggerInterceptor) AfterToolCall(run *AgentRun, toolName string, toolCa
 
 	if result != nil && result.Error {
 		if exists {
-			run.Logger.Debug("tool call completed with error", "tool", toolName, "tool_call_id", toolCallID, "duration", duration)
+			agentRun.Logger.Debug("tool call completed with error", "tool", toolName, "tool_call_id", toolCallID, "duration", duration)
 		} else {
-			run.Logger.Debug("tool call completed with error", "tool", toolName, "tool_call_id", toolCallID)
+			agentRun.Logger.Debug("tool call completed with error", "tool", toolName, "tool_call_id", toolCallID)
 		}
 	} else {
 		if exists {
-			run.Logger.Debug("tool call completed", "tool", toolName, "tool_call_id", toolCallID, "duration", duration)
+			agentRun.Logger.Debug("tool call completed", "tool", toolName, "tool_call_id", toolCallID, "duration", duration)
 		} else {
-			run.Logger.Debug("tool call completed", "tool", toolName, "tool_call_id", toolCallID)
+			agentRun.Logger.Debug("tool call completed", "tool", toolName, "tool_call_id", toolCallID)
 		}
 	}
 

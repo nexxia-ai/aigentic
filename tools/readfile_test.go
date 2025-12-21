@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
 )
 
 func TestNewReadFileTool(t *testing.T) {
@@ -73,7 +73,7 @@ func TestReadFile_Success(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +107,7 @@ Line 4`
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestReadFile_EmptyFile(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestReadFile_BinaryFile(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestReadFile_FileNotFound(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Error("expected error for non-existent file")
 	}
@@ -227,7 +227,7 @@ func TestReadFile_DirectoryInsteadOfFile(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Error("expected error when trying to read directory")
 	}
@@ -250,7 +250,7 @@ func TestReadFile_MissingFileName(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Error("expected error for missing file_name")
 	}
@@ -271,7 +271,7 @@ func TestReadFile_MissingStoreName(t *testing.T) {
 		"store_name": "",
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err == nil {
 		t.Error("expected error for missing store_name")
 	}
@@ -309,7 +309,7 @@ func TestReadFile_NestedDirectory(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestReadFile_SpecialCharacters(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestReadFile_LargeFile(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestReadFile_JSONContent(t *testing.T) {
 		"store_name": tempDir,
 	}
 
-	result, err := tool.Execute(&aigentic.AgentRun{}, args)
+	result, err := tool.Execute(&run.AgentRun{}, args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -447,7 +447,7 @@ func BenchmarkReadFile_SmallText(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := tool.Execute(&aigentic.AgentRun{}, args)
+		_, err := tool.Execute(&run.AgentRun{}, args)
 		if err != nil {
 			b.Fatalf("unexpected error: %v", err)
 		}

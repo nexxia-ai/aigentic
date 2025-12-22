@@ -36,7 +36,18 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 
 	currentValidationResult := act.ValidationResult
 	var err error
-	for _, interceptor := range r.interceptors {
+	interceptors := r.interceptors
+
+	// Add conversation history interceptor if enabled
+	if r.enableConversationHistory {
+		interceptors = append(interceptors, newHistoryInterceptor(r.agentContext.ConversationHistory()))
+	}
+
+	// Trace must be the last interceptor to capture the full exchange
+	if r.trace != nil {
+		interceptors = append(interceptors, r.trace)
+	}
+	for _, interceptor := range interceptors {
 		currentValidationResult, err = interceptor.BeforeToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult)
 		if err != nil {
 			errMsg := fmt.Sprintf("interceptor rejected tool call: %v", err)
@@ -56,7 +67,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	}
 
 	currentResult := result
-	for _, interceptor := range r.interceptors {
+	for _, interceptor := range interceptors {
 		currentResult, err = interceptor.AfterToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult, currentResult)
 		if err != nil {
 			errMsg := fmt.Sprintf("interceptor error after tool call: %v", err)

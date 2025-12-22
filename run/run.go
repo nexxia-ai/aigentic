@@ -30,19 +30,20 @@ type AgentRun struct {
 	agentContext *ctxt.AgentContext
 	interceptors []Interceptor
 
-	eventQueue              chan event.Event
-	actionQueue             chan action
-	pendingApprovals        map[string]pendingApproval
-	processedToolCallIDs    map[string]bool
-	currentStreamGroup      *ToolCallGroup
-	trace                   Trace
-	userMessage             string
-	parentRun               *AgentRun
-	Logger                  *slog.Logger
-	maxLLMCalls             int
-	llmCallCount            int
-	approvalTimeout         time.Duration
-	currentConversationTurn *ctxt.ConversationTurn
+	eventQueue                chan event.Event
+	actionQueue               chan action
+	pendingApprovals          map[string]pendingApproval
+	processedToolCallIDs      map[string]bool
+	currentStreamGroup        *ToolCallGroup
+	trace                     Trace
+	userMessage               string
+	parentRun                 *AgentRun
+	Logger                    *slog.Logger
+	maxLLMCalls               int
+	llmCallCount              int
+	approvalTimeout           time.Duration
+	currentConversationTurn   *ctxt.ConversationTurn
+	enableConversationHistory bool
 
 	streaming bool
 
@@ -143,15 +144,15 @@ func (r *AgentRun) SetTools(tools []AgentTool) {
 	r.tools = tools
 }
 
-func (r *AgentRun) EnableHistory() {
-	r.interceptors = append(r.interceptors, newHistoryInterceptor(r.agentContext.ConversationHistory()))
-}
-
 func (r *AgentRun) SetConversationHistory(history *ctxt.ConversationHistory) {
 	r.agentContext.SetConversationHistory(history)
 	if history != nil {
-		r.interceptors = append(r.interceptors, newHistoryInterceptor(history))
+		r.enableConversationHistory = true
 	}
+}
+
+func (r *AgentRun) EnableConversationHistory(enable bool) {
+	r.enableConversationHistory = enable
 }
 
 // AddDocument adds a document to the conversation turn and optionally to the session
@@ -182,11 +183,6 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 func (r *AgentRun) Start(context context.Context, message string) {
 	r.currentConversationTurn = ctxt.NewConversationTurn(message, r.id, "", "")
 	r.agentContext.SetUserMessage(message)
-
-	// Add trace interceptor if present - this must be the last interceptor to capture the full response
-	if r.trace != nil {
-		r.interceptors = append(r.interceptors, r.trace)
-	}
 
 	// goroutine to read the action queue and process actions.
 	// it will terminate when the action queue is closed and the agent is finished.

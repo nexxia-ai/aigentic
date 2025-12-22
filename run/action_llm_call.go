@@ -56,7 +56,18 @@ func (r *AgentRun) runLLMCallAction(message string) {
 	// Chain BeforeCall interceptors
 	currentMsgs := msgs
 	currentTools := tools
-	for _, interceptor := range r.interceptors {
+	interceptors := r.interceptors
+
+	// Add conversation history interceptor if enabled
+	if r.enableConversationHistory {
+		interceptors = append(interceptors, newHistoryInterceptor(r.agentContext.ConversationHistory()))
+	}
+
+	// Trace must be the last interceptor to capture the full exchange
+	if r.trace != nil {
+		interceptors = append(interceptors, r.trace)
+	}
+	for _, interceptor := range interceptors {
 		currentMsgs, currentTools, err = interceptor.BeforeCall(r, currentMsgs, currentTools)
 		if err != nil {
 			r.queueAction(&stopAction{Error: fmt.Errorf("interceptor rejected: %w", err)})
@@ -89,7 +100,7 @@ func (r *AgentRun) runLLMCallAction(message string) {
 
 	// Chain AfterCall interceptors
 	currentResp := respMsg
-	for _, interceptor := range r.interceptors {
+	for _, interceptor := range interceptors {
 		currentResp, err = interceptor.AfterCall(r, currentMsgs, currentResp)
 		if err != nil {
 			r.queueAction(&stopAction{Error: fmt.Errorf("interceptor error: %w", err)})

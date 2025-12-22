@@ -274,6 +274,9 @@ func (r *AgentContext) SetDocumentReferences(docRefs []*document.Document) {
 }
 
 func (r *AgentContext) SetConversationHistory(history *ConversationHistory) {
+	if history == nil { // reset conversation history
+		history = NewConversationHistory()
+	}
 	r.conversationHistory = history
 }
 

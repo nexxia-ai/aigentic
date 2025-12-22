@@ -504,3 +504,79 @@ func TestToolApprovalTimeout(t *testing.T) {
 	assert.Equal(t, 0, len(ar.pendingApprovals), "Should have no pending approvals")
 	t.Logf("Tool response received: %v", toolResponseReceived)
 }
+
+func TestAgentRun_ReuseAfterCompletion(t *testing.T) {
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "First response",
+		}, nil
+	})
+
+	ar := NewAgentRun("test-reuse-agent", "Test agent for reuse", "")
+	ar.SetModel(model)
+	ar.SetTracer(newTestTracer())
+
+	ar.Run(context.Background(), "First message")
+	content1, err1 := ar.Wait(0)
+	assert.NoError(t, err1)
+	assert.Contains(t, content1, "First response")
+
+	ar.Run(context.Background(), "Second message")
+	content2, err2 := ar.Wait(0)
+	assert.NoError(t, err2)
+	assert.Contains(t, content2, "First response")
+}
+
+func TestAgentRun_ReuseAfterCancel(t *testing.T) {
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		time.Sleep(50 * time.Millisecond)
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Response after cancel",
+		}, nil
+	})
+
+	ar := NewAgentRun("test-cancel-reuse-agent", "Test agent for cancel and reuse", "")
+	ar.SetModel(model)
+	ar.SetTracer(newTestTracer())
+
+	ar.Run(context.Background(), "First message")
+	ar.Cancel()
+
+	time.Sleep(100 * time.Millisecond)
+
+	ar.Run(context.Background(), "Second message")
+	content2, err2 := ar.Wait(0)
+	assert.NoError(t, err2)
+	assert.Contains(t, content2, "Response after cancel")
+}
+
+func TestAgentRun_MemoryPersistenceAcrossRuns(t *testing.T) {
+	callCount := 0
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
+		content := "Response " + string(rune('0'+callCount))
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: content,
+		}, nil
+	})
+
+	ar := NewAgentRun("test-memory-agent", "Test agent with memory", "")
+	ar.SetModel(model)
+	ar.SetTracer(newTestTracer())
+
+	ar.Run(context.Background(), "First message")
+	content1, err1 := ar.Wait(0)
+	assert.NoError(t, err1)
+	assert.Contains(t, content1, "Response")
+
+	ar.Run(context.Background(), "Second message")
+	content2, err2 := ar.Wait(0)
+	assert.NoError(t, err2)
+	assert.Contains(t, content2, "Response")
+
+	agentContext := ar.AgentContext()
+	assert.NotNil(t, agentContext, "Agent context should persist across runs")
+}

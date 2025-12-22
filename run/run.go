@@ -85,7 +85,6 @@ func (r *AgentRun) SetRetrievers(retrievers []Retriever) {
 func NewAgentRun(name, description, instructions string) *AgentRun {
 	runID := uuid.New().String()
 	sessionID := uuid.New().String()
-	runCtx, cancelFunc := context.WithCancel(context.Background())
 
 	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{}, fmt.Errorf("agent model is not set")
@@ -96,8 +95,6 @@ func NewAgentRun(name, description, instructions string) *AgentRun {
 		agentName:               name,
 		id:                      runID,
 		sessionID:               sessionID,
-		ctx:                     runCtx,
-		cancelFunc:              cancelFunc,
 		agentContext:            ac,
 		model:                   model,
 		maxLLMCalls:             20,
@@ -180,9 +177,18 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 	return nil
 }
 
-func (r *AgentRun) Run(context context.Context, message string) {
+func (r *AgentRun) Run(ctx context.Context, message string) {
 	r.currentConversationTurn = ctxt.NewConversationTurn(message, r.id, "", "")
 	r.agentContext.SetUserMessage(message)
+
+	r.ctx, r.cancelFunc = context.WithCancel(ctx)
+	r.pendingApprovals = make(map[string]pendingApproval)
+	r.processedToolCallIDs = make(map[string]bool)
+	r.llmCallCount = 0
+
+	// new channels for the run
+	r.eventQueue = make(chan event.Event, 100)
+	r.actionQueue = make(chan action, 100)
 
 	// goroutine to read the action queue and process actions.
 	// it will terminate when the action queue is closed and the agent is finished.

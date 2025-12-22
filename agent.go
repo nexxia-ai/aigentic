@@ -75,6 +75,15 @@ type Agent struct {
 // Start starts a new agent run.
 // The agent is passed by value and is not modified during the run.
 func (a Agent) Start(message string) (*run.AgentRun, error) {
+	ar, err := a.New()
+	if err != nil {
+		return nil, err
+	}
+	ar.Run(context.Background(), message)
+	return ar, nil
+}
+
+func (a Agent) New() (*run.AgentRun, error) {
 	if a.Name == "" {
 		a.Name = "noname_" + uuid.New().String()
 	}
@@ -95,7 +104,6 @@ func (a Agent) Start(message string) (*run.AgentRun, error) {
 	if a.ConversationHistory != nil {
 		ar.SetConversationHistory(a.ConversationHistory)
 	}
-	ar.Start(context.Background(), message)
 	return ar, nil
 }
 

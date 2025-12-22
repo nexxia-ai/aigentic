@@ -180,7 +180,7 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 	return nil
 }
 
-func (r *AgentRun) Start(context context.Context, message string) {
+func (r *AgentRun) Run(context context.Context, message string) {
 	r.currentConversationTurn = ctxt.NewConversationTurn(message, r.id, "", "")
 	r.agentContext.SetUserMessage(message)
 
@@ -235,7 +235,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 				subRun.SetStreaming(true)
 			}
 
-			subRun.Start(r.ctx, input)
+			subRun.Run(r.ctx, input)
 			content, err := subRun.Wait(0)
 
 			// Record sub-agent errors to trace

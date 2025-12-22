@@ -459,7 +459,7 @@ func TestToolApprovalTimeout(t *testing.T) {
 	ar.SetTools([]AgentTool{approvalTool})
 	ar.SetTracer(newTestTracer())
 	ar.approvalTimeout = approvalTimeout
-	ar.Start(context.Background(), "Please execute the test tool with action 'test_action'")
+	ar.Run(context.Background(), "Please execute the test tool with action 'test_action'")
 	defer func() {
 		select {
 		case <-ar.ctx.Done():

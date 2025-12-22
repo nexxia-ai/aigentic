@@ -63,7 +63,7 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 	ag := NewAgentRun("test-document-agent", "Agent that creates documents", "")
 	ag.SetModel(model)
 	ag.SetTools([]AgentTool{testTool})
-	ag.Start(context.Background(), "Please create a PDF")
+	ag.Run(context.Background(), "Please create a PDF")
 
 	for evt := range ag.Next() {
 		switch ev := evt.(type) {
@@ -144,7 +144,7 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 	agentRun.SetModel(model)
 	agentRun.SetTools([]AgentTool{testTool})
 	agentRun.SetConversationHistory(history)
-	agentRun.Start(context.Background(), "Create a report")
+	agentRun.Run(context.Background(), "Create a report")
 
 	result, err := agentRun.Wait(0)
 	assert.NoError(t, err)
@@ -215,7 +215,7 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 	agentRun.SetModel(model)
 	agentRun.SetTools([]AgentTool{testTool})
 	agentRun.SetConversationHistory(history)
-	agentRun.Start(context.Background(), "Create files")
+	agentRun.Run(context.Background(), "Create files")
 
 	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
@@ -289,7 +289,7 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 	agentRun.SetModel(model)
 	agentRun.SetTools([]AgentTool{tool1, tool2})
 	agentRun.SetConversationHistory(history)
-	agentRun.Start(context.Background(), "Create both PDFs")
+	agentRun.Run(context.Background(), "Create both PDFs")
 
 	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
@@ -343,7 +343,7 @@ func TestToolWithNoDocuments(t *testing.T) {
 	agentRun.SetModel(model)
 	agentRun.SetTools([]AgentTool{testTool})
 	agentRun.SetConversationHistory(history)
-	agentRun.Start(context.Background(), "Use simple tool")
+	agentRun.Run(context.Background(), "Use simple tool")
 
 	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
@@ -397,7 +397,7 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 	agentRun.SetModel(model)
 	agentRun.SetTools([]AgentTool{testTool})
 	agentRun.SetConversationHistory(history)
-	agentRun.Start(context.Background(), "Create persistent document")
+	agentRun.Run(context.Background(), "Create persistent document")
 
 	runID := agentRun.ID()
 	_, err := agentRun.Wait(0)
@@ -456,7 +456,7 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 	agentRun.SetModel(model)
 	agentRun.SetTools([]AgentTool{testTool})
 	agentRun.SetConversationHistory(history)
-	agentRun.Start(context.Background(), "Create document with metadata")
+	agentRun.Run(context.Background(), "Create document with metadata")
 
 	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
@@ -517,7 +517,7 @@ func TestEmptyToolResultDocuments(t *testing.T) {
 	agentRun.SetModel(model)
 	agentRun.SetTools([]AgentTool{testTool})
 	agentRun.SetConversationHistory(history)
-	agentRun.Start(context.Background(), "Use empty docs tool")
+	agentRun.Run(context.Background(), "Use empty docs tool")
 
 	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
@@ -571,7 +571,7 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 	agentRun.SetModel(model)
 	agentRun.SetTools([]AgentTool{testTool})
 	agentRun.SetConversationHistory(history)
-	agentRun.Start(context.Background(), "Create accessible document")
+	agentRun.Run(context.Background(), "Create accessible document")
 
 	result, err := agentRun.Wait(0)
 	assert.NoError(t, err)
@@ -649,7 +649,7 @@ func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
 	run1.SetModel(model)
 	run1.SetTools([]AgentTool{testTool})
 	run1.SetConversationHistory(history)
-	run1.Start(context.Background(), "First message - use echo tool")
+	run1.Run(context.Background(), "First message - use echo tool")
 	_, err := run1.Wait(0)
 	assert.NoError(t, err)
 
@@ -657,7 +657,7 @@ func TestMessageOrderWithMultipleStartCalls(t *testing.T) {
 	run2.SetModel(model)
 	run2.SetTools([]AgentTool{testTool})
 	run2.SetConversationHistory(history)
-	run2.Start(context.Background(), "Second message")
+	run2.Run(context.Background(), "Second message")
 	_, err = run2.Wait(0)
 	assert.NoError(t, err)
 }
@@ -775,7 +775,7 @@ func TestConversationHistoryIncludedInFutureConversations(t *testing.T) {
 	run1 := NewAgentRun("test-history-agent", "Agent that remembers conversation history", "")
 	run1.SetModel(model)
 	run1.SetConversationHistory(history)
-	run1.Start(context.Background(), "First message")
+	run1.Run(context.Background(), "First message")
 	result1, err := run1.Wait(0)
 	assert.NoError(t, err)
 	assert.Contains(t, result1, "First response")
@@ -787,7 +787,7 @@ func TestConversationHistoryIncludedInFutureConversations(t *testing.T) {
 	run2 := NewAgentRun("test-history-agent", "Agent that remembers conversation history", "")
 	run2.SetModel(model)
 	run2.SetConversationHistory(history)
-	run2.Start(context.Background(), "Second message")
+	run2.Run(context.Background(), "Second message")
 	result2, err := run2.Wait(0)
 	assert.NoError(t, err)
 	assert.Contains(t, result2, "remember our previous conversation")

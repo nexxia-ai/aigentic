@@ -36,7 +36,6 @@ type AgentRun struct {
 	processedToolCallIDs map[string]bool
 	currentStreamGroup   *ToolCallGroup
 	trace                Trace
-	userMessage          string
 	parentRun            *AgentRun
 	Logger               *slog.Logger
 	logLevel             slog.LevelVar
@@ -94,7 +93,7 @@ func NewAgentRun(name, description, instructions string) *AgentRun {
 		return ai.AIMessage{}, fmt.Errorf("agent model is not set")
 	})
 
-	ac := ctxt.NewAgentContext(runID, description, instructions, "")
+	ac := ctxt.NewAgentContext(runID, description, instructions)
 	ac.SetConversationTurn(ctxt.NewConversationTurn("", runID, "", ""))
 	run := &AgentRun{
 		agentName:            name,
@@ -190,7 +189,6 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 
 func (r *AgentRun) Run(ctx context.Context, message string) {
 	r.agentContext.SetConversationTurn(ctxt.NewConversationTurn(message, r.id, "", ""))
-	r.agentContext.SetUserMessage(message)
 
 	r.ctx, r.cancelFunc = context.WithCancel(ctx)
 	r.pendingApprovals = make(map[string]pendingApproval)
@@ -204,7 +202,7 @@ func (r *AgentRun) Run(ctx context.Context, message string) {
 	// goroutine to read the action queue and process actions.
 	// it will terminate when the action queue is closed and the agent is finished.
 	go r.processLoop()
-	r.queueAction(&llmCallAction{Message: r.userMessage})
+	r.queueAction(&llmCallAction{Message: r.agentContext.ConversationTurn().UserMessage})
 }
 
 func (r *AgentRun) stop() {

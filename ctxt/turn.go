@@ -14,26 +14,28 @@ type DocumentEntry struct {
 }
 
 type ConversationTurn struct {
-	Request   ai.Message
-	messages  []ai.Message
-	Reply     ai.Message
-	Documents []DocumentEntry
-	TraceFile string
-	RunID     string
-	Timestamp time.Time
-	AgentName string
-	Hidden    bool
+	Request     ai.Message
+	UserMessage string
+	messages    []ai.Message
+	Reply       ai.Message
+	Documents   []DocumentEntry
+	TraceFile   string
+	RunID       string
+	Timestamp   time.Time
+	AgentName   string
+	Hidden      bool
 }
 
 func NewConversationTurn(userMessage, runID, agentName, traceFile string) *ConversationTurn {
 	return &ConversationTurn{
-		Request:   ai.UserMessage{Role: ai.UserRole, Content: userMessage},
-		messages:  make([]ai.Message, 0),
-		Documents: make([]DocumentEntry, 0),
-		TraceFile: traceFile,
-		RunID:     runID,
-		Timestamp: time.Now(),
-		AgentName: agentName,
+		Request:     ai.UserMessage{Role: ai.UserRole, Content: userMessage},
+		UserMessage: userMessage,
+		messages:    make([]ai.Message, 0),
+		Documents:   make([]DocumentEntry, 0),
+		TraceFile:   traceFile,
+		RunID:       runID,
+		Timestamp:   time.Now(),
+		AgentName:   agentName,
 	}
 }
 

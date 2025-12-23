@@ -15,31 +15,26 @@ type AgentContext struct {
 	id             string
 	description    string
 	instructions   string
-	userMsg        string
 	msgHistory     []ai.Message
 	currentMsg     int
 	SystemTemplate *template.Template
 	UserTemplate   *template.Template
 
-	mutex               sync.RWMutex
-	memories            []MemoryEntry
-	documents           []*document.Document
-	documentReferences  []*document.Document
-	conversationHistory *ConversationHistory
-	outputInstructions  string
+	mutex                   sync.RWMutex
+	memories                []MemoryEntry
+	documents               []*document.Document
+	documentReferences      []*document.Document
+	conversationHistory     *ConversationHistory
+	outputInstructions      string
 	currentConversationTurn *ConversationTurn
 }
 
-func NewAgentContext(id, description, instructions, userMsg string) *AgentContext {
-	cm := &AgentContext{id: id, description: description, instructions: instructions, userMsg: userMsg}
+func NewAgentContext(id, description, instructions string) *AgentContext {
+	cm := &AgentContext{id: id, description: description, instructions: instructions}
 
 	cm.conversationHistory = NewConversationHistory()
 	cm.SetTemplates(DefaultSystemTemplate, DefaultUserTemplate)
 	return cm
-}
-
-func (r *AgentContext) SetUserMessage(userMsg string) {
-	r.userMsg = userMsg
 }
 
 func (r *AgentContext) SetOutputInstructions(instructions string) {
@@ -132,7 +127,12 @@ func (r *AgentContext) BuildPrompt(messages []ai.Message, tools []ai.Tool) ([]ai
 		ai.SystemMessage{Role: ai.SystemRole, Content: systemBuf.String()},
 	}
 
-	userVars := r.createUserVariables(r.userMsg)
+	userMsg := ""
+	if r.currentConversationTurn != nil {
+		userMsg = r.currentConversationTurn.UserMessage
+	}
+
+	userVars := r.createUserVariables(userMsg)
 	var userBuf bytes.Buffer
 	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user template: %w", err)

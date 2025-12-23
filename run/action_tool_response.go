@@ -58,6 +58,6 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 			r.queueEvent(event)
 		}
 
-		r.queueAction(&llmCallAction{Message: r.userMessage})
+		r.queueAction(&llmCallAction{Message: r.agentContext.ConversationTurn().UserMessage})
 	}
 }

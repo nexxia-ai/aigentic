@@ -39,6 +39,7 @@ type AgentRun struct {
 	userMessage               string
 	parentRun                 *AgentRun
 	Logger                    *slog.Logger
+	logLevel                  slog.LevelVar
 	maxLLMCalls               int
 	llmCallCount              int
 	approvalTimeout           time.Duration
@@ -110,10 +111,10 @@ func NewAgentRun(name, description, instructions string) *AgentRun {
 		interceptors:            make([]Interceptor, 0),
 		tools:                   make([]AgentTool, 0),
 		streaming:               false,
-		Logger:                  slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With("agent", name),
 		currentConversationTurn: ctxt.NewConversationTurn("", runID, "", ""),
 	}
-
+	run.logLevel.Set(slog.LevelError)
+	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel})).With("agent", name)
 	return run
 }
 
@@ -123,6 +124,10 @@ func (r *AgentRun) AgentContext() *ctxt.AgentContext {
 
 func (r *AgentRun) SetModel(model *ai.Model) {
 	r.model = model
+}
+
+func (r *AgentRun) SetLogLevel(level slog.Level) {
+	r.logLevel.Set(level)
 }
 
 func (r *AgentRun) SetAgentName(agentName string) {

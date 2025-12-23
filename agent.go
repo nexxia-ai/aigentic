@@ -104,6 +104,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetRetrievers(a.Retrievers)
 	ar.SetStreaming(a.Stream)
 	ar.SetOutputInstructions(a.OutputInstructions)
+	ar.SetLogLevel(a.LogLevel)
 	for _, agent := range a.Agents {
 		ar.AddSubAgent(agent.Name, agent.Description, agent.Instructions, agent.Model, agent.AgentTools)
 	}

@@ -58,8 +58,8 @@ func (r *AgentRun) runLLMCallAction(message string) {
 	currentTools := tools
 	interceptors := r.interceptors
 
-	// Add conversation history interceptor if enabled
-	if r.enableConversationHistory {
+	// Add conversation history interceptor if history exists (history is always captured, but only included in prompt if includeHistory is true)
+	if r.agentContext.ConversationHistory() != nil {
 		interceptors = append(interceptors, newHistoryInterceptor(r.agentContext.ConversationHistory()))
 	}
 

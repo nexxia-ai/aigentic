@@ -30,20 +30,20 @@ type AgentRun struct {
 	agentContext *ctxt.AgentContext
 	interceptors []Interceptor
 
-	eventQueue                chan event.Event
-	actionQueue               chan action
-	pendingApprovals          map[string]pendingApproval
-	processedToolCallIDs      map[string]bool
-	currentStreamGroup        *ToolCallGroup
-	trace                     Trace
-	userMessage               string
-	parentRun                 *AgentRun
-	Logger                    *slog.Logger
-	logLevel                  slog.LevelVar
-	maxLLMCalls               int
-	llmCallCount              int
-	approvalTimeout           time.Duration
-	enableConversationHistory bool
+	eventQueue           chan event.Event
+	actionQueue          chan action
+	pendingApprovals     map[string]pendingApproval
+	processedToolCallIDs map[string]bool
+	currentStreamGroup   *ToolCallGroup
+	trace                Trace
+	userMessage          string
+	parentRun            *AgentRun
+	Logger               *slog.Logger
+	logLevel             slog.LevelVar
+	maxLLMCalls          int
+	llmCallCount         int
+	approvalTimeout      time.Duration
+	includeHistory       bool
 
 	streaming bool
 
@@ -111,6 +111,7 @@ func NewAgentRun(name, description, instructions string) *AgentRun {
 		interceptors:         make([]Interceptor, 0),
 		tools:                make([]AgentTool, 0),
 		streaming:            false,
+		includeHistory:       true,
 	}
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel})).With("agent", name)
@@ -155,13 +156,10 @@ func (r *AgentRun) SetTools(tools []AgentTool) {
 
 func (r *AgentRun) SetConversationHistory(history *ctxt.ConversationHistory) {
 	r.agentContext.SetConversationHistory(history)
-	if history != nil {
-		r.enableConversationHistory = true
-	}
 }
 
-func (r *AgentRun) EnableConversationHistory(enable bool) {
-	r.enableConversationHistory = enable
+func (r *AgentRun) IncludeHistory(enable bool) {
+	r.includeHistory = enable
 }
 
 // AddDocument adds a document to the conversation turn and optionally to the session

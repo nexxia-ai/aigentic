@@ -17,6 +17,10 @@ func newHistoryInterceptor(history *ctxt.ConversationHistory) *historyIntercepto
 }
 
 func (h *historyInterceptor) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
+	if !run.includeHistory {
+		return messages, tools, nil
+	}
+
 	if len(messages) == 0 {
 		return messages, tools, nil
 	}

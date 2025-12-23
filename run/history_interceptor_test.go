@@ -812,3 +812,93 @@ func TestConversationHistoryIncludedInFutureConversations(t *testing.T) {
 	assert.True(t, foundFirstMessage, "Previous user message should be included in second conversation")
 	assert.True(t, foundFirstResponse, "Previous assistant response should be included in second conversation")
 }
+
+func TestConversationHistoryNotIncludedWhenDisabled(t *testing.T) {
+	history := ctxt.NewConversationHistory()
+	callCount := 0
+	var receivedMessages []ai.Message
+
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
+		receivedMessages = append(receivedMessages, messages...)
+
+		if callCount == 1 {
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "First response",
+			}, nil
+		}
+
+		if callCount == 2 {
+			hasPreviousMessage := false
+			for _, msg := range messages {
+				if userMsg, ok := msg.(ai.UserMessage); ok {
+					if userMsg.Content == "First message" {
+						hasPreviousMessage = true
+						break
+					}
+				}
+				if aiMsg, ok := msg.(ai.AIMessage); ok {
+					if aiMsg.Content == "First response" {
+						hasPreviousMessage = true
+						break
+					}
+				}
+			}
+			if hasPreviousMessage {
+				t.Errorf("Previous conversation messages should NOT be found in second conversation when includeHistory is false. Received %d messages", len(messages))
+			}
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Second response",
+			}, nil
+		}
+
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Unexpected call",
+		}, nil
+	})
+
+	run1 := NewAgentRun("test-history-disabled-agent", "Agent with history disabled", "")
+	run1.SetModel(model)
+	run1.SetConversationHistory(history)
+	run1.IncludeHistory(false)
+	run1.Run(context.Background(), "First message")
+	result1, err := run1.Wait(0)
+	assert.NoError(t, err)
+	assert.Contains(t, result1, "First response")
+
+	assert.Equal(t, 1, history.Len(), "History should have one turn after first conversation (history is always captured)")
+
+	receivedMessages = nil
+
+	run2 := NewAgentRun("test-history-disabled-agent", "Agent with history disabled", "")
+	run2.SetModel(model)
+	run2.SetConversationHistory(history)
+	run2.IncludeHistory(false)
+	run2.Run(context.Background(), "Second message")
+	result2, err := run2.Wait(0)
+	assert.NoError(t, err)
+	assert.Contains(t, result2, "Second response")
+
+	assert.Equal(t, 2, history.Len(), "History should have two turns after second conversation (history is always captured)")
+
+	foundFirstMessage := false
+	foundFirstResponse := false
+	for _, msg := range receivedMessages {
+		if userMsg, ok := msg.(ai.UserMessage); ok {
+			if userMsg.Content == "First message" {
+				foundFirstMessage = true
+			}
+		}
+		if aiMsg, ok := msg.(ai.AIMessage); ok {
+			if aiMsg.Content == "First response" {
+				foundFirstResponse = true
+			}
+		}
+	}
+
+	assert.False(t, foundFirstMessage, "Previous user message should NOT be included in second conversation when includeHistory is false")
+	assert.False(t, foundFirstResponse, "Previous assistant response should NOT be included in second conversation when includeHistory is false")
+}

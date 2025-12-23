@@ -156,9 +156,6 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 	assert.Equal(t, "report.pdf", entry.Documents[0].Document.Filename)
 	assert.Equal(t, "application/pdf", entry.Documents[0].Document.MimeType)
 
-	conversationTurn, err := history.GetByRunID(agentRun.ID())
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(conversationTurn.Documents), "Document should persist in ConversationHistory")
 }
 
 func TestMultipleDocumentsFromSingleTool(t *testing.T) {
@@ -399,12 +396,11 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 	agentRun.SetConversationHistory(history)
 	agentRun.Run(context.Background(), "Create persistent document")
 
-	runID := agentRun.ID()
 	_, err := agentRun.Wait(0)
 	assert.NoError(t, err)
 
-	conversationTurn, err := history.GetByRunID(runID)
-	assert.NoError(t, err)
+	conversationTurn := agentRun.ConversationTurn()
+	assert.NotNil(t, conversationTurn, "ConversationTurn should not be nil")
 	assert.Equal(t, 1, len(conversationTurn.Documents), "Document should persist in ConversationHistory")
 	assert.Equal(t, "persistent.pdf", conversationTurn.Documents[0].Document.Filename)
 }

@@ -215,10 +215,6 @@ func (r *AgentRun) stop() {
 	}
 	close(r.eventQueue)
 	close(r.actionQueue)
-	// Only close trace if this is not a sub-agent (sub-agents share trace with parent)
-	if r.trace != nil && r.parentRun == nil {
-		r.trace.Close()
-	}
 }
 
 func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Model, tools []AgentTool) {

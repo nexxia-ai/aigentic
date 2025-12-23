@@ -78,16 +78,6 @@ func (tr *Tracer) NewTraceRun() *TraceRun {
 		filepath:  filepath,
 	}
 
-	var file traceWriter
-	osFile, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		slog.Error("Failed to open trace file, using io.Discard", "file", filepath, "error", err)
-		file = &discardWriter{}
-	} else {
-		file = osFile
-	}
-
-	traceRun.file = file
 	return traceRun
 }
 

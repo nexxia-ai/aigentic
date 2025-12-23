@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -17,104 +19,96 @@ type TraceRun struct {
 	startTime time.Time
 	endTime   time.Time
 	filepath  string
-	file      traceWriter
-}
-
-type traceWriter interface {
-	io.Writer
-	Sync() error
-	Close() error
-}
-
-type discardWriter struct{}
-
-func (d *discardWriter) Write(p []byte) (n int, err error) {
-	return io.Discard.Write(p)
-}
-
-func (d *discardWriter) Sync() error {
-	return nil
-}
-
-func (d *discardWriter) Close() error {
-	return nil
 }
 
 func (tr *TraceRun) Filepath() string {
 	return tr.filepath
 }
 
+func (tr *TraceRun) writeToFile(fn func(io.Writer)) {
+	file, err := os.OpenFile(tr.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		slog.Error("Failed to open trace file for writing", "file", tr.filepath, "error", err)
+		return
+	}
+	defer file.Close()
+
+	fn(file)
+	file.Sync()
+}
+
 func (tr *TraceRun) BeforeCall(run *run.AgentRun, messages []ai.Message, tools []ai.Tool) ([]ai.Message, []ai.Tool, error) {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(tr.file, "\n====> [%s] Start %s (%s) runID: %s\n", time.Now().Format("15:04:05"),
-		run.AgentName(), run.Model().ModelName, run.ID())
+	tr.writeToFile(func(w io.Writer) {
+		fmt.Fprintf(w, "\n====> [%s] Start %s (%s) runID: %s\n", time.Now().Format("15:04:05"),
+			run.AgentName(), run.Model().ModelName, run.ID())
 
-	for _, message := range messages {
-		role, _ := message.Value()
+		for _, message := range messages {
+			role, _ := message.Value()
 
-		switch msg := message.(type) {
-		case ai.UserMessage:
-			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
-			tr.logMessageContent("content", msg.Content)
-		case ai.SystemMessage:
-			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
-			tr.logMessageContent("content", msg.Content)
-		case ai.AIMessage:
-			fmt.Fprintf(tr.file, "⬆️  assistant: role=%s\n", msg.Role)
-			tr.logAIMessage(msg)
-		case ai.ToolMessage:
-			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
-			fmt.Fprintf(tr.file, " tool_call_id: %s\n", msg.ToolCallID)
-			tr.logMessageContent("content", msg.Content)
-		case ai.ResourceMessage:
-			fmt.Fprintf(tr.file, "⬆️  %s:\n", role)
-			var isFileID bool
-			var contentLen int
-			var contentPreview string
+			switch msg := message.(type) {
+			case ai.UserMessage:
+				fmt.Fprintf(w, "⬆️  %s:\n", role)
+				tr.logMessageContentToWriter(w, "content", msg.Content)
+			case ai.SystemMessage:
+				fmt.Fprintf(w, "⬆️  %s:\n", role)
+				tr.logMessageContentToWriter(w, "content", msg.Content)
+			case ai.AIMessage:
+				fmt.Fprintf(w, "⬆️  assistant: role=%s\n", msg.Role)
+				tr.logAIMessageToWriter(w, msg)
+			case ai.ToolMessage:
+				fmt.Fprintf(w, "⬆️  %s:\n", role)
+				fmt.Fprintf(w, " tool_call_id: %s\n", msg.ToolCallID)
+				tr.logMessageContentToWriter(w, "content", msg.Content)
+			case ai.ResourceMessage:
+				fmt.Fprintf(w, "⬆️  %s:\n", role)
+				var isFileID bool
+				var contentLen int
+				var contentPreview string
 
-			if body, ok := msg.Body.([]byte); ok && body != nil {
-				isFileID = false
-				contentLen = len(body)
-				if contentLen > 0 {
-					previewLen := 64
-					if contentLen < previewLen {
-						previewLen = contentLen
+				if body, ok := msg.Body.([]byte); ok && body != nil {
+					isFileID = false
+					contentLen = len(body)
+					if contentLen > 0 {
+						previewLen := 64
+						if contentLen < previewLen {
+							previewLen = contentLen
+						}
+						contentPreview = string(body[:previewLen])
 					}
-					contentPreview = string(body[:previewLen])
+				} else {
+					isFileID = true
+					contentLen = len(msg.Name)
 				}
-			} else {
-				isFileID = true
-				contentLen = len(msg.Name)
-			}
 
-			if isFileID {
-				fmt.Fprintf(tr.file, " resource: %s (file ID reference)\n", msg.Name)
-			} else {
-				fmt.Fprintf(tr.file, " resource: %s (content length: %d)\n", msg.Name, contentLen)
-			}
+				if isFileID {
+					fmt.Fprintf(w, " resource: %s (file ID reference)\n", msg.Name)
+				} else {
+					fmt.Fprintf(w, " resource: %s (content length: %d)\n", msg.Name, contentLen)
+				}
 
-			if msg.URI != "" {
-				fmt.Fprintf(tr.file, " uri: %s\n", msg.URI)
-			}
-			if msg.MIMEType != "" {
-				fmt.Fprintf(tr.file, " mime_type: %s\n", msg.MIMEType)
-			}
-			if msg.Description != "" {
-				fmt.Fprintf(tr.file, " description: %s\n", msg.Description)
-			}
+				if msg.URI != "" {
+					fmt.Fprintf(w, " uri: %s\n", msg.URI)
+				}
+				if msg.MIMEType != "" {
+					fmt.Fprintf(w, " mime_type: %s\n", msg.MIMEType)
+				}
+				if msg.Description != "" {
+					fmt.Fprintf(w, " description: %s\n", msg.Description)
+				}
 
-			if contentPreview != "" {
-				tr.logMessageContent("content_preview", contentPreview)
+				if contentPreview != "" {
+					tr.logMessageContentToWriter(w, "content_preview", contentPreview)
+				}
+			default:
+				_, content := message.Value()
+				tr.logMessageContentToWriter(w, "content", content)
 			}
-		default:
-			_, content := message.Value()
-			tr.logMessageContent("content", content)
 		}
-	}
+	})
 
-	tr.file.Sync()
 	return messages, tools, nil
 }
 
@@ -122,11 +116,11 @@ func (tr *TraceRun) AfterCall(run *run.AgentRun, request []ai.Message, response 
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(tr.file, "⬇️  assistant: role=%s\n", response.Role)
-	tr.logAIMessage(response)
-	tr.file.Sync()
-
-	fmt.Fprintf(tr.file, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), run.AgentName())
+	tr.writeToFile(func(w io.Writer) {
+		fmt.Fprintf(w, "⬇️  assistant: role=%s\n", response.Role)
+		tr.logAIMessageToWriter(w, response)
+		fmt.Fprintf(w, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), run.AgentName())
+	})
 
 	return response, nil
 }
@@ -135,11 +129,11 @@ func (tr *TraceRun) BeforeToolCall(run *run.AgentRun, toolName string, toolCallI
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(tr.file, "\n---- Tool START: %s (callID=%s) agent=%s\n", toolName, toolCallID, run.AgentName())
-
-	argsJSON, _ := json.Marshal(validationResult)
-	fmt.Fprintf(tr.file, " args: %s\n", string(argsJSON))
-	tr.file.Sync()
+	tr.writeToFile(func(w io.Writer) {
+		fmt.Fprintf(w, "\n---- Tool START: %s (callID=%s) agent=%s\n", toolName, toolCallID, run.AgentName())
+		argsJSON, _ := json.Marshal(validationResult)
+		fmt.Fprintf(w, " args: %s\n", string(argsJSON))
+	})
 
 	return validationResult, nil
 }
@@ -181,47 +175,48 @@ func (tr *TraceRun) AfterToolCall(run *run.AgentRun, toolName string, toolCallID
 		}
 	}
 
-	fmt.Fprintf(tr.file, " result: %s\n", response)
-	fmt.Fprintf(tr.file, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
+	tr.writeToFile(func(w io.Writer) {
+		fmt.Fprintf(w, " result: %s\n", response)
+		fmt.Fprintf(w, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
 
-	argsJSON, _ := json.Marshal(validationResult)
-	fmt.Fprintf(tr.file, "🛠️️  %s tool response:\n", run.AgentName())
-	fmt.Fprintf(tr.file, "   • %s(%s)\n", toolName, string(argsJSON))
+		argsJSON, _ := json.Marshal(validationResult)
+		fmt.Fprintf(w, "🛠️️  %s tool response:\n", run.AgentName())
+		fmt.Fprintf(w, "   • %s(%s)\n", toolName, string(argsJSON))
 
-	lines := strings.Split(response, "\n")
-	for _, line := range lines {
-		if line != "" {
-			fmt.Fprintf(tr.file, "     %s\n", line)
+		lines := strings.Split(response, "\n")
+		for _, line := range lines {
+			if line != "" {
+				fmt.Fprintf(w, "     %s\n", line)
+			}
 		}
-	}
-	tr.file.Sync()
+	})
 
 	return result, nil
 }
 
-func (tr *TraceRun) logMessageContent(contentType, content string) {
+func (tr *TraceRun) logMessageContentToWriter(w io.Writer, contentType, content string) {
 	if content == "" {
-		fmt.Fprintf(tr.file, " %s: (empty)\n", contentType)
+		fmt.Fprintf(w, " %s: (empty)\n", contentType)
 		return
 	}
 
-	fmt.Fprintf(tr.file, " %s:\n", contentType)
+	fmt.Fprintf(w, " %s:\n", contentType)
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		if line != "" {
-			fmt.Fprintf(tr.file, "   %s\n", line)
+			fmt.Fprintf(w, "   %s\n", line)
 		}
 	}
 }
 
-func (tr *TraceRun) logAIMessage(msg ai.AIMessage) {
-	tr.logMessageContent("content", msg.Content)
+func (tr *TraceRun) logAIMessageToWriter(w io.Writer, msg ai.AIMessage) {
+	tr.logMessageContentToWriter(w, "content", msg.Content)
 	if len(msg.ToolCalls) > 0 {
 		for _, tc := range msg.ToolCalls {
-			fmt.Fprintf(tr.file, " tool request:\n")
-			fmt.Fprintf(tr.file, "   tool_call_id: %s\n", tc.ID)
-			fmt.Fprintf(tr.file, "   tool_name: %s\n", tc.Name)
-			fmt.Fprintf(tr.file, "   tool_args: %s\n", tc.Args)
+			fmt.Fprintf(w, " tool request:\n")
+			fmt.Fprintf(w, "   tool_call_id: %s\n", tc.ID)
+			fmt.Fprintf(w, "   tool_name: %s\n", tc.Name)
+			fmt.Fprintf(w, "   tool_args: %s\n", tc.Args)
 		}
 	}
 }
@@ -230,8 +225,9 @@ func (tr *TraceRun) RecordError(err error) error {
 	traceSync.Lock()
 	defer traceSync.Unlock()
 
-	fmt.Fprintf(tr.file, "❌ Error: %v\n", err)
-	tr.file.Sync()
+	tr.writeToFile(func(w io.Writer) {
+		fmt.Fprintf(w, "❌ Error: %v\n", err)
+	})
 	return nil
 }
 
@@ -240,8 +236,8 @@ func (tr *TraceRun) Close() error {
 	defer traceSync.Unlock()
 
 	tr.endTime = time.Now()
-	fmt.Fprintf(tr.file, "End Time: %s\n", tr.endTime.Format(time.RFC3339))
-	tr.file.Sync()
-
-	return tr.file.Close()
+	tr.writeToFile(func(w io.Writer) {
+		fmt.Fprintf(w, "End Time: %s\n", tr.endTime.Format(time.RFC3339))
+	})
+	return nil
 }

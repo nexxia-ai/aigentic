@@ -82,6 +82,10 @@ func (r *AgentRun) SetRetrievers(retrievers []Retriever) {
 	r.retrievers = retrievers
 }
 
+func (r *AgentRun) SetOutputInstructions(instructions string) {
+	r.agentContext.SetOutputInstructions(instructions)
+}
+
 func NewAgentRun(name, description, instructions string) *AgentRun {
 	runID := uuid.New().String()
 	sessionID := uuid.New().String()

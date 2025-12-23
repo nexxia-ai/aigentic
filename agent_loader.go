@@ -20,6 +20,7 @@ type AgentConfig struct {
 	ModelName           string   `yaml:"model_name" json:"model_name"`
 	Description         string   `yaml:"description" json:"description"`
 	Instructions        string   `yaml:"instructions" json:"instructions"`
+	OutputInstructions  string   `yaml:"output_instructions" json:"output_instructions"`
 	ConversationHistory bool     `yaml:"conversation_history" json:"conversation_history"`
 	Retries             int      `yaml:"retries" json:"retries"`
 	Stream              bool     `yaml:"stream" json:"stream"`
@@ -166,14 +167,15 @@ func (cfg *ConfigFile) InstantiateAgents(
 			return nil, fmt.Errorf("agent %s model resolve failed: %w", ac.Name, err)
 		}
 		a := Agent{
-			Model:            m,
-			Name:             ac.Name,
-			Description:      ac.Description,
-			Instructions:     ac.Instructions,
-			Retries:          ac.Retries,
-			Stream:           ac.Stream,
-			MaxLLMCalls:      ac.MaxLLMCalls,
-			EnableEvaluation: ac.EnableEvaluation,
+			Model:              m,
+			Name:               ac.Name,
+			Description:        ac.Description,
+			Instructions:       ac.Instructions,
+			OutputInstructions: ac.OutputInstructions,
+			Retries:            ac.Retries,
+			Stream:             ac.Stream,
+			MaxLLMCalls:        ac.MaxLLMCalls,
+			EnableEvaluation:   ac.EnableEvaluation,
 		}
 		// Map log level strings to slog.Level
 		switch ac.LogLevel {

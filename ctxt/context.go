@@ -26,6 +26,7 @@ type AgentContext struct {
 	documents           []*document.Document
 	documentReferences  []*document.Document
 	conversationHistory *ConversationHistory
+	outputInstructions  string
 }
 
 func NewAgentContext(id, description, instructions, userMsg string) *AgentContext {
@@ -38,6 +39,10 @@ func NewAgentContext(id, description, instructions, userMsg string) *AgentContex
 
 func (r *AgentContext) SetUserMessage(userMsg string) {
 	r.userMsg = userMsg
+}
+
+func (r *AgentContext) SetOutputInstructions(instructions string) {
+	r.outputInstructions = instructions
 }
 
 const DefaultSystemTemplate = `
@@ -55,6 +60,12 @@ The user provided the following description of your role:
  <instructions>
 {{.Instructions}}
 </instructions>
+{{end}}
+
+{{if .HasOutputInstructions}}
+<output_instructions>
+{{.OutputInstructions}}
+</output_instructions>
 {{end}}
 
 {{if .HasTools}}
@@ -152,14 +163,16 @@ func createSystemVariables(ac *AgentContext, tools []ai.Tool) map[string]interfa
 	hasMemories := len(filteredMemories) > 0
 
 	return map[string]interface{}{
-		"HasTools":        len(tools) > 0,
-		"Role":            ac.description,
-		"Instructions":    ac.instructions,
-		"Tools":           tools,
-		"HasRole":         ac.description != "",
-		"HasInstructions": ac.instructions != "",
-		"Memories":        filteredMemories,
-		"HasMemories":     hasMemories,
+		"HasTools":              len(tools) > 0,
+		"Role":                  ac.description,
+		"Instructions":          ac.instructions,
+		"Tools":                 tools,
+		"HasRole":               ac.description != "",
+		"HasInstructions":       ac.instructions != "",
+		"Memories":              filteredMemories,
+		"HasMemories":           hasMemories,
+		"HasOutputInstructions": ac.outputInstructions != "",
+		"OutputInstructions":    ac.outputInstructions,
 	}
 }
 

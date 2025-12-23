@@ -34,6 +34,14 @@ type Agent struct {
 	//       "call tool X, then tool Y, then tool Z, in this order".
 	Instructions string
 
+	// OutputInstructions contains full text instructions for how the LLM should format its output.
+	// These instructions are passed directly to the LLM in the system prompt.
+	// Examples:
+	//   "Format your response as valid JSON only."
+	//   "Use Markdown formatting with headings, lists, and tables."
+	//   "Respond in HTML format with proper semantic tags."
+	OutputInstructions string
+
 	// ConversationHistory enables automatic conversation history tracking across multiple Start() calls.
 	// Messages are captured with metadata (trace file, run ID, timestamp) for correlation and debugging.
 	// Set to a ConversationHistory object to share history across multiple agents or conversation sessions.
@@ -95,6 +103,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetTools(a.AgentTools)
 	ar.SetRetrievers(a.Retrievers)
 	ar.SetStreaming(a.Stream)
+	ar.SetOutputInstructions(a.OutputInstructions)
 	for _, agent := range a.Agents {
 		ar.AddSubAgent(agent.Name, agent.Description, agent.Instructions, agent.Model, agent.AgentTools)
 	}

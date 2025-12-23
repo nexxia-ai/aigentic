@@ -24,11 +24,12 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 	if len(action.Group.Responses) == len(action.Group.AIMessage.ToolCalls) {
 
 		// add all tool responses and queue their events
+		turn := r.agentContext.ConversationTurn()
 		for _, tc := range action.Group.AIMessage.ToolCalls {
 			if response, exists := action.Group.Responses[tc.ID]; exists {
-				r.currentConversationTurn.AddMessage(response)
+				turn.AddMessage(response)
 				var docs []*document.Document
-				for _, entry := range r.currentConversationTurn.Documents {
+				for _, entry := range turn.Documents {
 					if entry.ToolID == tc.ID || entry.ToolID == "" {
 						docs = append(docs, entry.Document)
 					}

@@ -47,7 +47,7 @@ func (r *AgentRun) runLLMCallAction(message string) {
 
 	var err error
 	var msgs []ai.Message
-	msgs, err = r.agentContext.BuildPrompt(r.currentConversationTurn.GetCurrentMessages(), tools)
+	msgs, err = r.agentContext.BuildPrompt(r.agentContext.ConversationTurn().GetCurrentMessages(), tools)
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
 		return
@@ -159,15 +159,16 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 
 	// this not a chunk, which means the model Call/Stream is complete
 	// add to history and fire tool calls
+	turn := r.agentContext.ConversationTurn()
 	if len(msg.ToolCalls) == 0 {
-		r.currentConversationTurn.AddMessage(msg)
-		r.currentConversationTurn.Reply = msg
-		r.currentConversationTurn.Compact()
+		turn.AddMessage(msg)
+		turn.Reply = msg
+		turn.Compact()
 		r.queueAction(&stopAction{Error: nil})
 		return
 	}
 
-	r.currentConversationTurn.AddMessage(msg)
+	turn.AddMessage(msg)
 
 	// If we have a stream group from chunks, update it with the final message, otherwise create new group
 	if r.currentStreamGroup != nil {
@@ -176,11 +177,12 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		// Check if all tool calls in the group are now completed (now that we have the final message)
 		if len(r.currentStreamGroup.Responses) == len(r.currentStreamGroup.AIMessage.ToolCalls) {
 			// add all tool responses and queue their events
+			turn := r.agentContext.ConversationTurn()
 			for _, tc := range r.currentStreamGroup.AIMessage.ToolCalls {
 				if response, exists := r.currentStreamGroup.Responses[tc.ID]; exists {
-					r.currentConversationTurn.AddMessage(response)
+					turn.AddMessage(response)
 					var docs []*document.Document
-					for _, entry := range r.currentConversationTurn.Documents {
+					for _, entry := range turn.Documents {
 						if entry.ToolID == tc.ID || entry.ToolID == "" {
 							docs = append(docs, entry.Document)
 						}

@@ -53,8 +53,9 @@ func (h *historyInterceptor) BeforeCall(run *AgentRun, messages []ai.Message, to
 
 func (h *historyInterceptor) AfterCall(run *AgentRun, request []ai.Message, response ai.AIMessage) (ai.AIMessage, error) {
 	if len(response.ToolCalls) == 0 {
-		run.currentConversationTurn.Reply = response
-		h.history.AppendTurn(*run.currentConversationTurn)
+		turn := run.agentContext.ConversationTurn()
+		turn.Reply = response
+		h.history.AppendTurn(*turn)
 	}
 
 	return response, nil

@@ -43,7 +43,6 @@ type AgentRun struct {
 	maxLLMCalls               int
 	llmCallCount              int
 	approvalTimeout           time.Duration
-	currentConversationTurn   *ctxt.ConversationTurn
 	enableConversationHistory bool
 
 	streaming bool
@@ -70,7 +69,7 @@ func (r *AgentRun) Model() *ai.Model {
 }
 
 func (r *AgentRun) ConversationTurn() *ctxt.ConversationTurn {
-	return r.currentConversationTurn
+	return r.agentContext.ConversationTurn()
 }
 
 func (r *AgentRun) Cancel() {
@@ -96,22 +95,22 @@ func NewAgentRun(name, description, instructions string) *AgentRun {
 	})
 
 	ac := ctxt.NewAgentContext(runID, description, instructions, "")
+	ac.SetConversationTurn(ctxt.NewConversationTurn("", runID, "", ""))
 	run := &AgentRun{
-		agentName:               name,
-		id:                      runID,
-		sessionID:               sessionID,
-		agentContext:            ac,
-		model:                   model,
-		maxLLMCalls:             20,
-		eventQueue:              make(chan event.Event, 100),
-		actionQueue:             make(chan action, 100),
-		pendingApprovals:        make(map[string]pendingApproval),
-		processedToolCallIDs:    make(map[string]bool),
-		approvalTimeout:         approvalTimeout,
-		interceptors:            make([]Interceptor, 0),
-		tools:                   make([]AgentTool, 0),
-		streaming:               false,
-		currentConversationTurn: ctxt.NewConversationTurn("", runID, "", ""),
+		agentName:            name,
+		id:                   runID,
+		sessionID:            sessionID,
+		agentContext:         ac,
+		model:                model,
+		maxLLMCalls:          20,
+		eventQueue:           make(chan event.Event, 100),
+		actionQueue:          make(chan action, 100),
+		pendingApprovals:     make(map[string]pendingApproval),
+		processedToolCallIDs: make(map[string]bool),
+		approvalTimeout:      approvalTimeout,
+		interceptors:         make([]Interceptor, 0),
+		tools:                make([]AgentTool, 0),
+		streaming:            false,
 	}
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel})).With("agent", name)
@@ -181,7 +180,8 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 		ToolID:   toolID,
 	}
 
-	r.currentConversationTurn.Documents = append(r.currentConversationTurn.Documents, entry)
+	turn := r.agentContext.ConversationTurn()
+	turn.Documents = append(turn.Documents, entry)
 
 	if scope == "model" || scope == "session" {
 		r.agentContext.AddDocument(doc)
@@ -191,7 +191,7 @@ func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope stri
 }
 
 func (r *AgentRun) Run(ctx context.Context, message string) {
-	r.currentConversationTurn = ctxt.NewConversationTurn(message, r.id, "", "")
+	r.agentContext.SetConversationTurn(ctxt.NewConversationTurn(message, r.id, "", ""))
 	r.agentContext.SetUserMessage(message)
 
 	r.ctx, r.cancelFunc = context.WithCancel(ctx)

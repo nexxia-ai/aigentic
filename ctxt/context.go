@@ -27,6 +27,7 @@ type AgentContext struct {
 	documentReferences  []*document.Document
 	conversationHistory *ConversationHistory
 	outputInstructions  string
+	currentConversationTurn *ConversationTurn
 }
 
 func NewAgentContext(id, description, instructions, userMsg string) *AgentContext {
@@ -295,4 +296,12 @@ func (r *AgentContext) SetConversationHistory(history *ConversationHistory) {
 
 func (r *AgentContext) ConversationHistory() *ConversationHistory {
 	return r.conversationHistory
+}
+
+func (r *AgentContext) ConversationTurn() *ConversationTurn {
+	return r.currentConversationTurn
+}
+
+func (r *AgentContext) SetConversationTurn(turn *ConversationTurn) {
+	r.currentConversationTurn = turn
 }

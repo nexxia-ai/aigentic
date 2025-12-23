@@ -27,10 +27,6 @@ func (h *ConversationHistory) GetTurns() []ConversationTurn {
 	return result
 }
 
-func (h *ConversationHistory) GetEntries() []ConversationTurn {
-	return h.GetTurns()
-}
-
 func (h *ConversationHistory) GetMessages() []ai.Message {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
@@ -56,10 +52,6 @@ func (h *ConversationHistory) AppendTurn(turn ConversationTurn) {
 	h.turns = append(h.turns, turn)
 }
 
-func (h *ConversationHistory) AppendEntry(turn ConversationTurn) {
-	h.AppendTurn(turn)
-}
-
 func (h *ConversationHistory) Clear() {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
@@ -77,18 +69,6 @@ func (h *ConversationHistory) RemoveAt(index int) error {
 
 	h.turns = append(h.turns[:index], h.turns[index+1:]...)
 	return nil
-}
-
-func (h *ConversationHistory) SetTurns(turns []ConversationTurn) {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-
-	h.turns = make([]ConversationTurn, len(turns))
-	copy(h.turns, turns)
-}
-
-func (h *ConversationHistory) SetEntries(turns []ConversationTurn) {
-	h.SetTurns(turns)
 }
 
 func (h *ConversationHistory) Len() int {
@@ -111,19 +91,6 @@ func (h *ConversationHistory) FindByTraceFile(traceFile string) []ConversationTu
 	return result
 }
 
-func (h *ConversationHistory) FindByRunID(runID string) []ConversationTurn {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
-	var result []ConversationTurn
-	for _, turn := range h.turns {
-		if turn.RunID == runID {
-			result = append(result, turn)
-		}
-	}
-	return result
-}
-
 func (h *ConversationHistory) GetByRunID(runID string) (*ConversationTurn, error) {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
@@ -135,60 +102,6 @@ func (h *ConversationHistory) GetByRunID(runID string) (*ConversationTurn, error
 		}
 	}
 	return nil, &errEntryNotFound{runID: runID}
-}
-
-func (h *ConversationHistory) HideByRunID(runID string) error {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-
-	found := false
-	for i := range h.turns {
-		if h.turns[i].RunID == runID {
-			h.turns[i].Hidden = true
-			found = true
-		}
-	}
-	if !found {
-		return &errEntryNotFound{runID: runID}
-	}
-	return nil
-}
-
-func (h *ConversationHistory) UnhideByRunID(runID string) error {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-
-	found := false
-	for i := range h.turns {
-		if h.turns[i].RunID == runID {
-			h.turns[i].Hidden = false
-			found = true
-		}
-	}
-	if !found {
-		return &errEntryNotFound{runID: runID}
-	}
-	return nil
-}
-
-func (h *ConversationHistory) DeleteByRunID(runID string) error {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-
-	found := false
-	filtered := make([]ConversationTurn, 0, len(h.turns))
-	for _, turn := range h.turns {
-		if turn.RunID == runID {
-			found = true
-		} else {
-			filtered = append(filtered, turn)
-		}
-	}
-	if !found {
-		return &errEntryNotFound{runID: runID}
-	}
-	h.turns = filtered
-	return nil
 }
 
 type errEntryNotFound struct {

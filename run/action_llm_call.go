@@ -164,6 +164,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		turn.AddMessage(msg)
 		turn.Reply = msg
 		turn.Compact()
+		r.agentContext.ConversationHistory().AppendTurn(*turn)
 		r.queueAction(&stopAction{Error: nil})
 		return
 	}

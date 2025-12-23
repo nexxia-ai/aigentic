@@ -146,6 +146,10 @@ func (r *AgentRun) SetTracer(tracer Trace) {
 	r.trace = tracer
 }
 
+func (r *AgentRun) Tracer() Trace {
+	return r.trace
+}
+
 func (r *AgentRun) SetTools(tools []AgentTool) {
 	r.tools = tools
 }
@@ -277,33 +281,6 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 		},
 	}
 	r.subAgents = append(r.subAgents, agentTool)
-}
-
-func (r *AgentRun) addTools() []AgentTool {
-	totalToolsCount := len(r.tools) + len(r.subAgents)
-	tools := make([]AgentTool, 0, totalToolsCount)
-	tools = append(tools, r.tools...)
-	tools = append(tools, r.subAgents...)
-
-	// Retriever tools
-	for _, retriever := range r.retrievers {
-		tools = append(tools, retriever.ToTool())
-	}
-
-	// make sure all tools have a validation and execute function
-	for i := range tools {
-		if tools[i].Validate == nil {
-			tools[i].Validate = func(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error) {
-				return event.ValidationResult{Values: args, Message: ""}, nil
-			}
-		}
-		if tools[i].NewExecute == nil {
-			tools[i].NewExecute = func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-				return nil, nil
-			}
-		}
-	}
-	return tools
 }
 
 func (r *AgentRun) Wait(d time.Duration) (string, error) {

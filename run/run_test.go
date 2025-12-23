@@ -37,6 +37,10 @@ func (n *noOpTrace) Close() error {
 	return nil
 }
 
+func (n *noOpTrace) Filepath() string {
+	return ""
+}
+
 func newTestTracer() Trace {
 	return &noOpTrace{}
 }
@@ -579,4 +583,42 @@ func TestAgentRun_MemoryPersistenceAcrossRuns(t *testing.T) {
 
 	agentContext := ar.AgentContext()
 	assert.NotNil(t, agentContext, "Agent context should persist across runs")
+}
+
+func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
+	model1 := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Response from model-1",
+		}, nil
+	})
+	model1.ModelName = "model-1"
+
+	model2 := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Response from model-2",
+		}, nil
+	})
+	model2.ModelName = "model-2"
+
+	ar := NewAgentRun("test-setmodel-agent", "Test agent for SetModel", "")
+	ar.SetModel(model1)
+	ar.SetTracer(newTestTracer())
+
+	ar.Run(context.Background(), "First message")
+	content1, err1 := ar.Wait(0)
+	assert.NoError(t, err1)
+	assert.Contains(t, content1, "Response from model-1")
+	assert.NotContains(t, content1, "Response from model-2")
+
+	ar.SetModel(model2)
+
+	ar.Run(context.Background(), "Second message")
+	content2, err2 := ar.Wait(0)
+	assert.NoError(t, err2)
+	assert.Contains(t, content2, "Response from model-2")
+	assert.NotContains(t, content2, "Response from model-1")
+
+	assert.Equal(t, model2, ar.Model(), "Model() should return the updated model")
 }

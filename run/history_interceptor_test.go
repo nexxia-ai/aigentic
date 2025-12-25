@@ -27,7 +27,8 @@ func TestToolReturnsDocumentInToolResult(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-			run.AddDocument("", doc, "model")
+			run.AgentContext().ConversationTurn().AddDocument("", doc)
+			run.AgentContext().AddDocument(doc)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "PDF created successfully at /path/to/test.pdf"},
@@ -107,7 +108,8 @@ func TestDocumentsAddedToConversationTurn(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-			run.AddDocument("", doc, "model")
+			run.AgentContext().ConversationTurn().AddDocument("", doc)
+			run.AgentContext().AddDocument(doc)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "Report created successfully"},
@@ -175,8 +177,10 @@ func TestMultipleDocumentsFromSingleTool(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-			run.AddDocument("", doc1, "model")
-			run.AddDocument("", doc2, "model")
+			run.AgentContext().ConversationTurn().AddDocument("", doc1)
+			run.AgentContext().AddDocument(doc1)
+			run.AgentContext().ConversationTurn().AddDocument("", doc2)
+			run.AgentContext().AddDocument(doc2)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{
 					{Type: "text", Content: "Multiple files created"},
@@ -241,7 +245,8 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-			run.AddDocument("", doc1, "model")
+			run.AgentContext().ConversationTurn().AddDocument("", doc1)
+			run.AgentContext().AddDocument(doc1)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "PDF1 ready"}},
 			}, nil
@@ -256,7 +261,8 @@ func TestMultipleToolsWithDocuments(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-			run.AddDocument("", doc2, "model")
+			run.AgentContext().ConversationTurn().AddDocument("", doc2)
+			run.AgentContext().AddDocument(doc2)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "PDF2 ready"}},
 			}, nil
@@ -365,7 +371,8 @@ func TestDocumentsPersistInConversationHistory(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-			run.AddDocument("", doc, "model")
+			run.AgentContext().ConversationTurn().AddDocument("", doc)
+			run.AgentContext().AddDocument(doc)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
 			}, nil
@@ -423,7 +430,8 @@ func TestDocumentMetadataPreserved(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-			run.AddDocument("", doc, "model")
+			run.AgentContext().ConversationTurn().AddDocument("", doc)
+			run.AgentContext().AddDocument(doc)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
 			}, nil
@@ -538,7 +546,8 @@ func TestAgentRunConversationTurnAccess(t *testing.T) {
 			"properties": map[string]interface{}{},
 		},
 		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
-			run.AddDocument("", doc, "model")
+			run.AgentContext().ConversationTurn().AddDocument("", doc)
+			run.AgentContext().AddDocument(doc)
 			return &ai.ToolResult{
 				Content: []ai.ToolContent{{Type: "text", Content: "Document created"}},
 			}, nil

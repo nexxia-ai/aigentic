@@ -1,6 +1,7 @@
 package ctxt
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -9,7 +10,6 @@ import (
 
 type DocumentEntry struct {
 	Document *document.Document
-	Scope    string
 	ToolID   string
 }
 
@@ -61,4 +61,19 @@ func (t *ConversationTurn) GetMessages() []ai.Message {
 
 func (t *ConversationTurn) Compact() {
 	t.messages = nil
+}
+
+func (t *ConversationTurn) AddDocument(toolID string, doc *document.Document) error {
+	if doc == nil {
+		return fmt.Errorf("document cannot be nil")
+	}
+
+	entry := DocumentEntry{
+		Document: doc,
+		ToolID:   toolID,
+	}
+
+	t.Documents = append(t.Documents, entry)
+
+	return nil
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/ctxt"
-	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 )
 
@@ -159,32 +158,6 @@ func (r *AgentRun) SetConversationHistory(history *ctxt.ConversationHistory) {
 
 func (r *AgentRun) IncludeHistory(enable bool) {
 	r.includeHistory = enable
-}
-
-// AddDocument adds a document to the conversation turn and optionally to the session
-func (r *AgentRun) AddDocument(toolID string, doc *document.Document, scope string) error {
-	if doc == nil {
-		return fmt.Errorf("document cannot be nil")
-	}
-
-	if scope != "local" && scope != "model" && scope != "session" {
-		return fmt.Errorf("invalid scope: %s (must be 'local', 'model', or 'session')", scope)
-	}
-
-	entry := ctxt.DocumentEntry{
-		Document: doc,
-		Scope:    scope,
-		ToolID:   toolID,
-	}
-
-	turn := r.agentContext.ConversationTurn()
-	turn.Documents = append(turn.Documents, entry)
-
-	if scope == "model" || scope == "session" {
-		r.agentContext.AddDocument(doc)
-	}
-
-	return nil
 }
 
 func (r *AgentRun) Run(ctx context.Context, message string) {

@@ -77,3 +77,16 @@ func (t *ConversationTurn) AddDocument(toolID string, doc *document.Document) er
 
 	return nil
 }
+
+func (t *ConversationTurn) DeleteDocument(doc *document.Document) error {
+	if doc == nil {
+		return fmt.Errorf("document cannot be nil")
+	}
+	for i := range t.Documents {
+		if t.Documents[i].Document.ID() == doc.ID() {
+			t.Documents = append(t.Documents[:i], t.Documents[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/run"
 )
@@ -42,10 +41,9 @@ type Agent struct {
 	//   "Respond in HTML format with proper semantic tags."
 	OutputInstructions string
 
-	// ConversationHistory enables automatic conversation history tracking across multiple Start() calls.
+	// IncludeHistory enables automatic conversation history tracking across multiple Start() calls.
 	// Messages are captured with metadata (trace file, run ID, timestamp) for correlation and debugging.
-	// Set to a ConversationHistory object to share history across multiple agents or conversation sessions.
-	ConversationHistory *ctxt.ConversationHistory
+	IncludeHistory bool
 
 	// Retries is the number of times to retry the agent if it fails.
 	Retries int
@@ -111,9 +109,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 
 	ar.AgentContext().SetDocuments(a.Documents)
 	ar.AgentContext().SetDocumentReferences(a.DocumentReferences)
-	if a.ConversationHistory != nil {
-		ar.SetConversationHistory(a.ConversationHistory)
-	}
+	ar.IncludeHistory(a.IncludeHistory)
 	return ar, nil
 }
 

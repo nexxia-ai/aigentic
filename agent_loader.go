@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/run"
 	"github.com/nexxia-ai/aigentic/trace"
 	"gopkg.in/yaml.v3"
@@ -16,20 +15,20 @@ import (
 // AgentConfig is a flat, serializable definition of an Agent for YAML/JSON.
 // Keep top-level only: no nested structs; references by name.
 type AgentConfig struct {
-	Name                string   `yaml:"name" json:"name"`
-	ModelName           string   `yaml:"model_name" json:"model_name"`
-	Description         string   `yaml:"description" json:"description"`
-	Instructions        string   `yaml:"instructions" json:"instructions"`
-	OutputInstructions  string   `yaml:"output_instructions" json:"output_instructions"`
-	ConversationHistory bool     `yaml:"conversation_history" json:"conversation_history"`
-	Retries             int      `yaml:"retries" json:"retries"`
-	Stream              bool     `yaml:"stream" json:"stream"`
-	LogLevel            string   `yaml:"log_level" json:"log_level"`
-	MaxLLMCalls         int      `yaml:"max_llm_calls" json:"max_llm_calls"`
-	EnableEvaluation    bool     `yaml:"enable_evaluation" json:"enable_evaluation"`
-	EnableTrace         bool     `yaml:"enable_trace" json:"enable_trace"`
-	Tools               []string `yaml:"tools" json:"tools"`
-	Agents              []string `yaml:"agents" json:"agents"`
+	Name               string   `yaml:"name" json:"name"`
+	ModelName          string   `yaml:"model_name" json:"model_name"`
+	Description        string   `yaml:"description" json:"description"`
+	Instructions       string   `yaml:"instructions" json:"instructions"`
+	OutputInstructions string   `yaml:"output_instructions" json:"output_instructions"`
+	IncludeHistory     bool     `yaml:"conversation_history" json:"conversation_history"`
+	Retries            int      `yaml:"retries" json:"retries"`
+	Stream             bool     `yaml:"stream" json:"stream"`
+	LogLevel           string   `yaml:"log_level" json:"log_level"`
+	MaxLLMCalls        int      `yaml:"max_llm_calls" json:"max_llm_calls"`
+	EnableEvaluation   bool     `yaml:"enable_evaluation" json:"enable_evaluation"`
+	EnableTrace        bool     `yaml:"enable_trace" json:"enable_trace"`
+	Tools              []string `yaml:"tools" json:"tools"`
+	Agents             []string `yaml:"agents" json:"agents"`
 }
 
 // ConfigFile is the root document for config serialization.
@@ -195,9 +194,7 @@ func (cfg *ConfigFile) InstantiateAgents(
 			a.Tracer = trace.NewTracer()
 		}
 		// Configure conversation history if enabled
-		if ac.ConversationHistory {
-			a.ConversationHistory = ctxt.NewConversationHistory()
-		}
+		a.IncludeHistory = ac.IncludeHistory
 		// Attach tools from tool servers listed by name using resolver
 		for _, tname := range ac.Tools {
 			sc := cfg.Tools[tname]

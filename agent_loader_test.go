@@ -263,15 +263,15 @@ agents:
 	if !ok {
 		t.Fatalf("with_history not found")
 	}
-	if a1.ConversationHistory == nil {
-		t.Errorf("expected conversation history to be set for with_history")
+	if !a1.IncludeHistory {
+		t.Errorf("expected IncludeHistory to be true for with_history")
 	}
 
 	a2, ok := agents["no_history"]
 	if !ok {
 		t.Fatalf("no_history not found")
 	}
-	if a2.ConversationHistory != nil {
-		t.Errorf("expected conversation history to be nil for no_history agent")
+	if a2.IncludeHistory {
+		t.Errorf("expected IncludeHistory to be false for no_history agent")
 	}
 }

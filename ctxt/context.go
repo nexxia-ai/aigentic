@@ -230,6 +230,19 @@ func (r *AgentContext) AddDocument(doc *document.Document) error {
 	return nil
 }
 
+func (r *AgentContext) DeleteDocument(doc *document.Document) error {
+	if doc == nil {
+		return fmt.Errorf("document cannot be nil")
+	}
+	for i := range r.documents {
+		if r.documents[i].ID() == doc.ID() {
+			r.documents = append(r.documents[:i], r.documents[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
 func (r *AgentContext) AddMemory(id, description, content, scope, runID string) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()

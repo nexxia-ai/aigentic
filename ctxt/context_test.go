@@ -2,148 +2,488 @@ package ctxt
 
 import (
 	"testing"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/document"
-	"github.com/stretchr/testify/assert"
 )
 
+func TestNew(t *testing.T) {
+	ctx := New("test-id", "test description", "test instructions")
+
+	if ctx.id != "test-id" {
+		t.Errorf("expected id 'test-id', got '%s'", ctx.id)
+	}
+	if ctx.description != "test description" {
+		t.Errorf("expected description 'test description', got '%s'", ctx.description)
+	}
+	if ctx.instructions != "test instructions" {
+		t.Errorf("expected instructions 'test instructions', got '%s'", ctx.instructions)
+	}
+	if ctx.conversationHistory == nil {
+		t.Error("expected conversation history to be initialized")
+	}
+}
+
 func TestAddDocument(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+	tests := []struct {
+		name      string
+		docs      []*document.Document
+		wantCount int
+	}{
+		{
+			name:      "add single document",
+			docs:      []*document.Document{document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil)},
+			wantCount: 1,
+		},
+		{
+			name: "add multiple documents",
+			docs: []*document.Document{
+				document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil),
+				document.NewInMemoryDocument("doc2", "test2.txt", []byte("content2"), nil),
+				document.NewInMemoryDocument("doc3", "test3.png", []byte("content3"), nil),
+			},
+			wantCount: 3,
+		},
+		{
+			name:      "add nil document",
+			docs:      []*document.Document{nil},
+			wantCount: 0,
+		},
+	}
 
-	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := New("id", "desc", "inst")
+			for _, doc := range tt.docs {
+				ctx.AddDocument(doc)
+			}
 
-	err := ctx.AddDocument(doc)
-	assert.NoError(t, err)
-	assert.Len(t, ctx.documents, 1)
-	assert.Equal(t, doc, ctx.documents[0])
+			got := len(ctx.GetDocuments())
+			if got != tt.wantCount {
+				t.Errorf("expected %d documents, got %d", tt.wantCount, got)
+			}
+		})
+	}
 }
 
-func TestAddDocumentNil(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+func TestRemoveDocument(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     []*document.Document
+		remove    *document.Document
+		wantErr   bool
+		wantCount int
+	}{
+		{
+			name: "remove existing document",
+			setup: []*document.Document{
+				document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil),
+			},
+			remove:    document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil),
+			wantErr:   false,
+			wantCount: 0,
+		},
+		{
+			name: "remove non-existing document",
+			setup: []*document.Document{
+				document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil),
+			},
+			remove:    document.NewInMemoryDocument("doc2", "other.pdf", []byte("content"), nil),
+			wantErr:   true,
+			wantCount: 1,
+		},
+		{
+			name:      "remove nil document",
+			setup:     []*document.Document{},
+			remove:    nil,
+			wantErr:   true,
+			wantCount: 0,
+		},
+		{
+			name: "remove from middle",
+			setup: []*document.Document{
+				document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil),
+				document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil),
+				document.NewInMemoryDocument("doc3", "test3.pdf", []byte("content3"), nil),
+			},
+			remove:    document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil),
+			wantErr:   false,
+			wantCount: 2,
+		},
+	}
 
-	err := ctx.AddDocument(nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "document cannot be nil")
-	assert.Len(t, ctx.documents, 0)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := New("id", "desc", "inst")
+			for _, doc := range tt.setup {
+				ctx.AddDocument(doc)
+			}
+
+			err := ctx.RemoveDocument(tt.remove)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RemoveDocument() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			got := len(ctx.GetDocuments())
+			if got != tt.wantCount {
+				t.Errorf("expected %d documents, got %d", tt.wantCount, got)
+			}
+		})
+	}
 }
 
-func TestAddMultipleDocuments(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+func TestRemoveDocumentByID(t *testing.T) {
+	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
+	doc2 := document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil)
 
-	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
-	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
-	doc3 := document.NewInMemoryDocument("doc3", "test3.png", []byte("content 3"), nil)
+	ctx := New("id", "desc", "inst").
+		AddDocument(doc1).
+		AddDocument(doc2)
 
-	err := ctx.AddDocument(doc1)
-	assert.NoError(t, err)
+	err := ctx.RemoveDocumentByID("doc1")
+	if err != nil {
+		t.Errorf("RemoveDocumentByID() error = %v", err)
+	}
 
-	err = ctx.AddDocument(doc2)
-	assert.NoError(t, err)
+	docs := ctx.GetDocuments()
+	if len(docs) != 1 {
+		t.Errorf("expected 1 document, got %d", len(docs))
+	}
+	if len(docs) > 0 && docs[0].ID() != "doc2" {
+		t.Errorf("expected remaining document to be doc2, got %s", docs[0].ID())
+	}
 
-	err = ctx.AddDocument(doc3)
-	assert.NoError(t, err)
-
-	assert.Len(t, ctx.documents, 3)
-	assert.Equal(t, doc1, ctx.documents[0])
-	assert.Equal(t, doc2, ctx.documents[1])
-	assert.Equal(t, doc3, ctx.documents[2])
+	err = ctx.RemoveDocumentByID("nonexistent")
+	if err == nil {
+		t.Error("expected error when removing non-existent document")
+	}
 }
 
-func TestDeleteDocument(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+func TestChainableMethods(t *testing.T) {
+	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
+	doc2 := document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil)
 
-	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
-	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
-	doc3 := document.NewInMemoryDocument("doc3", "test3.png", []byte("content 3"), nil)
+	ctx := New("id", "desc", "inst").
+		SetOutputInstructions("Use JSON").
+		AddDocument(doc1).
+		AddDocument(doc2).
+		AddMemory("key1", "desc1", "content1", "session", "run-1")
 
-	ctx.AddDocument(doc1)
-	ctx.AddDocument(doc2)
-	ctx.AddDocument(doc3)
+	if ctx.outputInstructions != "Use JSON" {
+		t.Errorf("expected output instructions 'Use JSON', got '%s'", ctx.outputInstructions)
+	}
 
-	assert.Len(t, ctx.documents, 3)
+	docCount := len(ctx.GetDocuments())
+	if docCount != 2 {
+		t.Errorf("expected 2 documents, got %d", docCount)
+	}
 
-	err := ctx.DeleteDocument(doc2)
-	assert.NoError(t, err)
-	assert.Len(t, ctx.documents, 2)
-	assert.Equal(t, doc1, ctx.documents[0])
-	assert.Equal(t, doc3, ctx.documents[1])
+	memCount := len(ctx.GetMemories())
+	if memCount != 1 {
+		t.Errorf("expected 1 memory, got %d", memCount)
+	}
 }
 
-func TestDeleteDocumentNil(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+func TestAddMemory(t *testing.T) {
+	tests := []struct {
+		name      string
+		memories  []struct{ id, desc, content, scope, runID string }
+		wantCount int
+	}{
+		{
+			name: "add single memory",
+			memories: []struct{ id, desc, content, scope, runID string }{
+				{"key1", "desc1", "content1", "session", "run-1"},
+			},
+			wantCount: 1,
+		},
+		{
+			name: "add multiple memories",
+			memories: []struct{ id, desc, content, scope, runID string }{
+				{"key1", "desc1", "content1", "session", "run-1"},
+				{"key2", "desc2", "content2", "session", "run-1"},
+				{"key3", "desc3", "content3", "global", "run-1"},
+			},
+			wantCount: 3,
+		},
+		{
+			name: "update existing memory",
+			memories: []struct{ id, desc, content, scope, runID string }{
+				{"key1", "desc1", "content1", "session", "run-1"},
+				{"key1", "desc2", "content2", "session", "run-1"},
+			},
+			wantCount: 1,
+		},
+	}
 
-	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
-	ctx.AddDocument(doc)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := New("id", "desc", "inst")
+			for _, mem := range tt.memories {
+				ctx.AddMemory(mem.id, mem.desc, mem.content, mem.scope, mem.runID)
+			}
 
-	err := ctx.DeleteDocument(nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "document cannot be nil")
-	assert.Len(t, ctx.documents, 1)
+			got := len(ctx.GetMemories())
+			if got != tt.wantCount {
+				t.Errorf("expected %d memories, got %d", tt.wantCount, got)
+			}
+
+			if tt.name == "update existing memory" && got == 1 {
+				mem := ctx.GetMemories()[0]
+				if mem.Description != "desc2" {
+					t.Errorf("expected updated description 'desc2', got '%s'", mem.Description)
+				}
+				if mem.Content != "content2" {
+					t.Errorf("expected updated content 'content2', got '%s'", mem.Content)
+				}
+			}
+		})
+	}
 }
 
-func TestDeleteDocumentNotFound(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+func TestRemoveMemory(t *testing.T) {
+	ctx := New("id", "desc", "inst").
+		AddMemory("m1", "d1", "c1", "session", "run-1").
+		AddMemory("m2", "d2", "c2", "global", "run-1")
 
-	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
-	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
+	err := ctx.RemoveMemory("m1")
+	if err != nil {
+		t.Errorf("RemoveMemory() error = %v", err)
+	}
 
-	ctx.AddDocument(doc1)
+	mems := ctx.GetMemories()
+	if len(mems) != 1 {
+		t.Errorf("expected 1 memory, got %d", len(mems))
+	}
 
-	err := ctx.DeleteDocument(doc2)
-	assert.NoError(t, err)
-	assert.Len(t, ctx.documents, 1)
-	assert.Equal(t, doc1, ctx.documents[0])
+	err = ctx.RemoveMemory("nonexistent")
+	if err == nil {
+		t.Error("expected error when removing non-existent memory")
+	}
 }
 
-func TestDeleteDocumentFromEmpty(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+func TestMemoryFilters(t *testing.T) {
+	ctx := New("id", "desc", "inst").
+		AddMemory("m1", "d1", "c1", "session", "run-1").
+		AddMemory("m2", "d2", "c2", "global", "run-1").
+		AddMemory("m3", "d3", "c3", "session", "run-2")
 
-	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
+	time.Sleep(10 * time.Millisecond)
 
-	err := ctx.DeleteDocument(doc)
-	assert.NoError(t, err)
-	assert.Len(t, ctx.documents, 0)
+	tests := []struct {
+		name      string
+		filter    func() []MemoryEntry
+		wantCount int
+	}{
+		{
+			name:      "all memories",
+			filter:    func() []MemoryEntry { return ctx.GetMemories() },
+			wantCount: 3,
+		},
+		{
+			name: "filter by scope session",
+			filter: func() []MemoryEntry {
+				return Filter(ctx.GetMemories(), func(m MemoryEntry) bool {
+					return m.Scope == "session"
+				})
+			},
+			wantCount: 2,
+		},
+		{
+			name: "filter by scope global",
+			filter: func() []MemoryEntry {
+				return Filter(ctx.GetMemories(), func(m MemoryEntry) bool {
+					return m.Scope == "global"
+				})
+			},
+			wantCount: 1,
+		},
+		{
+			name: "filter by age",
+			filter: func() []MemoryEntry {
+				return Filter(ctx.GetMemories(), func(m MemoryEntry) bool {
+					return time.Since(m.Timestamp) <= 1*time.Second
+				})
+			},
+			wantCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.filter()
+			if len(result) != tt.wantCount {
+				t.Errorf("expected %d memories, got %d", tt.wantCount, len(result))
+			}
+		})
+	}
 }
 
-func TestAddAndDeleteDocuments(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+func TestMemoryFindByID(t *testing.T) {
+	ctx := New("id", "desc", "inst").
+		AddMemory("m1", "desc1", "content1", "session", "run-1").
+		AddMemory("m2", "desc2", "content2", "global", "run-1")
 
-	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
-	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
-	doc3 := document.NewInMemoryDocument("doc3", "test3.png", []byte("content 3"), nil)
+	mem := Find(ctx.GetMemories(), func(m MemoryEntry) bool {
+		return m.ID == "m1"
+	})
+	if mem == nil {
+		t.Fatal("expected to find memory m1")
+	}
+	if mem.ID != "m1" {
+		t.Errorf("expected memory ID 'm1', got '%s'", mem.ID)
+	}
+	if mem.Description != "desc1" {
+		t.Errorf("expected description 'desc1', got '%s'", mem.Description)
+	}
 
-	ctx.AddDocument(doc1)
-	ctx.AddDocument(doc2)
-	ctx.AddDocument(doc3)
-	assert.Len(t, ctx.documents, 3)
-
-	ctx.DeleteDocument(doc1)
-	assert.Len(t, ctx.documents, 2)
-	assert.Equal(t, doc2, ctx.documents[0])
-	assert.Equal(t, doc3, ctx.documents[1])
-
-	ctx.DeleteDocument(doc3)
-	assert.Len(t, ctx.documents, 1)
-	assert.Equal(t, doc2, ctx.documents[0])
-
-	ctx.DeleteDocument(doc2)
-	assert.Len(t, ctx.documents, 0)
+	mem = Find(ctx.GetMemories(), func(m MemoryEntry) bool {
+		return m.ID == "nonexistent"
+	})
+	if mem != nil {
+		t.Error("expected nil for non-existent memory")
+	}
 }
 
-func TestDeleteDocumentByID(t *testing.T) {
-	ctx := NewAgentContext("test-id", "test description", "test instructions")
+func TestClearMethods(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(*AgentContext)
+		clear     func(*AgentContext)
+		check     func(*AgentContext) int
+		wantCount int
+	}{
+		{
+			name: "clear documents",
+			setup: func(ctx *AgentContext) {
+				ctx.AddDocument(document.NewInMemoryDocument("doc1", "test.pdf", []byte("c"), nil))
+				ctx.AddDocument(document.NewInMemoryDocument("doc2", "test.pdf", []byte("c"), nil))
+			},
+			clear:     func(ctx *AgentContext) { ctx.ClearDocuments() },
+			check:     func(ctx *AgentContext) int { return len(ctx.GetDocuments()) },
+			wantCount: 0,
+		},
+		{
+			name: "clear memories",
+			setup: func(ctx *AgentContext) {
+				ctx.AddMemory("k1", "d1", "c1", "session", "run-1")
+				ctx.AddMemory("k2", "d2", "c2", "session", "run-1")
+			},
+			clear:     func(ctx *AgentContext) { ctx.ClearMemories() },
+			check:     func(ctx *AgentContext) int { return len(ctx.GetMemories()) },
+			wantCount: 0,
+		},
+		{
+			name: "clear history",
+			setup: func(ctx *AgentContext) {
+				ctx.GetHistory().appendTurn(ConversationTurn{})
+				ctx.GetHistory().appendTurn(ConversationTurn{})
+			},
+			clear:     func(ctx *AgentContext) { ctx.ClearHistory() },
+			check:     func(ctx *AgentContext) int { return ctx.GetHistory().Len() },
+			wantCount: 0,
+		},
+	}
 
-	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
-	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
-
-	ctx.AddDocument(doc1)
-	ctx.AddDocument(doc2)
-
-	doc1Copy := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("different content"), nil)
-
-	err := ctx.DeleteDocument(doc1Copy)
-	assert.NoError(t, err)
-	assert.Len(t, ctx.documents, 1)
-	assert.Equal(t, doc2, ctx.documents[0])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := New("id", "desc", "inst")
+			tt.setup(ctx)
+			tt.clear(ctx)
+			got := tt.check(ctx)
+			if got != tt.wantCount {
+				t.Errorf("expected %d items after clear, got %d", tt.wantCount, got)
+			}
+		})
+	}
 }
 
+func TestClearAll(t *testing.T) {
+	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil)
+
+	ctx := New("id", "desc", "inst").
+		AddDocument(doc).
+		AddMemory("m1", "d1", "c1", "session", "run-1")
+
+	ctx.GetHistory().appendTurn(ConversationTurn{})
+
+	ctx.ClearAll()
+
+	if len(ctx.GetDocuments()) != 0 {
+		t.Errorf("expected 0 documents after ClearAll, got %d", len(ctx.GetDocuments()))
+	}
+	if len(ctx.GetMemories()) != 0 {
+		t.Errorf("expected 0 memories after ClearAll, got %d", len(ctx.GetMemories()))
+	}
+	if ctx.GetHistory().Len() != 0 {
+		t.Errorf("expected 0 history turns after ClearAll, got %d", ctx.GetHistory().Len())
+	}
+}
+
+func TestSetMethods(t *testing.T) {
+	ctx := New("id", "desc", "inst")
+
+	ctx.SetDescription("new description").
+		SetInstructions("new instructions").
+		SetOutputInstructions("new output instructions")
+
+	if ctx.description != "new description" {
+		t.Errorf("expected description 'new description', got '%s'", ctx.description)
+	}
+	if ctx.instructions != "new instructions" {
+		t.Errorf("expected instructions 'new instructions', got '%s'", ctx.instructions)
+	}
+	if ctx.outputInstructions != "new output instructions" {
+		t.Errorf("expected output instructions 'new output instructions', got '%s'", ctx.outputInstructions)
+	}
+}
+
+func TestHistoryQuery(t *testing.T) {
+	ctx := New("id", "desc", "inst")
+
+	turn1 := ConversationTurn{AgentName: "agent1", Hidden: false}
+	turn2 := ConversationTurn{AgentName: "agent2", Hidden: false}
+	turn3 := ConversationTurn{AgentName: "agent1", Hidden: true}
+	turn4 := ConversationTurn{AgentName: "agent1", Hidden: false}
+
+	ctx.GetHistory().appendTurn(turn1)
+	ctx.GetHistory().appendTurn(turn2)
+	ctx.GetHistory().appendTurn(turn3)
+	ctx.GetHistory().appendTurn(turn4)
+
+	tests := []struct {
+		name      string
+		query     func() []ConversationTurn
+		wantCount int
+	}{
+		{
+			name:      "get all turns",
+			query:     func() []ConversationTurn { return ctx.GetHistory().GetTurns() },
+			wantCount: 4,
+		},
+		{
+			name:      "last 2 turns",
+			query:     func() []ConversationTurn { return ctx.GetHistory().Last(2) },
+			wantCount: 2,
+		},
+		{
+			name:      "filter by agent1",
+			query:     func() []ConversationTurn { return ctx.GetHistory().FilterByAgent("agent1") },
+			wantCount: 3,
+		},
+		{
+			name:      "exclude hidden",
+			query:     func() []ConversationTurn { return ctx.GetHistory().ExcludeHidden() },
+			wantCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.query()
+			if len(result) != tt.wantCount {
+				t.Errorf("expected %d turns, got %d", tt.wantCount, len(result))
+			}
+		})
+	}
+}

@@ -39,8 +39,8 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	interceptors := r.interceptors
 
 	// Add conversation history interceptor if history exists (history is always captured, but only included in prompt if includeHistory is true)
-	if r.agentContext.ConversationHistory() != nil {
-		interceptors = append(interceptors, newHistoryInterceptor(r.agentContext.ConversationHistory()))
+	if r.agentContext.GetHistory() != nil {
+		interceptors = append(interceptors, newHistoryInterceptor(r.agentContext.GetHistory()))
 	}
 
 	// Trace must be the last interceptor to capture the full exchange

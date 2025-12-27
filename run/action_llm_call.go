@@ -59,8 +59,8 @@ func (r *AgentRun) runLLMCallAction(message string) {
 	interceptors := r.interceptors
 
 	// Add conversation history interceptor if history exists (history is always captured, but only included in prompt if includeHistory is true)
-	if r.agentContext.ConversationHistory() != nil {
-		interceptors = append(interceptors, newHistoryInterceptor(r.agentContext.ConversationHistory()))
+	if r.agentContext.GetHistory() != nil {
+		interceptors = append(interceptors, newHistoryInterceptor(r.agentContext.GetHistory()))
 	}
 
 	// Trace must be the last interceptor to capture the full exchange
@@ -158,17 +158,14 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 	}
 
 	// this not a chunk, which means the model Call/Stream is complete
-	// add to history and fire tool calls
-	turn := r.agentContext.ConversationTurn()
+	// end the turn and fire tool calls
 	if len(msg.ToolCalls) == 0 {
-		turn.AddMessage(msg)
-		turn.Reply = msg
-		turn.Compact()
-		r.agentContext.ConversationHistory().AppendTurn(*turn)
+		r.agentContext.EndTurn(msg)
 		r.queueAction(&stopAction{Error: nil})
 		return
 	}
 
+	turn := r.agentContext.ConversationTurn()
 	turn.AddMessage(msg)
 
 	// If we have a stream group from chunks, update it with the final message, otherwise create new group

@@ -15,8 +15,6 @@ type AgentContext struct {
 	id             string
 	description    string
 	instructions   string
-	msgHistory     []ai.Message
-	currentMsg     int
 	SystemTemplate *template.Template
 	UserTemplate   *template.Template
 
@@ -29,16 +27,28 @@ type AgentContext struct {
 	currentConversationTurn *ConversationTurn
 }
 
-func NewAgentContext(id, description, instructions string) *AgentContext {
-	cm := &AgentContext{id: id, description: description, instructions: instructions}
-
-	cm.conversationHistory = NewConversationHistory()
-	cm.SetTemplates(DefaultSystemTemplate, DefaultUserTemplate)
-	return cm
+func New(id, description, instructions string) *AgentContext {
+	ctx := &AgentContext{
+		id:                 id,
+		description:        description,
+		instructions:       instructions,
+		memories:           make([]MemoryEntry, 0),
+		documents:          make([]*document.Document, 0),
+		documentReferences: make([]*document.Document, 0),
+	}
+	ctx.conversationHistory = NewConversationHistory()
+	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
+	ctx.UpdateUserTemplate(DefaultUserTemplate)
+	return ctx
 }
 
-func (r *AgentContext) SetOutputInstructions(instructions string) {
+func NewAgentContext(id, description, instructions string) *AgentContext {
+	return New(id, description, instructions)
+}
+
+func (r *AgentContext) SetOutputInstructions(instructions string) *AgentContext {
 	r.outputInstructions = instructions
+	return r
 }
 
 const DefaultSystemTemplate = `
@@ -90,12 +100,7 @@ const DefaultUserTemplate = `
 {{.Message}} 
 {{end}}`
 
-func (r *AgentContext) SetTemplates(systemTemplate, userTemplate string) {
-	r.SystemTemplate = template.Must(template.New("system").Parse(systemTemplate))
-	r.UserTemplate = template.Must(template.New("user").Parse(userTemplate))
-}
-
-func (r *AgentContext) ParseSystemTemplate(templateStr string) error {
+func (r *AgentContext) UpdateSystemTemplate(templateStr string) error {
 	tmpl, err := template.New("system").Parse(templateStr)
 	if err != nil {
 		return err
@@ -104,7 +109,7 @@ func (r *AgentContext) ParseSystemTemplate(templateStr string) error {
 	return nil
 }
 
-func (r *AgentContext) ParseUserTemplate(templateStr string) error {
+func (r *AgentContext) UpdateUserTemplate(templateStr string) error {
 	tmpl, err := template.New("user").Parse(templateStr)
 	if err != nil {
 		return err
@@ -113,10 +118,17 @@ func (r *AgentContext) ParseUserTemplate(templateStr string) error {
 	return nil
 }
 
-func (r *AgentContext) BuildPrompt(messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
-	r.currentMsg = len(r.msgHistory)
-	r.msgHistory = append(r.msgHistory, messages...)
+func (r *AgentContext) SetDescription(description string) *AgentContext {
+	r.description = description
+	return r
+}
 
+func (r *AgentContext) SetInstructions(instructions string) *AgentContext {
+	r.instructions = instructions
+	return r
+}
+
+func (r *AgentContext) BuildPrompt(messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
 	systemVars := r.createSystemVariables(tools)
 	var systemBuf bytes.Buffer
 	if err := r.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
@@ -145,7 +157,7 @@ func (r *AgentContext) BuildPrompt(messages []ai.Message, tools []ai.Tool) ([]ai
 
 	msgs = append(msgs, r.insertDocuments(r.documents, r.documentReferences)...)
 
-	msgs = append(msgs, r.msgHistory...)
+	msgs = append(msgs, messages...)
 	return msgs, nil
 }
 
@@ -222,15 +234,23 @@ func (r *AgentContext) insertDocuments(docs []*document.Document, docRefs []*doc
 	return msgs
 }
 
-func (r *AgentContext) AddDocument(doc *document.Document) error {
+func (r *AgentContext) AddDocument(doc *document.Document) *AgentContext {
 	if doc == nil {
-		return fmt.Errorf("document cannot be nil")
+		return r
 	}
 	r.documents = append(r.documents, doc)
-	return nil
+	return r
 }
 
-func (r *AgentContext) DeleteDocument(doc *document.Document) error {
+func (r *AgentContext) AddDocumentReference(doc *document.Document) *AgentContext {
+	if doc == nil {
+		return r
+	}
+	r.documentReferences = append(r.documentReferences, doc)
+	return r
+}
+
+func (r *AgentContext) RemoveDocument(doc *document.Document) error {
 	if doc == nil {
 		return fmt.Errorf("document cannot be nil")
 	}
@@ -240,10 +260,20 @@ func (r *AgentContext) DeleteDocument(doc *document.Document) error {
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("document not found: %s", doc.ID())
 }
 
-func (r *AgentContext) AddMemory(id, description, content, scope, runID string) error {
+func (r *AgentContext) RemoveDocumentByID(id string) error {
+	for i := range r.documents {
+		if r.documents[i].ID() == id {
+			r.documents = append(r.documents[:i], r.documents[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("document not found: %s", id)
+}
+
+func (r *AgentContext) AddMemory(id, description, content, scope, runID string) *AgentContext {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -255,7 +285,7 @@ func (r *AgentContext) AddMemory(id, description, content, scope, runID string) 
 			r.memories[i].Scope = scope
 			r.memories[i].RunID = runID
 			r.memories[i].Timestamp = now
-			return nil
+			return r
 		}
 	}
 
@@ -267,10 +297,10 @@ func (r *AgentContext) AddMemory(id, description, content, scope, runID string) 
 		RunID:       runID,
 		Timestamp:   now,
 	})
-	return nil
+	return r
 }
 
-func (r *AgentContext) DeleteMemory(id string) error {
+func (r *AgentContext) RemoveMemory(id string) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -280,7 +310,7 @@ func (r *AgentContext) DeleteMemory(id string) error {
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("memory not found: %s", id)
 }
 
 func (r *AgentContext) GetMemories() []MemoryEntry {
@@ -292,29 +322,83 @@ func (r *AgentContext) GetMemories() []MemoryEntry {
 	return result
 }
 
-func (r *AgentContext) SetDocuments(docs []*document.Document) {
+func (r *AgentContext) SetDocuments(docs []*document.Document) *AgentContext {
 	r.documents = docs
+	return r
 }
 
-func (r *AgentContext) SetDocumentReferences(docRefs []*document.Document) {
+func (r *AgentContext) SetDocumentReferences(docRefs []*document.Document) *AgentContext {
 	r.documentReferences = docRefs
+	return r
 }
 
-func (r *AgentContext) SetConversationHistory(history *ConversationHistory) {
-	if history == nil { // reset conversation history
+func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *AgentContext {
+	if history == nil {
 		history = NewConversationHistory()
 	}
 	r.conversationHistory = history
+	return r
 }
 
-func (r *AgentContext) ConversationHistory() *ConversationHistory {
+func (r *AgentContext) GetDocuments() []*document.Document {
+	return r.documents
+}
+
+func (r *AgentContext) GetDocumentReferences() []*document.Document {
+	return r.documentReferences
+}
+
+func (r *AgentContext) GetHistory() *ConversationHistory {
 	return r.conversationHistory
+}
+
+func (r *AgentContext) StartTurn(userMessage string) *AgentContext {
+	turn := NewConversationTurn(userMessage, r.id, r.description, r.instructions)
+	r.currentConversationTurn = turn
+	return r
+}
+
+func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
+	r.currentConversationTurn.AddMessage(msg)
+	r.currentConversationTurn.Reply = msg
+	r.currentConversationTurn.Compact()
+	r.conversationHistory.appendTurn(*r.currentConversationTurn)
+	return r
 }
 
 func (r *AgentContext) ConversationTurn() *ConversationTurn {
 	return r.currentConversationTurn
 }
 
-func (r *AgentContext) SetConversationTurn(turn *ConversationTurn) {
-	r.currentConversationTurn = turn
+func (r *AgentContext) ClearDocuments() *AgentContext {
+	r.documents = make([]*document.Document, 0)
+	return r
+}
+
+func (r *AgentContext) ClearDocumentReferences() *AgentContext {
+	r.documentReferences = make([]*document.Document, 0)
+	return r
+}
+
+func (r *AgentContext) ClearMemories() *AgentContext {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.memories = make([]MemoryEntry, 0)
+	return r
+}
+
+func (r *AgentContext) ClearHistory() *AgentContext {
+	r.conversationHistory.Clear()
+	return r
+}
+
+func (r *AgentContext) ClearAll() *AgentContext {
+	ctx := r.ClearDocuments().
+		ClearDocumentReferences().
+		ClearMemories().
+		ClearHistory().
+		SetOutputInstructions("")
+	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
+	ctx.UpdateUserTemplate(DefaultUserTemplate)
+	return ctx
 }

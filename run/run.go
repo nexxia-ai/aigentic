@@ -92,8 +92,8 @@ func NewAgentRun(name, description, instructions string) *AgentRun {
 		return ai.AIMessage{}, fmt.Errorf("agent model is not set")
 	})
 
-	ac := ctxt.NewAgentContext(runID, description, instructions)
-	ac.SetConversationTurn(ctxt.NewConversationTurn("", runID, "", ""))
+	ac := ctxt.New(runID, description, instructions)
+	ac.StartTurn("")
 	run := &AgentRun{
 		agentName:            name,
 		id:                   runID,
@@ -161,7 +161,7 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 }
 
 func (r *AgentRun) Run(ctx context.Context, message string) {
-	r.agentContext.SetConversationTurn(ctxt.NewConversationTurn(message, r.id, "", ""))
+	r.agentContext.StartTurn(message)
 
 	r.ctx, r.cancelFunc = context.WithCancel(ctx)
 	r.pendingApprovals = make(map[string]pendingApproval)

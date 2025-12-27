@@ -907,3 +907,263 @@ func TestConversationHistoryNotIncludedWhenDisabled(t *testing.T) {
 	assert.False(t, foundFirstMessage, "Previous user message should NOT be included in second conversation when includeHistory is false")
 	assert.False(t, foundFirstResponse, "Previous assistant response should NOT be included in second conversation when includeHistory is false")
 }
+
+func TestConversationHistoryWithToolsNotIncludedWhenDisabled(t *testing.T) {
+	history := ctxt.NewConversationHistory()
+	callCount := 0
+	var receivedMessages []ai.Message
+
+	testTool := AgentTool{
+		Name:        "echo_tool",
+		Description: "Echoes back the input",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"text": map[string]interface{}{
+					"type": "string",
+				},
+			},
+			"required": []string{"text"},
+		},
+		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+			return &ai.ToolResult{
+				Content: []ai.ToolContent{
+					{Type: "text", Content: "echoed: test"},
+				},
+			}, nil
+		},
+	}
+
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
+
+		if callCount == 1 {
+			receivedMessages = messages
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "I'll use the echo tool",
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Name: "echo_tool",
+						Args: `{"text": "test"}`,
+					},
+				},
+			}, nil
+		}
+
+		if callCount == 2 {
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Tool response received",
+			}, nil
+		}
+
+		if callCount == 3 {
+			receivedMessages = messages
+			foundPreviousToolCall := false
+			foundPreviousToolResponse := false
+			foundPreviousUserMessage := false
+			foundPreviousAssistantMessage := false
+
+			for _, msg := range messages {
+				if userMsg, ok := msg.(ai.UserMessage); ok {
+					if userMsg.Content == "First message with tools" {
+						foundPreviousUserMessage = true
+					}
+				}
+				if aiMsg, ok := msg.(ai.AIMessage); ok {
+					if len(aiMsg.ToolCalls) > 0 {
+						for _, tc := range aiMsg.ToolCalls {
+							if tc.ID == "call_123" && tc.Name == "echo_tool" {
+								foundPreviousToolCall = true
+							}
+						}
+					}
+					if aiMsg.Content == "Tool response received" {
+						foundPreviousAssistantMessage = true
+					}
+				}
+				if toolMsg, ok := msg.(ai.ToolMessage); ok {
+					if toolMsg.ToolCallID == "call_123" && toolMsg.ToolName == "echo_tool" {
+						foundPreviousToolResponse = true
+					}
+				}
+			}
+
+			if foundPreviousUserMessage || foundPreviousToolCall || foundPreviousToolResponse || foundPreviousAssistantMessage {
+				t.Errorf("Previous conversation messages (including tool calls and responses) should NOT be found in second run when includeHistory is false. Found: userMsg=%v, toolCall=%v, toolResponse=%v, assistantMsg=%v. Received %d messages", foundPreviousUserMessage, foundPreviousToolCall, foundPreviousToolResponse, foundPreviousAssistantMessage, len(messages))
+			}
+
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Second response without history",
+			}, nil
+		}
+
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Unexpected call",
+		}, nil
+	})
+
+	run1 := NewAgentRun("test-history-tools-disabled-agent", "Agent with history disabled and tools", "")
+	run1.SetModel(model)
+	run1.SetTools([]AgentTool{testTool})
+	run1.SetConversationHistory(history)
+	run1.IncludeHistory(false)
+	run1.Run(context.Background(), "First message with tools")
+	result1, err := run1.Wait(0)
+	assert.NoError(t, err)
+	assert.Contains(t, result1, "Tool response received")
+
+	assert.Equal(t, 1, history.Len(), "History should have one turn after first conversation (history is always captured)")
+
+	run2 := NewAgentRun("test-history-tools-disabled-agent", "Agent with history disabled and tools", "")
+	run2.SetModel(model)
+	run2.SetTools([]AgentTool{testTool})
+	run2.SetConversationHistory(history)
+	run2.IncludeHistory(false)
+	run2.Run(context.Background(), "Second message without tools")
+	result2, err := run2.Wait(0)
+	assert.NoError(t, err)
+	assert.Contains(t, result2, "Second response without history")
+
+	assert.Equal(t, 2, history.Len(), "History should have two turns after second conversation (history is always captured)")
+
+	foundPreviousToolCall := false
+	foundPreviousToolResponse := false
+	foundPreviousUserMessage := false
+	foundPreviousAssistantMessage := false
+
+	if receivedMessages == nil {
+		t.Fatal("receivedMessages should not be nil - the model should have been called")
+	}
+
+	for _, msg := range receivedMessages {
+		if userMsg, ok := msg.(ai.UserMessage); ok {
+			if userMsg.Content == "First message with tools" {
+				foundPreviousUserMessage = true
+			}
+		}
+		if aiMsg, ok := msg.(ai.AIMessage); ok {
+			if len(aiMsg.ToolCalls) > 0 {
+				for _, tc := range aiMsg.ToolCalls {
+					if tc.ID == "call_123" && tc.Name == "echo_tool" {
+						foundPreviousToolCall = true
+					}
+				}
+			}
+			if aiMsg.Content == "Tool response received" {
+				foundPreviousAssistantMessage = true
+			}
+		}
+		if toolMsg, ok := msg.(ai.ToolMessage); ok {
+			if toolMsg.ToolCallID == "call_123" && toolMsg.ToolName == "echo_tool" {
+				foundPreviousToolResponse = true
+			}
+		}
+	}
+
+	assert.False(t, foundPreviousUserMessage, "Previous user message should NOT be included in second conversation when includeHistory is false")
+	assert.False(t, foundPreviousToolCall, "Previous tool call should NOT be included in second conversation when includeHistory is false")
+	assert.False(t, foundPreviousToolResponse, "Previous tool response should NOT be included in second conversation when includeHistory is false")
+	assert.False(t, foundPreviousAssistantMessage, "Previous assistant message should NOT be included in second conversation when includeHistory is false")
+}
+
+func TestMsgHistoryNotIncludedWhenHistoryDisabled(t *testing.T) {
+	history := ctxt.NewConversationHistory()
+	callCount := 0
+	var secondCallMessages []ai.Message
+
+	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
+
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
+
+		if callCount == 1 {
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "First response about the document",
+			}, nil
+		}
+
+		if callCount == 2 {
+			secondCallMessages = make([]ai.Message, len(messages))
+			copy(secondCallMessages, messages)
+			foundFirstUserMessage := false
+			foundFirstAssistantMessage := false
+
+			for _, msg := range messages {
+				if userMsg, ok := msg.(ai.UserMessage); ok {
+					if userMsg.Content == "What is in the document?" {
+						foundFirstUserMessage = true
+					}
+				}
+				if aiMsg, ok := msg.(ai.AIMessage); ok {
+					if aiMsg.Content == "First response about the document" {
+						foundFirstAssistantMessage = true
+					}
+				}
+			}
+
+			if foundFirstUserMessage || foundFirstAssistantMessage {
+				t.Errorf("Previous conversation messages should NOT be found in second call when includeHistory is false. Found: userMsg=%v, assistantMsg=%v. Received %d messages", foundFirstUserMessage, foundFirstAssistantMessage, len(messages))
+			}
+
+			return ai.AIMessage{
+				Role:    ai.AssistantRole,
+				Content: "Second response without document",
+			}, nil
+		}
+
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Unexpected call",
+		}, nil
+	})
+
+	run := NewAgentRun("test-msg-history-disabled", "Agent with history disabled", "")
+	run.SetModel(model)
+	run.SetConversationHistory(history)
+	run.IncludeHistory(false)
+
+	run.AgentContext().AddDocument(doc)
+	run.Run(context.Background(), "What is in the document?")
+	result1, err := run.Wait(0)
+	assert.NoError(t, err)
+	assert.Contains(t, result1, "First response about the document")
+	assert.Equal(t, 1, callCount, "Model should have been called once")
+
+	run.AgentContext().RemoveDocument(doc)
+
+	run.Run(context.Background(), "What is the answer?")
+	result2, err := run.Wait(0)
+	assert.NoError(t, err)
+	assert.Contains(t, result2, "Second response without document")
+	assert.Equal(t, 2, callCount, "Model should have been called twice")
+
+	foundFirstUserMessage := false
+	foundFirstAssistantMessage := false
+
+	if secondCallMessages == nil {
+		t.Fatal("secondCallMessages should not be nil - the model should have been called")
+	}
+
+	for _, msg := range secondCallMessages {
+		if userMsg, ok := msg.(ai.UserMessage); ok {
+			if userMsg.Content == "What is in the document?" {
+				foundFirstUserMessage = true
+			}
+		}
+		if aiMsg, ok := msg.(ai.AIMessage); ok {
+			if aiMsg.Content == "First response about the document" {
+				foundFirstAssistantMessage = true
+			}
+		}
+	}
+
+	assert.False(t, foundFirstUserMessage, "Previous user message should NOT be included in second call when includeHistory is false")
+	assert.False(t, foundFirstAssistantMessage, "Previous assistant message should NOT be included in second call when includeHistory is false")
+}

@@ -54,6 +54,19 @@ You have access to the following tools:
 const DefaultUserTemplate = `
 {{if .HasMessage}}Please answer the following request or task:
 {{.Message}} 
+{{end}}
+
+{{if .Documents}}
+<documents_attached>
+{{range .Documents}}
+<document id="{{.ID}}" name="{{.Filename}}" type="{{.MimeType}}">
+</document>
+{{end}}
+{{range .DocumentReferences}}
+<document_reference id="{{.ID}}" name="{{.Filename}}" type="{{.MimeType}}">
+</document_reference>
+{{end}}
+</documents_attached>
 {{end}}`
 
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
@@ -109,16 +122,13 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		msgs = append(msgs, sysMsg)
 	}
 
-	// Add documents second
-	msgs = append(msgs, r.insertDocuments(r.documents, r.documentReferences)...)
-
-	// Add history messages third
+	// Add history messages before user message
 	if includeHistory && r.conversationHistory != nil {
 		historyMessages := r.conversationHistory.GetMessages()
 		msgs = append(msgs, historyMessages...)
 	}
 
-	// Add user message last
+	// Add user message before documents
 	userMsg, err := createUserMsg(r, r.currentConversationTurn.UserMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user message: %w", err)
@@ -126,6 +136,11 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	if userMsg != nil {
 		msgs = append(msgs, userMsg)
 	}
+
+	// Add documents second
+	msgs = append(msgs, r.insertDocuments(r.documents, r.documentReferences)...)
+
+	// tool messages are last
 	msgs = append(msgs, r.currentConversationTurn.messages...) // tool messages
 
 	return msgs, nil

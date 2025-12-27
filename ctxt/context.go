@@ -152,6 +152,15 @@ func (r *AgentContext) RemoveDocumentByID(id string) error {
 	return fmt.Errorf("document not found: %s", id)
 }
 
+func (r *AgentContext) GetDocumentByID(id string) *document.Document {
+	for _, doc := range r.documents {
+		if doc.ID() == id {
+			return doc
+		}
+	}
+	return nil
+}
+
 func (r *AgentContext) AddMemory(id, description, content, scope, runID string) *AgentContext {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()

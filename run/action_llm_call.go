@@ -47,7 +47,7 @@ func (r *AgentRun) runLLMCallAction(message string) {
 
 	var err error
 	var msgs []ai.Message
-	msgs, err = r.agentContext.BuildPrompt(r.agentContext.ConversationTurn().GetCurrentMessages(), tools)
+	msgs, err = r.agentContext.BuildPrompt(tools, r.includeHistory)
 	if err != nil {
 		r.queueAction(&stopAction{Error: err})
 		return
@@ -57,11 +57,6 @@ func (r *AgentRun) runLLMCallAction(message string) {
 	currentMsgs := msgs
 	currentTools := tools
 	interceptors := r.interceptors
-
-	// Add conversation history interceptor if history exists (history is always captured, but only included in prompt if includeHistory is true)
-	if r.agentContext.GetHistory() != nil {
-		interceptors = append(interceptors, newHistoryInterceptor(r.agentContext.GetHistory()))
-	}
 
 	// Trace must be the last interceptor to capture the full exchange
 	if r.trace != nil {

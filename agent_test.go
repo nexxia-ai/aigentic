@@ -141,8 +141,16 @@ func TestAgentFileAttachment(t *testing.T) {
 		t.FailNow()
 	}
 
-	// Check that the user message is present
-	assert.Contains(t, receivedMessages[1].(ai.UserMessage).Content, "Please analyze these attached files")
+	// Check that the user message is present (it should be the last message)
+	userMsgFound := false
+	for _, msg := range receivedMessages {
+		if userMsg, ok := msg.(ai.UserMessage); ok {
+			assert.Contains(t, userMsg.Content, "Please analyze these attached files")
+			userMsgFound = true
+			break
+		}
+	}
+	assert.True(t, userMsgFound, "User message should be present")
 
 	// Check that both attachments are present as ResourceMessages
 	textFileFound := false

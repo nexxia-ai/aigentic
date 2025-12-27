@@ -1,7 +1,6 @@
 package ctxt
 
 import (
-	"bytes"
 	"fmt"
 	"sync"
 	"text/template"
@@ -51,55 +50,6 @@ func (r *AgentContext) SetOutputInstructions(instructions string) *AgentContext 
 	return r
 }
 
-const DefaultSystemTemplate = `
-You are an autonomous agent working to complete a task.
-You have to consider all the information you were given and reason about the next step to take.
-
-{{if .HasRole}}
-The user provided the following description of your role:
-<role>
-{{.Role}}
-</role>
-{{end}}
-
-{{if .HasInstructions}}
- <instructions>
-{{.Instructions}}
-</instructions>
-{{end}}
-
-{{if .HasOutputInstructions}}
-<output_instructions>
-{{.OutputInstructions}}
-</output_instructions>
-{{end}}
-
-{{if .HasTools}}
-You have access to the following tools:
-<tools>
-{{range .Tools}}<tool>
-{{.Name}}
-{{.Description}}
-</tool>
-{{end}}
-</tools>
-{{end}}
-
-{{if .HasMemories}}
-<memories>
-{{range .Memories}}
-<memory id="{{.ID}}" description="{{.Description}}">
-{{.Content}}
-</memory>
-{{end}}
-</memories>
-{{end}}`
-
-const DefaultUserTemplate = `
-{{if .HasMessage}}Please answer the following request or task:
-{{.Message}} 
-{{end}}`
-
 func (r *AgentContext) UpdateSystemTemplate(templateStr string) error {
 	tmpl, err := template.New("system").Parse(templateStr)
 	if err != nil {
@@ -126,77 +76,6 @@ func (r *AgentContext) SetDescription(description string) *AgentContext {
 func (r *AgentContext) SetInstructions(instructions string) *AgentContext {
 	r.instructions = instructions
 	return r
-}
-
-func (r *AgentContext) BuildPrompt(messages []ai.Message, tools []ai.Tool) ([]ai.Message, error) {
-	systemVars := r.createSystemVariables(tools)
-	var systemBuf bytes.Buffer
-	if err := r.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
-		return nil, fmt.Errorf("failed to execute system template: %w", err)
-	}
-
-	msgs := []ai.Message{
-		ai.SystemMessage{Role: ai.SystemRole, Content: systemBuf.String()},
-	}
-
-	userMsg := ""
-	if r.currentConversationTurn != nil {
-		userMsg = r.currentConversationTurn.UserMessage
-	}
-
-	userVars := r.createUserVariables(userMsg)
-	var userBuf bytes.Buffer
-	if err := r.UserTemplate.Execute(&userBuf, userVars); err != nil {
-		return nil, fmt.Errorf("failed to execute user template: %w", err)
-	}
-
-	userContent := userBuf.String()
-	if userContent != "" {
-		msgs = append(msgs, ai.UserMessage{Role: ai.UserRole, Content: userContent})
-	}
-
-	msgs = append(msgs, r.insertDocuments(r.documents, r.documentReferences)...)
-
-	msgs = append(msgs, messages...)
-	return msgs, nil
-}
-
-func (r *AgentContext) createSystemVariables(tools []ai.Tool) map[string]interface{} {
-	return createSystemVariables(r, tools)
-}
-
-func (r *AgentContext) createUserVariables(message string) map[string]interface{} {
-	return createUserVariables(r, message)
-}
-
-func createSystemVariables(ac *AgentContext, tools []ai.Tool) map[string]interface{} {
-	memories := ac.GetMemories()
-	var filteredMemories []MemoryEntry
-	filteredMemories = append(filteredMemories, memories...)
-	hasMemories := len(filteredMemories) > 0
-
-	return map[string]interface{}{
-		"HasTools":              len(tools) > 0,
-		"Role":                  ac.description,
-		"Instructions":          ac.instructions,
-		"Tools":                 tools,
-		"HasRole":               ac.description != "",
-		"HasInstructions":       ac.instructions != "",
-		"Memories":              filteredMemories,
-		"HasMemories":           hasMemories,
-		"HasOutputInstructions": ac.outputInstructions != "",
-		"OutputInstructions":    ac.outputInstructions,
-	}
-}
-
-func createUserVariables(ac *AgentContext, message string) map[string]interface{} {
-
-	return map[string]interface{}{
-		"Message":            message,
-		"HasMessage":         message != "",
-		"Documents":          ac.documents,
-		"DocumentReferences": ac.documentReferences,
-	}
 }
 
 func (r *AgentContext) insertDocuments(docs []*document.Document, docRefs []*document.Document) []ai.Message {
@@ -361,7 +240,6 @@ func (r *AgentContext) StartTurn(userMessage string) *AgentContext {
 func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 	r.currentConversationTurn.AddMessage(msg)
 	r.currentConversationTurn.Reply = msg
-	r.currentConversationTurn.Compact()
 	r.conversationHistory.appendTurn(*r.currentConversationTurn)
 	return r
 }

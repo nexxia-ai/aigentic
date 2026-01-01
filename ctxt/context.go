@@ -24,9 +24,10 @@ type AgentContext struct {
 	conversationHistory     *ConversationHistory
 	outputInstructions      string
 	currentConversationTurn *ConversationTurn
+	execEnv                 *ExecutionEnvironment
 }
 
-func New(id, description, instructions string) *AgentContext {
+func New(id, description, instructions string, ee *ExecutionEnvironment) *AgentContext {
 	ctx := &AgentContext{
 		id:                 id,
 		description:        description,
@@ -38,11 +39,12 @@ func New(id, description, instructions string) *AgentContext {
 	ctx.conversationHistory = NewConversationHistory()
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
+	ctx.execEnv = ee
 	return ctx
 }
 
-func NewAgentContext(id, description, instructions string) *AgentContext {
-	return New(id, description, instructions)
+func (r *AgentContext) ExecutionEnvironment() *ExecutionEnvironment {
+	return r.execEnv
 }
 
 func (r *AgentContext) SetOutputInstructions(instructions string) *AgentContext {

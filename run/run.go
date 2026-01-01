@@ -84,7 +84,7 @@ func (r *AgentRun) SetOutputInstructions(instructions string) {
 	r.agentContext.SetOutputInstructions(instructions)
 }
 
-func NewAgentRun(name, description, instructions string) *AgentRun {
+func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, error) {
 	runID := uuid.New().String()
 	sessionID := uuid.New().String()
 
@@ -92,7 +92,15 @@ func NewAgentRun(name, description, instructions string) *AgentRun {
 		return ai.AIMessage{}, fmt.Errorf("agent model is not set")
 	})
 
-	ac := ctxt.New(runID, description, instructions)
+	if baseDir == "" {
+		baseDir = os.TempDir()
+	}
+	ee, err := ctxt.NewExecutionEnvironment(baseDir, runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize execution environment: %w", err)
+	}
+
+	ac := ctxt.New(runID, description, instructions, ee)
 	ac.StartTurn("")
 	run := &AgentRun{
 		agentName:            name,
@@ -113,7 +121,7 @@ func NewAgentRun(name, description, instructions string) *AgentRun {
 	}
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel})).With("agent", name)
-	return run
+	return run, nil
 }
 
 func (r *AgentRun) AgentContext() *ctxt.AgentContext {
@@ -208,7 +216,10 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			if v, ok := validationResult.Values.(map[string]any)["input"].(string); ok {
 				input = v
 			}
-			subRun := NewAgentRun(name, description, message)
+			subRun, err := NewAgentRun(name, description, message, r.agentContext.ExecutionEnvironment().RootDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create sub-agent run: %w", err)
+			}
 			subRun.SetModel(model)
 			subRun.SetTools(tools)
 			subRun.trace = r.trace

@@ -1,14 +1,27 @@
 package ctxt
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
 )
 
+func createTestContext(t *testing.T, id, description, instructions string) *AgentContext {
+	ee, err := NewExecutionEnvironment(t.TempDir(), id)
+	if err != nil {
+		t.Fatalf("failed to create test execution environment: %v", err)
+	}
+	ctx := New(id, description, instructions, ee)
+	return ctx
+}
+
 func TestNew(t *testing.T) {
-	ctx := New("test-id", "test description", "test instructions")
+	ctx := createTestContext(t, "test-id", "test description", "test instructions")
 
 	if ctx.id != "test-id" {
 		t.Errorf("expected id 'test-id', got '%s'", ctx.id)
@@ -53,7 +66,7 @@ func TestAddDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := New("id", "desc", "inst")
+			ctx := createTestContext(t, "id", "desc", "inst")
 			for _, doc := range tt.docs {
 				ctx.AddDocument(doc)
 			}
@@ -114,7 +127,7 @@ func TestRemoveDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := New("id", "desc", "inst")
+			ctx := createTestContext(t, "id", "desc", "inst")
 			for _, doc := range tt.setup {
 				ctx.AddDocument(doc)
 			}
@@ -136,7 +149,7 @@ func TestRemoveDocumentByID(t *testing.T) {
 	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
 	doc2 := document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil)
 
-	ctx := New("id", "desc", "inst").
+	ctx := createTestContext(t, "id", "desc", "inst").
 		AddDocument(doc1).
 		AddDocument(doc2)
 
@@ -163,7 +176,7 @@ func TestChainableMethods(t *testing.T) {
 	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
 	doc2 := document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil)
 
-	ctx := New("id", "desc", "inst").
+	ctx := createTestContext(t, "id", "desc", "inst").
 		SetOutputInstructions("Use JSON").
 		AddDocument(doc1).
 		AddDocument(doc2).
@@ -218,7 +231,7 @@ func TestAddMemory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := New("id", "desc", "inst")
+			ctx := createTestContext(t, "id", "desc", "inst")
 			for _, mem := range tt.memories {
 				ctx.AddMemory(mem.id, mem.desc, mem.content, mem.scope, mem.runID)
 			}
@@ -242,7 +255,7 @@ func TestAddMemory(t *testing.T) {
 }
 
 func TestRemoveMemory(t *testing.T) {
-	ctx := New("id", "desc", "inst").
+	ctx := createTestContext(t, "id", "desc", "inst").
 		AddMemory("m1", "d1", "c1", "session", "run-1").
 		AddMemory("m2", "d2", "c2", "global", "run-1")
 
@@ -263,7 +276,7 @@ func TestRemoveMemory(t *testing.T) {
 }
 
 func TestMemoryFilters(t *testing.T) {
-	ctx := New("id", "desc", "inst").
+	ctx := createTestContext(t, "id", "desc", "inst").
 		AddMemory("m1", "d1", "c1", "session", "run-1").
 		AddMemory("m2", "d2", "c2", "global", "run-1").
 		AddMemory("m3", "d3", "c3", "session", "run-2")
@@ -320,7 +333,7 @@ func TestMemoryFilters(t *testing.T) {
 }
 
 func TestMemoryFindByID(t *testing.T) {
-	ctx := New("id", "desc", "inst").
+	ctx := createTestContext(t, "id", "desc", "inst").
 		AddMemory("m1", "desc1", "content1", "session", "run-1").
 		AddMemory("m2", "desc2", "content2", "global", "run-1")
 
@@ -387,7 +400,7 @@ func TestClearMethods(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := New("id", "desc", "inst")
+			ctx := createTestContext(t, "id", "desc", "inst")
 			tt.setup(ctx)
 			tt.clear(ctx)
 			got := tt.check(ctx)
@@ -401,7 +414,7 @@ func TestClearMethods(t *testing.T) {
 func TestClearAll(t *testing.T) {
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil)
 
-	ctx := New("id", "desc", "inst").
+	ctx := createTestContext(t, "id", "desc", "inst").
 		AddDocument(doc).
 		AddMemory("m1", "d1", "c1", "session", "run-1")
 
@@ -421,7 +434,7 @@ func TestClearAll(t *testing.T) {
 }
 
 func TestSetMethods(t *testing.T) {
-	ctx := New("id", "desc", "inst")
+	ctx := createTestContext(t, "id", "desc", "inst")
 
 	ctx.SetDescription("new description").
 		SetInstructions("new instructions").
@@ -439,7 +452,7 @@ func TestSetMethods(t *testing.T) {
 }
 
 func TestHistoryQuery(t *testing.T) {
-	ctx := New("id", "desc", "inst")
+	ctx := createTestContext(t, "id", "desc", "inst")
 
 	turn1 := ConversationTurn{AgentName: "agent1", Hidden: false}
 	turn2 := ConversationTurn{AgentName: "agent2", Hidden: false}
@@ -485,5 +498,46 @@ func TestHistoryQuery(t *testing.T) {
 				t.Errorf("expected %d turns, got %d", tt.wantCount, len(result))
 			}
 		})
+	}
+}
+
+func TestBuildPromptIncludesSessionFiles(t *testing.T) {
+	ee, err := NewExecutionEnvironment(t.TempDir(), "test-agent")
+	if err != nil {
+		t.Fatalf("failed to create test execution environment: %v", err)
+	}
+
+	sessionFileContent := "session file content for testing"
+	sessionFileName := "session_test.txt"
+	sessionFilePath := filepath.Join(ee.SessionDir, sessionFileName)
+	
+	err = os.WriteFile(sessionFilePath, []byte(sessionFileContent), 0644)
+	if err != nil {
+		t.Fatalf("failed to create session file: %v", err)
+	}
+
+	ctx := New("test-id", "test description", "test instructions", ee)
+	ctx.StartTurn("test user message")
+
+	msgs, err := ctx.BuildPrompt([]ai.Tool{}, false)
+	if err != nil {
+		t.Fatalf("BuildPrompt failed: %v", err)
+	}
+
+	if len(msgs) == 0 {
+		t.Fatal("expected at least one message")
+	}
+
+	sysMsg, ok := msgs[0].(ai.SystemMessage)
+	if !ok {
+		t.Fatalf("expected first message to be SystemMessage, got %T", msgs[0])
+	}
+
+	if !strings.Contains(sysMsg.Content, sessionFileContent) {
+		t.Errorf("system message should contain session file content %q, got: %s", sessionFileContent, sysMsg.Content)
+	}
+
+	if !strings.Contains(sysMsg.Content, sessionFileName) {
+		t.Errorf("system message should contain session file name %q, got: %s", sessionFileName, sysMsg.Content)
 	}
 }

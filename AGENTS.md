@@ -30,6 +30,16 @@ The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runti
 
 The root `aigentic` package (`agent.go`) provides the declarative `Agent` type that users configure, which internally creates and manages `run.AgentRun` instances for execution.
 
+### The `ctxt` Package
+
+The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context management and execution environment for agents:
+
+- **AgentContext** (`context.go`) - Manages agent state including memories, documents, conversation history, and execution environment
+- **ExecutionEnvironment** (`environment.go`) - Provides structured directory layout for agent execution with `session/`, `files/`, and `output/` directories. Session files are automatically loaded into prompts.
+- **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
+- **ConversationTurn** (`conversation_turn.go`) - Represents individual conversation turns
+- **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context, memories, documents, and session files
+
 ## Build, Test, and Development Commands
 - Build library: `go build ./...` — compile all packages.
 - Run tests: `go test ./...` — execute unit/integration tests.

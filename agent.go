@@ -76,6 +76,10 @@ type Agent struct {
 	EnableEvaluation bool
 
 	Retrievers []run.Retriever
+
+	// BaseDir is the base directory for the agent execution environment.
+	// If not set, the agent will use the default temporary directory.
+	BaseDir string
 }
 
 // Start starts a new agent run.
@@ -93,7 +97,10 @@ func (a Agent) New() (*run.AgentRun, error) {
 	if a.Name == "" {
 		a.Name = "noname_" + uuid.New().String()
 	}
-	ar := run.NewAgentRun(a.Name, a.Description, a.Instructions)
+	ar, err := run.NewAgentRun(a.Name, a.Description, a.Instructions, a.BaseDir)
+	if err != nil {
+		return nil, err
+	}
 	ar.SetModel(a.Model)
 	ar.SetInterceptors(a.Interceptors)
 	ar.SetMaxLLMCalls(a.MaxLLMCalls)

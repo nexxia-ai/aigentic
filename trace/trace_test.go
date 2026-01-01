@@ -9,8 +9,12 @@ import (
 	"github.com/nexxia-ai/aigentic/run"
 )
 
-func createTestAgentRun(agentName, modelName string) *run.AgentRun {
-	a := run.NewAgentRun("testAgent", "", "")
+func createTestAgentRun(t *testing.T, agentName, modelName string) *run.AgentRun {
+	tempDir := t.TempDir()
+	a, err := run.NewAgentRun(agentName, "", "", tempDir)
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	a.SetModel(&ai.Model{ModelName: modelName})
 	return a
 }
@@ -21,7 +25,7 @@ func TestTrace_LLMCall_ResourceMessage(t *testing.T) {
 	trace := NewTracer(TraceConfig{Directory: tempDir})
 	defer trace.Close()
 
-	run := createTestAgentRun("test-agent", "test-model")
+	run := createTestAgentRun(t, "test-agent", "test-model")
 
 	messages := []ai.Message{
 		ai.UserMessage{
@@ -74,7 +78,7 @@ func TestTrace_LLMCall_ResourceMessageWithContent(t *testing.T) {
 	trace := NewTracer(TraceConfig{Directory: tempDir})
 	defer trace.Close()
 
-	run := createTestAgentRun("test-agent", "test-model")
+	run := createTestAgentRun(t, "test-agent", "test-model")
 
 	messages := []ai.Message{
 		ai.ResourceMessage{

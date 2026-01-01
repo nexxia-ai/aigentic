@@ -3,6 +3,7 @@ package document
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"mime"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,14 @@ func (d *Document) Bytes() ([]byte, error) {
 	}
 
 	return d.binary, nil
+}
+
+func (d *Document) Text() string {
+	b, err := d.Bytes()
+	if err != nil {
+		slog.Error("failed to get document bytes", "error", err)
+	}
+	return string(b)
 }
 
 func (d *Document) IsChunk() bool {

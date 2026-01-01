@@ -101,7 +101,10 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			agentRun := NewAgentRun("test-streaming-agent", tt.description, "")
+			agentRun, err := NewAgentRun("test-streaming-agent", tt.description, "", t.TempDir())
+			if err != nil {
+				t.Fatalf("failed to create test agent run: %v", err)
+			}
 			agentRun.SetModel(tt.streamingModel)
 			agentRun.SetStreaming(true)
 			agentRun.SetTracer(newTestTracer())
@@ -167,7 +170,10 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 }
 
 func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
-	agentRun := NewAgentRun("test-non-streaming-agent", "Test non-streaming agent", "")
+	agentRun, err := NewAgentRun("test-non-streaming-agent", "Test non-streaming agent", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	agentRun.SetModel(ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{
 			Role:    ai.AssistantRole,
@@ -203,7 +209,10 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 }
 
 func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
-	agentRun := NewAgentRun("test-tool-streaming-agent", "Test streaming agent with tool calls", "")
+	agentRun, err := NewAgentRun("test-tool-streaming-agent", "Test streaming agent with tool calls", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	agentRun.SetModel(ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{
 			Role: ai.AssistantRole,
@@ -265,7 +274,10 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 }
 
 func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
-	agentRun := NewAgentRun("test-limited-agent", "Test agent with LLM call limit", "")
+	agentRun, err := NewAgentRun("test-limited-agent", "Test agent with LLM call limit", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	agentRun.SetModel(ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{
 			Role:    ai.AssistantRole,
@@ -351,7 +363,10 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 		}, nil
 	})
 
-	agentRun := NewAgentRun("test-chunk-agent", "Test agent with controlled chunking", "")
+	agentRun, err := NewAgentRun("test-chunk-agent", "Test agent with controlled chunking", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	agentRun.SetModel(streamingModel)
 	agentRun.SetStreaming(true)
 	agentRun.SetTracer(newTestTracer())
@@ -458,7 +473,10 @@ func TestToolApprovalTimeout(t *testing.T) {
 	approvalTimeout = time.Millisecond * 300
 	tickerInterval = time.Millisecond * 100
 
-	ar := NewAgentRun("timeout_test_agent", "Test agent for approval timeout functionality", "Use the test_approval_tool when requested.")
+	ar, err := NewAgentRun("timeout_test_agent", "Test agent for approval timeout functionality", "Use the test_approval_tool when requested.", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	ar.SetModel(model)
 	ar.SetTools([]AgentTool{approvalTool})
 	ar.SetTracer(newTestTracer())
@@ -517,7 +535,10 @@ func TestAgentRun_ReuseAfterCompletion(t *testing.T) {
 		}, nil
 	})
 
-	ar := NewAgentRun("test-reuse-agent", "Test agent for reuse", "")
+	ar, err := NewAgentRun("test-reuse-agent", "Test agent for reuse", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	ar.SetModel(model)
 	ar.SetTracer(newTestTracer())
 
@@ -541,7 +562,10 @@ func TestAgentRun_ReuseAfterCancel(t *testing.T) {
 		}, nil
 	})
 
-	ar := NewAgentRun("test-cancel-reuse-agent", "Test agent for cancel and reuse", "")
+	ar, err := NewAgentRun("test-cancel-reuse-agent", "Test agent for cancel and reuse", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	ar.SetModel(model)
 	ar.SetTracer(newTestTracer())
 
@@ -567,7 +591,10 @@ func TestAgentRun_MemoryPersistenceAcrossRuns(t *testing.T) {
 		}, nil
 	})
 
-	ar := NewAgentRun("test-memory-agent", "Test agent with memory", "")
+	ar, err := NewAgentRun("test-memory-agent", "Test agent with memory", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	ar.SetModel(model)
 	ar.SetTracer(newTestTracer())
 
@@ -602,7 +629,10 @@ func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
 	})
 	model2.ModelName = "model-2"
 
-	ar := NewAgentRun("test-setmodel-agent", "Test agent for SetModel", "")
+	ar, err := NewAgentRun("test-setmodel-agent", "Test agent for SetModel", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test agent run: %v", err)
+	}
 	ar.SetModel(model1)
 	ar.SetTracer(newTestTracer())
 

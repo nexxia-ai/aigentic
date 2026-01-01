@@ -3,8 +3,10 @@ package ctxt
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
 )
 
 const DefaultSystemTemplate = `
@@ -49,6 +51,14 @@ You have access to the following tools:
 </memory>
 {{end}}
 </memories>
+{{end}}
+
+{{if .Documents}}
+{{range .Documents}}
+<document name="{{.Filename}}">
+{{.Text}}
+</document>
+{{end}}
 {{end}}`
 
 const DefaultUserTemplate = `
@@ -74,11 +84,23 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 	var filteredMemories []MemoryEntry
 	filteredMemories = append(filteredMemories, memories...)
 
+	// Load session files from execution environment
+	sessionDocs := make([]*document.Document, 0)
+	if ee := ac.ExecutionEnvironment(); ee != nil {
+		docs, err := ee.SessionFiles()
+		if err != nil {
+			slog.Error("failed to load session files", "error", err)
+		} else {
+			sessionDocs = docs
+		}
+	}
+
 	systemVars := map[string]any{
 		"Role":               ac.description,
 		"Instructions":       ac.instructions,
 		"Tools":              tools,
 		"Memories":           filteredMemories,
+		"Documents":          sessionDocs,
 		"OutputInstructions": ac.outputInstructions,
 	}
 
@@ -92,12 +114,12 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 
 }
 
-func createUserMsg(ac *AgentContext, message string) (ai.Message, error) {
+func createUserMsg(ac *AgentContext, message string, documents []*document.Document) (ai.Message, error) {
 
 	userVars := map[string]any{
 		"Message":            message,
 		"HasMessage":         message != "",
-		"Documents":          ac.documents,
+		"Documents":          documents,
 		"DocumentReferences": ac.documentReferences,
 	}
 	var userBuf bytes.Buffer
@@ -129,7 +151,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	}
 
 	// Add user message before documents
-	userMsg, err := createUserMsg(r, r.currentConversationTurn.UserMessage)
+	userMsg, err := createUserMsg(r, r.currentConversationTurn.UserMessage, r.documents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user message: %w", err)
 	}
@@ -137,7 +159,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		msgs = append(msgs, userMsg)
 	}
 
-	// Add documents second
+	// Add documents second (including session files)
 	msgs = append(msgs, r.insertDocuments(r.documents, r.documentReferences)...)
 
 	// tool messages are last

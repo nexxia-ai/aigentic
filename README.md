@@ -492,6 +492,25 @@ agent := aigentic.Agent{
 response, _ := agent.Execute("Complex reasoning task")
 ```
 
+### Execution Environment
+
+Each agent run creates an `ExecutionEnvironment` that provides a structured directory layout for agent execution. The environment is automatically created when an agent run starts and provides directories for organizing files, session data, and outputs.
+
+The execution environment is automatically created when an agent run starts. If no base directory is specified, it defaults to the system temporary directory.
+
+
+**Directory Structure:**
+
+The execution environment creates the following directory structure under a base directory:
+
+```
+{baseDir}/
+  └── agent-{runID}/
+      ├── session/    # Session files automatically loaded into prompts
+      ├── files/      # General file storage
+      └── output/     # Agent output files
+```
+
 ### MCP (Model Context Protocol) Integration
 
 aigentic supports MCP servers for tool integration. See the [MCP examples](https://github.com/nexxia-ai/aigentic-examples) for complete integration patterns.

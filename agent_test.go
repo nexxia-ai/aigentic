@@ -10,7 +10,6 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
-	"github.com/nexxia-ai/aigentic/trace"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -70,7 +69,7 @@ func TestAgentToolCalling(t *testing.T) {
 	agent := Agent{
 		Name:        "test-tool-agent",
 		Description: "A test agent that uses tools",
-		Tracer:      trace.NewTracer(),
+		EnableTrace: true,
 		AgentTools:  []run.AgentTool{testTool},
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			callCount++
@@ -128,7 +127,7 @@ func TestAgentFileAttachment(t *testing.T) {
 				Content: "I've received your message and the attached files. I can see you've attached a text file and an image.",
 			}, nil
 		}),
-		Tracer: trace.NewTracer(),
+		EnableTrace: true,
 	}
 
 	result, err := agent.Execute("Please analyze these attached files")
@@ -436,7 +435,7 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 		3. Return the summary and the detailed information in markdown format`,
 		Agents: []Agent{childAgent},
 		Stream: true,
-		Tracer: trace.NewTracer(),
+		EnableTrace: true,
 	}
 
 	message := "Tell me about artificial intelligence and its applications"

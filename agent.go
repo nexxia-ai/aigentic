@@ -62,10 +62,6 @@ type Agent struct {
 	// The document will be fetched from the document store when the agent needs it.
 	DocumentReferences []*document.Document
 
-	// Tracer defines the trace factory for the agent.
-	// Set "Tracer: trace.NewTracer()" to create trace files for each run.
-	// Each run gets its own independent trace file.
-	Tracer      run.Trace // deprecated, use EnableTrace instead
 	EnableTrace bool
 
 	// Interceptors chain allows inspection and modification of model calls
@@ -109,7 +105,6 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetInterceptors(a.Interceptors)
 	ar.SetMaxLLMCalls(a.MaxLLMCalls)
 
-	ar.SetTracer(a.Tracer)
 	if a.EnableTrace {
 		dir := filepath.Join(ar.AgentContext().ExecutionEnvironment().RootDir, "traces")
 		os.MkdirAll(dir, 0755)

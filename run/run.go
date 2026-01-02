@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,7 +94,7 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 	})
 
 	if baseDir == "" {
-		baseDir = os.TempDir()
+		baseDir = filepath.Join(os.TempDir(), "aigentic-workspace")
 	}
 	ee, err := ctxt.NewExecutionEnvironment(baseDir, runID)
 	if err != nil {

@@ -11,7 +11,6 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
-	"github.com/nexxia-ai/aigentic/trace"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -530,7 +529,7 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
-		Tracer: trace.NewTracer(),
+		EnableTrace: true,
 		// LogLevel: slog.LevelDebug,
 	}
 
@@ -673,14 +672,13 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 		},
 	}
 
-	tracer := trace.NewTracer()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := Agent{
 				Model:        model,
 				Description:  tc.description,
 				Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
-				Tracer:       tracer,
+				EnableTrace:  true,
 				Documents:    tc.attachments,
 			}
 
@@ -732,7 +730,7 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		Return the final names as received from the last expert. do not add any additional text or commentary.`,
 		Model:  model,
 		Agents: experts,
-		Tracer: trace.NewTracer(),
+		EnableTrace: true,
 	}
 
 	agentRun, err := coordinator.Start("call the names of expert1, expert2 and expert3 and return them in order, do not add any additional text or commentary.")
@@ -763,7 +761,7 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		Description:  "You are a helpful assistant that can perform various tasks.",
 		Instructions: "use tools when requested.",
 		AgentTools:   []run.AgentTool{NewLookupCompanyNumberTool(&counter)},
-		Tracer:       trace.NewTracer(),
+		EnableTrace:  true,
 	}
 
 	// Define multiple sequential runs
@@ -1070,7 +1068,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 			"CRITICAL: Execute step 1, then step 2, then step 3, etc. - NEVER execute multiple steps simultaneously.",
 		AgentTools: []run.AgentTool{newMemoryTool()},
 		Agents:     []Agent{lookupCompany, lookupSupplier},
-		Tracer:     trace.NewTracer(),
+		EnableTrace: true,
 	}
 
 	agentRun, err := coordinator.Start(

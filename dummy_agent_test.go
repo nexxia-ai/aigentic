@@ -8,7 +8,6 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
-	"github.com/nexxia-ai/aigentic/trace"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -237,7 +236,7 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		Instructions: "Always use the lookup_company_name tool to get information.",
 		MaxLLMCalls:  3, // Limit to 3 LLM calls
 		AgentTools:   []run.AgentTool{tool},
-		Tracer:       trace.NewTracer(),
+		EnableTrace:  true,
 		// LogLevel:     slog.LevelDebug,
 	}
 
@@ -453,7 +452,7 @@ func TestToolApprovalGiven(t *testing.T) {
 		Description:  "Test agent for approval functionality",
 		Instructions: "Use the test_approval_tool when requested.",
 		AgentTools:   []run.AgentTool{approvalTool},
-		Tracer:       trace.NewTracer(),
+		EnableTrace:  true,
 		// LogLevel:     slog.LevelDebug,
 	}
 
@@ -503,7 +502,7 @@ func TestToolApprovalRejected(t *testing.T) {
 		Description:  "Test agent for approval functionality",
 		Instructions: "Use the test_approval_tool when requested.",
 		AgentTools:   []run.AgentTool{approvalTool},
-		Tracer:       trace.NewTracer(),
+		EnableTrace:  true,
 		// LogLevel:     slog.LevelDebug,
 	}
 
@@ -778,7 +777,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
 		Agents: []Agent{lookup, companyCreator, invoiceCreator},
-		Tracer: trace.NewTracer(),
+		EnableTrace: true,
 	}
 
 	// Now run the same test logic as TestTeamCoordination

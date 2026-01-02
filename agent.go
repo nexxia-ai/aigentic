@@ -3,11 +3,14 @@ package aigentic
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/run"
+	"github.com/nexxia-ai/aigentic/trace"
 )
 
 // ContextFunction is a function that provides dynamic context for the agent.
@@ -62,7 +65,8 @@ type Agent struct {
 	// Tracer defines the trace factory for the agent.
 	// Set "Tracer: trace.NewTracer()" to create trace files for each run.
 	// Each run gets its own independent trace file.
-	Tracer run.Trace
+	Tracer      run.Trace // deprecated, use EnableTrace instead
+	EnableTrace bool
 
 	// Interceptors chain allows inspection and modification of model calls
 	Interceptors []run.Interceptor
@@ -104,7 +108,13 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetModel(a.Model)
 	ar.SetInterceptors(a.Interceptors)
 	ar.SetMaxLLMCalls(a.MaxLLMCalls)
+
 	ar.SetTracer(a.Tracer)
+	if a.EnableTrace {
+		dir := filepath.Join(ar.AgentContext().ExecutionEnvironment().RootDir, "traces")
+		os.MkdirAll(dir, 0755)
+		ar.SetTracer(trace.NewTracer(trace.TraceConfig{Directory: dir}))
+	}
 	ar.SetTools(a.AgentTools)
 	ar.SetRetrievers(a.Retrievers)
 	ar.SetStreaming(a.Stream)

@@ -8,7 +8,6 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/run"
-	"github.com/nexxia-ai/aigentic/trace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -175,6 +174,8 @@ func (cfg *ConfigFile) InstantiateAgents(
 			Stream:             ac.Stream,
 			MaxLLMCalls:        ac.MaxLLMCalls,
 			EnableEvaluation:   ac.EnableEvaluation,
+			EnableTrace:        ac.EnableTrace,
+			IncludeHistory:     ac.IncludeHistory,
 		}
 		// Map log level strings to slog.Level
 		switch ac.LogLevel {
@@ -189,12 +190,7 @@ func (cfg *ConfigFile) InstantiateAgents(
 		default:
 			// leave zero value if empty/unknown; validateConfig covers invalid
 		}
-		// Configure tracing if enabled
-		if ac.EnableTrace {
-			a.Tracer = trace.NewTracer()
-		}
-		// Configure conversation history if enabled
-		a.IncludeHistory = ac.IncludeHistory
+
 		// Attach tools from tool servers listed by name using resolver
 		for _, tname := range ac.Tools {
 			sc := cfg.Tools[tname]

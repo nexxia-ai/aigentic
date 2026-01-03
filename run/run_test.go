@@ -107,7 +107,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 			}
 			agentRun.SetModel(tt.streamingModel)
 			agentRun.SetStreaming(true)
-			agentRun.SetTracer(newTestTracer())
+			agentRun.SetEnableTrace(true)
 			defer agentRun.stop()
 
 			var events []event.Event
@@ -130,6 +130,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 				}
 			}()
 
+			agentRun.agentContext.StartTurn("")
 			agentRun.runLLMCallAction("Test message")
 
 			time.Sleep(100 * time.Millisecond)
@@ -181,7 +182,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 		}, nil
 	}))
 	agentRun.SetStreaming(false)
-	agentRun.SetTracer(newTestTracer())
+	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
 	var contentEvents []*event.ContentEvent
@@ -198,6 +199,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 		}
 	}()
 
+	agentRun.agentContext.StartTurn("")
 	agentRun.runLLMCallAction("Test message")
 
 	time.Sleep(100 * time.Millisecond)
@@ -233,7 +235,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 		}, nil
 	}))
 	agentRun.SetStreaming(true)
-	agentRun.SetTracer(newTestTracer())
+	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
 	var contentEvents []*event.ContentEvent
@@ -250,6 +252,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 		}
 	}()
 
+	agentRun.agentContext.StartTurn("")
 	agentRun.runLLMCallAction("Test message")
 
 	time.Sleep(100 * time.Millisecond)
@@ -286,7 +289,7 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 	}))
 	agentRun.SetStreaming(true)
 	agentRun.SetMaxLLMCalls(2)
-	agentRun.SetTracer(newTestTracer())
+	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
 	var actions []action
@@ -296,6 +299,7 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 		}
 	}()
 
+	agentRun.agentContext.StartTurn("")
 	agentRun.runLLMCallAction("First call")
 	agentRun.runLLMCallAction("Second call")
 	agentRun.runLLMCallAction("Third call")
@@ -369,7 +373,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 	}
 	agentRun.SetModel(streamingModel)
 	agentRun.SetStreaming(true)
-	agentRun.SetTracer(newTestTracer())
+	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
 	var contentEvents []*event.ContentEvent
@@ -381,6 +385,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 		}
 	}()
 
+	agentRun.agentContext.StartTurn("")
 	agentRun.runLLMCallAction("Test chunking")
 
 	time.Sleep(100 * time.Millisecond)
@@ -479,7 +484,7 @@ func TestToolApprovalTimeout(t *testing.T) {
 	}
 	ar.SetModel(model)
 	ar.SetTools([]AgentTool{approvalTool})
-	ar.SetTracer(newTestTracer())
+	ar.SetEnableTrace(true)
 	ar.approvalTimeout = approvalTimeout
 	ar.Run(context.Background(), "Please execute the test tool with action 'test_action'")
 	defer func() {
@@ -540,7 +545,7 @@ func TestAgentRun_ReuseAfterCompletion(t *testing.T) {
 		t.Fatalf("failed to create test agent run: %v", err)
 	}
 	ar.SetModel(model)
-	ar.SetTracer(newTestTracer())
+	ar.SetEnableTrace(true)
 
 	ar.Run(context.Background(), "First message")
 	content1, err1 := ar.Wait(0)
@@ -567,7 +572,7 @@ func TestAgentRun_ReuseAfterCancel(t *testing.T) {
 		t.Fatalf("failed to create test agent run: %v", err)
 	}
 	ar.SetModel(model)
-	ar.SetTracer(newTestTracer())
+	ar.SetEnableTrace(true)
 
 	ar.Run(context.Background(), "First message")
 	ar.Cancel()
@@ -596,7 +601,7 @@ func TestAgentRun_MemoryPersistenceAcrossRuns(t *testing.T) {
 		t.Fatalf("failed to create test agent run: %v", err)
 	}
 	ar.SetModel(model)
-	ar.SetTracer(newTestTracer())
+	ar.SetEnableTrace(true)
 
 	ar.Run(context.Background(), "First message")
 	content1, err1 := ar.Wait(0)
@@ -634,7 +639,7 @@ func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
 		t.Fatalf("failed to create test agent run: %v", err)
 	}
 	ar.SetModel(model1)
-	ar.SetTracer(newTestTracer())
+	ar.SetEnableTrace(true)
 
 	ar.Run(context.Background(), "First message")
 	content1, err1 := ar.Wait(0)

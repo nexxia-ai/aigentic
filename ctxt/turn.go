@@ -28,14 +28,14 @@ type Turn struct {
 	Hidden      bool            `json:"hidden"`
 }
 
-func NewTurn(userMessage, runID, agentName, traceFile, turnID string) *Turn {
+func NewTurn(userMessage, runID, agentName, turnID string) *Turn {
 	return &Turn{
 		TurnID:      turnID,
 		Request:     ai.UserMessage{Role: ai.UserRole, Content: userMessage},
 		UserMessage: userMessage,
 		messages:    make([]ai.Message, 0),
 		Documents:   make([]DocumentEntry, 0),
-		TraceFile:   traceFile,
+		TraceFile:   "",
 		RunID:       runID,
 		Timestamp:   time.Now(),
 		AgentName:   agentName,

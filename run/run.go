@@ -36,6 +36,7 @@ type AgentRun struct {
 	processedToolCallIDs map[string]bool
 	currentStreamGroup   *ToolCallGroup
 	trace                Trace
+	enableTrace          bool
 	parentRun            *AgentRun
 	Logger               *slog.Logger
 	logLevel             slog.LevelVar
@@ -102,7 +103,7 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 	}
 
 	ac := ctxt.New(runID, description, instructions, ee)
-	ac.StartTurn("")
+	// ac.StartTurn("")
 	run := &AgentRun{
 		agentName:            name,
 		id:                   runID,
@@ -117,6 +118,7 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 		approvalTimeout:      approvalTimeout,
 		interceptors:         make([]Interceptor, 0),
 		tools:                make([]AgentTool, 0),
+		trace:                &TraceRun{},
 		streaming:            false,
 		includeHistory:       true,
 	}
@@ -141,20 +143,16 @@ func (r *AgentRun) SetAgentName(agentName string) {
 	r.agentName = agentName
 }
 
+func (r *AgentRun) SetEnableTrace(enable bool) {
+	r.enableTrace = enable
+}
+
 func (r *AgentRun) SetInterceptors(interceptors []Interceptor) {
 	r.interceptors = interceptors
 }
 
 func (r *AgentRun) SetMaxLLMCalls(maxLLMCalls int) {
 	r.maxLLMCalls = maxLLMCalls
-}
-
-func (r *AgentRun) SetTracer(tracer Trace) {
-	r.trace = tracer
-}
-
-func (r *AgentRun) Tracer() Trace {
-	return r.trace
 }
 
 func (r *AgentRun) SetTools(tools []AgentTool) {
@@ -170,7 +168,18 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 }
 
 func (r *AgentRun) Run(ctx context.Context, message string) {
-	r.agentContext.StartTurn(message)
+
+	turn := r.agentContext.StartTurn(message)
+	turnDir := filepath.Join(r.agentContext.ExecutionEnvironment().TurnDir, turn.TurnID)
+	os.MkdirAll(turnDir, 0755)
+
+	if r.enableTrace {
+		traceFile := filepath.Join(turnDir, "trace.txt")
+		turn.TraceFile = traceFile
+		r.trace = &TraceRun{filepath: traceFile}
+	}
+
+	turn.AgentName = r.agentName
 
 	r.ctx, r.cancelFunc = context.WithCancel(ctx)
 	r.pendingApprovals = make(map[string]pendingApproval)
@@ -235,7 +244,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			content, err := subRun.Wait(0)
 
 			// Record sub-agent errors to trace
-			if r.trace != nil && err != nil {
+			if r.enableTrace && err != nil {
 				r.trace.RecordError(fmt.Errorf("sub-agent %s error: %v", name, err))
 			}
 

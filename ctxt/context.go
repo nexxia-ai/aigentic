@@ -2,8 +2,6 @@ package ctxt
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"text/template"
 	"time"
@@ -245,18 +243,13 @@ func (r *AgentContext) GetHistory() *ConversationHistory {
 	return r.conversationHistory
 }
 
-func (r *AgentContext) StartTurn(userMessage string) *AgentContext {
+func (r *AgentContext) StartTurn(userMessage string) *Turn {
 	r.turnCounter++
 	turnID := fmt.Sprintf("turn-%03d", r.turnCounter)
 
-	if r.execEnv != nil {
-		turnDir := filepath.Join(r.execEnv.TurnDir, turnID)
-		os.MkdirAll(turnDir, 0755)
-	}
-
-	turn := NewTurn(userMessage, r.id, "", "", turnID)
+	turn := NewTurn(userMessage, r.id, "", turnID)
 	r.currentConversationTurn = turn
-	return r
+	return turn
 }
 
 func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {

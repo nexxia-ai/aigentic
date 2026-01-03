@@ -39,7 +39,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	interceptors := r.interceptors
 
 	// Trace must be the last interceptor to capture the full exchange
-	if r.trace != nil {
+	if r.enableTrace {
 		interceptors = append(interceptors, r.trace)
 	}
 	for _, interceptor := range interceptors {
@@ -53,7 +53,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 
 	result, err := tool.call(r, currentValidationResult)
 	if err != nil {
-		if r.trace != nil {
+		if r.enableTrace {
 			r.trace.RecordError(err)
 		}
 		errMsg := fmt.Sprintf("tool execution error: %v", err)
@@ -66,7 +66,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		currentResult, err = interceptor.AfterToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult, currentResult)
 		if err != nil {
 			errMsg := fmt.Sprintf("interceptor error after tool call: %v", err)
-			if r.trace != nil {
+			if r.enableTrace {
 				r.trace.RecordError(err)
 			}
 			r.queueAction(&toolResponseAction{request: act, response: errMsg})
@@ -81,7 +81,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		if response != "" {
 			toolErr = fmt.Errorf("tool %s reported error: %s", act.ToolName, response)
 		}
-		if r.trace != nil {
+		if r.enableTrace {
 			r.trace.RecordError(toolErr)
 		}
 	}
@@ -153,7 +153,7 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *ToolCallGroup) bool {
 
 	var args map[string]interface{}
 	if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
-		if r.trace != nil {
+		if r.enableTrace {
 			r.trace.RecordError(err)
 		}
 		r.queueAction(&toolResponseAction{

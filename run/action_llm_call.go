@@ -59,7 +59,7 @@ func (r *AgentRun) runLLMCallAction(message string) {
 	interceptors := r.interceptors
 
 	// Trace must be the last interceptor to capture the full exchange
-	if r.trace != nil {
+	if r.enableTrace {
 		interceptors = append(interceptors, r.trace)
 	}
 	for _, interceptor := range interceptors {
@@ -86,7 +86,7 @@ func (r *AgentRun) runLLMCallAction(message string) {
 	}
 
 	if err != nil {
-		if r.trace != nil {
+		if r.enableTrace {
 			r.trace.RecordError(err)
 		}
 		r.queueAction(&stopAction{Error: err})

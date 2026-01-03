@@ -3,14 +3,11 @@ package aigentic
 import (
 	"context"
 	"log/slog"
-	"os"
-	"path/filepath"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/run"
-	"github.com/nexxia-ai/aigentic/trace"
 )
 
 // ContextFunction is a function that provides dynamic context for the agent.
@@ -105,11 +102,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetInterceptors(a.Interceptors)
 	ar.SetMaxLLMCalls(a.MaxLLMCalls)
 
-	if a.EnableTrace {
-		dir := filepath.Join(ar.AgentContext().ExecutionEnvironment().RootDir, "traces")
-		os.MkdirAll(dir, 0755)
-		ar.SetTracer(trace.NewTracer(trace.TraceConfig{Directory: dir}))
-	}
+	ar.SetEnableTrace(a.EnableTrace)
 	ar.SetTools(a.AgentTools)
 	ar.SetRetrievers(a.Retrievers)
 	ar.SetStreaming(a.Stream)

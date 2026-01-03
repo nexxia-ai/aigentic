@@ -13,14 +13,14 @@ import (
 )
 
 type ConversationHistory struct {
-	turns   []ConversationTurn
+	turns   []Turn
 	mutex   sync.RWMutex
 	execEnv *ExecutionEnvironment
 }
 
 func NewConversationHistory(execEnv *ExecutionEnvironment) *ConversationHistory {
 	h := &ConversationHistory{
-		turns:   make([]ConversationTurn, 0),
+		turns:   make([]Turn, 0),
 		execEnv: execEnv,
 	}
 	if execEnv != nil {
@@ -49,7 +49,7 @@ func (h *ConversationHistory) GetMessages() []ai.Message {
 	return messages
 }
 
-func (h *ConversationHistory) appendTurn(turn ConversationTurn) {
+func (h *ConversationHistory) appendTurn(turn Turn) {
 	h.mutex.Lock()
 	h.turns = append(h.turns, turn)
 	h.mutex.Unlock()
@@ -59,7 +59,7 @@ func (h *ConversationHistory) appendTurn(turn ConversationTurn) {
 	}
 }
 
-func (h *ConversationHistory) appendTurnToFile(turn ConversationTurn) {
+func (h *ConversationHistory) appendTurnToFile(turn Turn) {
 
 	historyFile := filepath.Join(h.execEnv.HistoryDir, "history.json")
 
@@ -111,7 +111,7 @@ func (h *ConversationHistory) LoadFromFile() error {
 			continue
 		}
 
-		var turn ConversationTurn
+		var turn Turn
 		if err := json.Unmarshal(line, &turn); err != nil {
 			slog.Warn("failed to parse turn from history file", "error", err, "line", string(line))
 			continue
@@ -131,7 +131,7 @@ func (h *ConversationHistory) Clear() {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
-	h.turns = make([]ConversationTurn, 0)
+	h.turns = make([]Turn, 0)
 }
 
 func (h *ConversationHistory) Len() int {
@@ -141,11 +141,11 @@ func (h *ConversationHistory) Len() int {
 	return len(h.turns)
 }
 
-func (h *ConversationHistory) FindByTraceFile(traceFile string) []ConversationTurn {
+func (h *ConversationHistory) FindByTraceFile(traceFile string) []Turn {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
-	var result []ConversationTurn
+	var result []Turn
 	for _, turn := range h.turns {
 		if turn.TraceFile == traceFile {
 			result = append(result, turn)
@@ -154,16 +154,16 @@ func (h *ConversationHistory) FindByTraceFile(traceFile string) []ConversationTu
 	return result
 }
 
-func (h *ConversationHistory) GetTurns() []ConversationTurn {
+func (h *ConversationHistory) GetTurns() []Turn {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
-	result := make([]ConversationTurn, len(h.turns))
+	result := make([]Turn, len(h.turns))
 	copy(result, h.turns)
 	return result
 }
 
-func (h *ConversationHistory) Last(n int) []ConversationTurn {
+func (h *ConversationHistory) Last(n int) []Turn {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
@@ -172,16 +172,16 @@ func (h *ConversationHistory) Last(n int) []ConversationTurn {
 		turns = turns[len(turns)-n:]
 	}
 
-	result := make([]ConversationTurn, len(turns))
+	result := make([]Turn, len(turns))
 	copy(result, turns)
 	return result
 }
 
-func (h *ConversationHistory) FilterByAgent(name string) []ConversationTurn {
+func (h *ConversationHistory) FilterByAgent(name string) []Turn {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
-	var result []ConversationTurn
+	var result []Turn
 	for _, turn := range h.turns {
 		if turn.AgentName == name {
 			result = append(result, turn)
@@ -190,11 +190,11 @@ func (h *ConversationHistory) FilterByAgent(name string) []ConversationTurn {
 	return result
 }
 
-func (h *ConversationHistory) ExcludeHidden() []ConversationTurn {
+func (h *ConversationHistory) ExcludeHidden() []Turn {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
-	var result []ConversationTurn
+	var result []Turn
 	for _, turn := range h.turns {
 		if !turn.Hidden {
 			result = append(result, turn)

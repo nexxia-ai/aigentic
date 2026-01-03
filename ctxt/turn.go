@@ -14,7 +14,8 @@ type DocumentEntry struct {
 	ToolID   string             `json:"tool_id"`
 }
 
-type ConversationTurn struct {
+type Turn struct {
+	TurnID      string          `json:"turn_id"`
 	Request     ai.Message      `json:"-"`
 	UserMessage string          `json:"user_message"`
 	messages    []ai.Message    `json:"-"`
@@ -27,8 +28,9 @@ type ConversationTurn struct {
 	Hidden      bool            `json:"hidden"`
 }
 
-func NewConversationTurn(userMessage, runID, agentName, traceFile string) *ConversationTurn {
-	return &ConversationTurn{
+func NewTurn(userMessage, runID, agentName, traceFile, turnID string) *Turn {
+	return &Turn{
+		TurnID:      turnID,
 		Request:     ai.UserMessage{Role: ai.UserRole, Content: userMessage},
 		UserMessage: userMessage,
 		messages:    make([]ai.Message, 0),
@@ -40,11 +42,11 @@ func NewConversationTurn(userMessage, runID, agentName, traceFile string) *Conve
 	}
 }
 
-func (t *ConversationTurn) AddMessage(msg ai.Message) {
+func (t *Turn) AddMessage(msg ai.Message) {
 	t.messages = append(t.messages, msg)
 }
 
-func (t *ConversationTurn) AddDocument(toolID string, doc *document.Document) error {
+func (t *Turn) AddDocument(toolID string, doc *document.Document) error {
 	if doc == nil {
 		return fmt.Errorf("document cannot be nil")
 	}
@@ -59,7 +61,7 @@ func (t *ConversationTurn) AddDocument(toolID string, doc *document.Document) er
 	return nil
 }
 
-func (t *ConversationTurn) DeleteDocument(doc *document.Document) error {
+func (t *Turn) DeleteDocument(doc *document.Document) error {
 	if doc == nil {
 		return fmt.Errorf("document cannot be nil")
 	}
@@ -72,8 +74,8 @@ func (t *ConversationTurn) DeleteDocument(doc *document.Document) error {
 	return nil
 }
 
-func (t *ConversationTurn) MarshalJSON() ([]byte, error) {
-	type Alias ConversationTurn
+func (t *Turn) MarshalJSON() ([]byte, error) {
+	type Alias Turn
 
 	type messageJSON struct {
 		Type            string              `json:"type"`
@@ -166,8 +168,8 @@ func (t *ConversationTurn) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (t *ConversationTurn) UnmarshalJSON(data []byte) error {
-	type Alias ConversationTurn
+func (t *Turn) UnmarshalJSON(data []byte) error {
+	type Alias Turn
 
 	type messageJSON struct {
 		Type            string              `json:"type"`

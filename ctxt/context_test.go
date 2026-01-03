@@ -389,8 +389,8 @@ func TestClearMethods(t *testing.T) {
 		{
 			name: "clear history",
 			setup: func(ctx *AgentContext) {
-				ctx.GetHistory().appendTurn(ConversationTurn{})
-				ctx.GetHistory().appendTurn(ConversationTurn{})
+				ctx.GetHistory().appendTurn(Turn{})
+				ctx.GetHistory().appendTurn(Turn{})
 			},
 			clear:     func(ctx *AgentContext) { ctx.ClearHistory() },
 			check:     func(ctx *AgentContext) int { return ctx.GetHistory().Len() },
@@ -418,7 +418,7 @@ func TestClearAll(t *testing.T) {
 		AddDocument(doc).
 		AddMemory("m1", "d1", "c1", "session", "run-1")
 
-	ctx.GetHistory().appendTurn(ConversationTurn{})
+	ctx.GetHistory().appendTurn(Turn{})
 
 	ctx.ClearAll()
 
@@ -454,10 +454,10 @@ func TestSetMethods(t *testing.T) {
 func TestHistoryQuery(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
 
-	turn1 := ConversationTurn{AgentName: "agent1", Hidden: false}
-	turn2 := ConversationTurn{AgentName: "agent2", Hidden: false}
-	turn3 := ConversationTurn{AgentName: "agent1", Hidden: true}
-	turn4 := ConversationTurn{AgentName: "agent1", Hidden: false}
+	turn1 := Turn{AgentName: "agent1", Hidden: false}
+	turn2 := Turn{AgentName: "agent2", Hidden: false}
+	turn3 := Turn{AgentName: "agent1", Hidden: true}
+	turn4 := Turn{AgentName: "agent1", Hidden: false}
 
 	ctx.GetHistory().appendTurn(turn1)
 	ctx.GetHistory().appendTurn(turn2)
@@ -466,27 +466,27 @@ func TestHistoryQuery(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		query     func() []ConversationTurn
+		query     func() []Turn
 		wantCount int
 	}{
 		{
 			name:      "get all turns",
-			query:     func() []ConversationTurn { return ctx.GetHistory().GetTurns() },
+			query:     func() []Turn { return ctx.GetHistory().GetTurns() },
 			wantCount: 4,
 		},
 		{
 			name:      "last 2 turns",
-			query:     func() []ConversationTurn { return ctx.GetHistory().Last(2) },
+			query:     func() []Turn { return ctx.GetHistory().Last(2) },
 			wantCount: 2,
 		},
 		{
 			name:      "filter by agent1",
-			query:     func() []ConversationTurn { return ctx.GetHistory().FilterByAgent("agent1") },
+			query:     func() []Turn { return ctx.GetHistory().FilterByAgent("agent1") },
 			wantCount: 3,
 		},
 		{
 			name:      "exclude hidden",
-			query:     func() []ConversationTurn { return ctx.GetHistory().ExcludeHidden() },
+			query:     func() []Turn { return ctx.GetHistory().ExcludeHidden() },
 			wantCount: 3,
 		},
 	}
@@ -510,7 +510,7 @@ func TestBuildPromptIncludesSessionFiles(t *testing.T) {
 	sessionFileContent := "session file content for testing"
 	sessionFileName := "session_test.txt"
 	sessionFilePath := filepath.Join(ee.SessionDir, sessionFileName)
-	
+
 	err = os.WriteFile(sessionFilePath, []byte(sessionFileContent), 0644)
 	if err != nil {
 		t.Fatalf("failed to create session file: %v", err)

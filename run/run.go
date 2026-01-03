@@ -67,7 +67,7 @@ func (r *AgentRun) Model() *ai.Model {
 	return r.model
 }
 
-func (r *AgentRun) ConversationTurn() *ctxt.ConversationTurn {
+func (r *AgentRun) ConversationTurn() *ctxt.Turn {
 	return r.agentContext.ConversationTurn()
 }
 

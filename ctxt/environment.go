@@ -16,6 +16,7 @@ type ExecutionEnvironment struct {
 	FilesDir   string
 	OutputDir  string
 	HistoryDir string
+	TurnDir    string
 }
 
 func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, error) {
@@ -28,6 +29,7 @@ func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, er
 		FilesDir:   filepath.Join(rootDir, "files"),
 		OutputDir:  filepath.Join(rootDir, "output"),
 		HistoryDir: filepath.Join(rootDir, "history"),
+		TurnDir:    filepath.Join(rootDir, "turns"),
 	}
 	if err := e.init(); err != nil {
 		return nil, err
@@ -36,7 +38,7 @@ func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, er
 }
 
 func (e *ExecutionEnvironment) init() error {
-	dirs := []string{e.RootDir, e.SessionDir, e.FilesDir, e.OutputDir, e.HistoryDir}
+	dirs := []string{e.RootDir, e.SessionDir, e.FilesDir, e.OutputDir, e.HistoryDir, e.TurnDir}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -75,5 +77,6 @@ func (e *ExecutionEnvironment) EnvVars() map[string]string {
 		"AGENT_FILES_DIR":   e.FilesDir,
 		"AGENT_OUTPUT_DIR":  e.OutputDir,
 		"AGENT_HISTORY_DIR": e.HistoryDir,
+		"AGENT_TURN_DIR":    e.TurnDir,
 	}
 }

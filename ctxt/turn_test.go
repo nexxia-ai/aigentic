@@ -8,7 +8,7 @@ import (
 )
 
 func TestConversationTurnAddDocument(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
 
@@ -20,7 +20,7 @@ func TestConversationTurnAddDocument(t *testing.T) {
 }
 
 func TestConversationTurnAddDocumentNil(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	err := turn.AddDocument("tool1", nil)
 	assert.Error(t, err)
@@ -29,7 +29,7 @@ func TestConversationTurnAddDocumentNil(t *testing.T) {
 }
 
 func TestConversationTurnAddDocumentEmptyToolID(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
 
@@ -41,7 +41,7 @@ func TestConversationTurnAddDocumentEmptyToolID(t *testing.T) {
 }
 
 func TestConversationTurnAddMultipleDocuments(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
 	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
@@ -66,7 +66,7 @@ func TestConversationTurnAddMultipleDocuments(t *testing.T) {
 }
 
 func TestConversationTurnDeleteDocument(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
 	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
@@ -86,7 +86,7 @@ func TestConversationTurnDeleteDocument(t *testing.T) {
 }
 
 func TestConversationTurnDeleteDocumentNil(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
 	turn.AddDocument("tool1", doc)
@@ -98,7 +98,7 @@ func TestConversationTurnDeleteDocumentNil(t *testing.T) {
 }
 
 func TestConversationTurnDeleteDocumentNotFound(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
 	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
@@ -112,7 +112,7 @@ func TestConversationTurnDeleteDocumentNotFound(t *testing.T) {
 }
 
 func TestConversationTurnDeleteDocumentFromEmpty(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
 
@@ -122,7 +122,7 @@ func TestConversationTurnDeleteDocumentFromEmpty(t *testing.T) {
 }
 
 func TestConversationTurnAddAndDeleteDocuments(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
 	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
@@ -147,7 +147,7 @@ func TestConversationTurnAddAndDeleteDocuments(t *testing.T) {
 }
 
 func TestConversationTurnDeleteDocumentByID(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content 1"), nil)
 	doc2 := document.NewInMemoryDocument("doc2", "test2.txt", []byte("content 2"), nil)
@@ -164,7 +164,7 @@ func TestConversationTurnDeleteDocumentByID(t *testing.T) {
 }
 
 func TestConversationTurnAddDocumentWithDifferentToolIDs(t *testing.T) {
-	turn := NewConversationTurn("test message", "run1", "agent1", "trace.txt")
+	turn := NewTurn("test message", "run1", "agent1", "trace.txt", "turn-001")
 
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
 
@@ -177,4 +177,3 @@ func TestConversationTurnAddDocumentWithDifferentToolIDs(t *testing.T) {
 	assert.Equal(t, doc, turn.Documents[1].Document)
 	assert.Equal(t, "tool2", turn.Documents[1].ToolID)
 }
-

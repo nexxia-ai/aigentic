@@ -1,5 +1,7 @@
 package ai
 
+import "encoding/json"
+
 type MessageRole string
 
 const (
@@ -22,20 +24,20 @@ var (
 )
 
 type ToolCall struct {
-	ID     string
-	Type   string
-	Name   string
-	Args   string
-	Result any
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	Name   string `json:"name"`
+	Args   string `json:"args"`
+	Result any    `json:"result,omitempty"`
 }
 
 type AIMessage struct {
-	Role      MessageRole
-	Content   string
-	Think     string
-	ToolCalls []ToolCall
-	Extra     map[string]any
-	Response  Response
+	Role      MessageRole    `json:"role"`
+	Content   string         `json:"content,omitempty"`
+	Think     string         `json:"think,omitempty"`
+	ToolCalls []ToolCall     `json:"tool_calls,omitempty"`
+	Extra     map[string]any `json:"extra,omitempty"`
+	Response  Response       `json:"response,omitempty"`
 }
 
 func (m AIMessage) Value() (MessageRole, string) {
@@ -43,8 +45,8 @@ func (m AIMessage) Value() (MessageRole, string) {
 }
 
 type UserMessage struct {
-	Role    MessageRole
-	Content string
+	Role    MessageRole `json:"role"`
+	Content string      `json:"content"`
 }
 
 func (m UserMessage) Value() (MessageRole, string) {
@@ -52,10 +54,10 @@ func (m UserMessage) Value() (MessageRole, string) {
 }
 
 type ToolMessage struct {
-	Role       MessageRole
-	Content    string
-	ToolCallID string
-	ToolName   string
+	Role       MessageRole `json:"role"`
+	Content    string      `json:"content"`
+	ToolCallID string      `json:"tool_call_id"`
+	ToolName   string      `json:"tool_name"`
 }
 
 func (m ToolMessage) Value() (MessageRole, string) {
@@ -63,8 +65,8 @@ func (m ToolMessage) Value() (MessageRole, string) {
 }
 
 type SystemMessage struct {
-	Role    MessageRole
-	Content string
+	Role    MessageRole `json:"role"`
+	Content string      `json:"content"`
 }
 
 func (m SystemMessage) Value() (MessageRole, string) {
@@ -72,14 +74,14 @@ func (m SystemMessage) Value() (MessageRole, string) {
 }
 
 type ResourceMessage struct {
-	Role        MessageRole
-	URI         string `json:"uri"`                   // The URI of this resource.
-	Name        string `json:"name"`                  // A human-readable name for this resource.
-	Description string `json:"description,omitempty"` // A description of what this resource represents.
-	MIMEType    string `json:"mimeType,omitempty"`    // The MIME type of this resource, if known.
-	Body        any    `json:"body"`                  // The body of the resource.
-	Type        string `json:"type"`                  // The type of the resource. "text", "image", "resource"
-	Attributes  map[string]any
+	Role        MessageRole    `json:"role"`
+	URI         string         `json:"uri"`                   // The URI of this resource.
+	Name        string         `json:"name"`                  // A human-readable name for this resource.
+	Description string         `json:"description,omitempty"` // A description of what this resource represents.
+	MIMEType    string         `json:"mimeType,omitempty"`    // The MIME type of this resource, if known.
+	Body        any            `json:"body"`                  // The body of the resource.
+	Type        string         `json:"type"`                  // The type of the resource. "text", "image", "resource"
+	Attributes  map[string]any `json:"attributes,omitempty"`
 }
 
 func (m ResourceMessage) Value() (MessageRole, string) {
@@ -92,9 +94,53 @@ type Response struct {
 	Object      string    `json:"object"`
 	Created     int64     `json:"created"`
 	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
+	Messages    []Message `json:"-"`
 	Usage       Usage     `json:"usage"`
 	ServiceTier string    `json:"service_tier"`
+}
+
+func (r Response) MarshalJSON() ([]byte, error) {
+	type Alias Response
+
+	var msgs []map[string]any
+	if len(r.Messages) > 0 {
+		msgs = make([]map[string]any, len(r.Messages))
+		for i, msg := range r.Messages {
+			msgBytes, err := json.Marshal(msg)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(msgBytes, &msgs[i]); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return json.Marshal(&struct {
+		Alias
+		Messages []map[string]any `json:"messages,omitempty"`
+	}{
+		Alias:    Alias(r),
+		Messages: msgs,
+	})
+}
+
+func (r *Response) UnmarshalJSON(data []byte) error {
+	type Alias Response
+
+	aux := &struct {
+		*Alias
+		Messages []map[string]any `json:"messages,omitempty"`
+	}{
+		Alias: (*Alias)(r),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	r.Messages = make([]Message, 0)
+	return nil
 }
 
 // Usage represents token usage information

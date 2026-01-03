@@ -36,10 +36,10 @@ func New(id, description, instructions string, ee *ExecutionEnvironment) *AgentC
 		documents:          make([]*document.Document, 0),
 		documentReferences: make([]*document.Document, 0),
 	}
-	ctx.conversationHistory = NewConversationHistory()
+	ctx.execEnv = ee
+	ctx.conversationHistory = NewConversationHistory(ee)
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
-	ctx.execEnv = ee
 	return ctx
 }
 
@@ -224,7 +224,7 @@ func (r *AgentContext) SetDocumentReferences(docRefs []*document.Document) *Agen
 
 func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *AgentContext {
 	if history == nil {
-		history = NewConversationHistory()
+		history = NewConversationHistory(r.execEnv)
 	}
 	r.conversationHistory = history
 	return r

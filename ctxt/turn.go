@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -21,34 +22,34 @@ type Tag struct {
 }
 
 type Turn struct {
-	TurnID      string          `json:"turn_id"`
-	Request     ai.Message      `json:"-"`
-	UserMessage string          `json:"user_message"`
-	messages    []ai.Message    `json:"-"`
-	Reply       ai.Message      `json:"-"`
-	Documents   []DocumentEntry `json:"-"`
-	TraceFile   string          `json:"trace_file"`
-	RunID       string          `json:"run_id"`
-	Timestamp   time.Time       `json:"timestamp"`
-	AgentName   string          `json:"agent_name"`
-	Hidden      bool            `json:"hidden"`
-	systemTags  []Tag
-	userTags    []Tag
+	TurnID       string          `json:"turn_id"`
+	agentContext *AgentContext   `json:"-"`
+	Request      ai.Message      `json:"-"`
+	UserMessage  string          `json:"user_message"`
+	messages     []ai.Message    `json:"-"`
+	Reply        ai.Message      `json:"-"`
+	Documents    []DocumentEntry `json:"-"`
+	TraceFile    string          `json:"trace_file"`
+	Timestamp    time.Time       `json:"timestamp"`
+	AgentName    string          `json:"agent_name"`
+	Hidden       bool            `json:"hidden"`
+	systemTags   []Tag
+	userTags     []Tag
 }
 
-func NewTurn(userMessage, runID, agentName, turnID string) *Turn {
+func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) *Turn {
 	return &Turn{
-		TurnID:      turnID,
-		Request:     ai.UserMessage{Role: ai.UserRole, Content: userMessage},
-		UserMessage: userMessage,
-		messages:    make([]ai.Message, 0),
-		Documents:   make([]DocumentEntry, 0),
-		TraceFile:   "",
-		RunID:       runID,
-		Timestamp:   time.Now(),
-		AgentName:   agentName,
-		systemTags:  make([]Tag, 0),
-		userTags:    make([]Tag, 0),
+		TurnID:       turnID,
+		agentContext: agentContext,
+		Request:      ai.UserMessage{Role: ai.UserRole, Content: userMessage},
+		UserMessage:  userMessage,
+		messages:     make([]ai.Message, 0),
+		Documents:    make([]DocumentEntry, 0),
+		TraceFile:    "",
+		Timestamp:    time.Now(),
+		AgentName:    agentName,
+		systemTags:   make([]Tag, 0),
+		userTags:     make([]Tag, 0),
 	}
 }
 
@@ -69,6 +70,10 @@ func (t *Turn) AddDocument(toolID string, doc *document.Document) error {
 	t.Documents = append(t.Documents, entry)
 
 	return nil
+}
+
+func (t *Turn) Dir() string {
+	return filepath.Join(t.agentContext.ExecutionEnvironment().TurnDir, t.TurnID)
 }
 
 func (t *Turn) DeleteDocument(doc *document.Document) error {

@@ -68,8 +68,8 @@ func (r *AgentRun) Model() *ai.Model {
 	return r.model
 }
 
-func (r *AgentRun) ConversationTurn() *ctxt.Turn {
-	return r.agentContext.ConversationTurn()
+func (r *AgentRun) Turn() *ctxt.Turn {
+	return r.agentContext.Turn()
 }
 
 func (r *AgentRun) Cancel() {
@@ -159,10 +159,6 @@ func (r *AgentRun) SetTools(tools []AgentTool) {
 	r.tools = tools
 }
 
-func (r *AgentRun) SetConversationHistory(history *ctxt.ConversationHistory) {
-	r.agentContext.SetConversationHistory(history)
-}
-
 func (r *AgentRun) IncludeHistory(enable bool) {
 	r.includeHistory = enable
 }
@@ -170,11 +166,9 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 func (r *AgentRun) Run(ctx context.Context, message string) {
 
 	turn := r.agentContext.StartTurn(message)
-	turnDir := filepath.Join(r.agentContext.ExecutionEnvironment().TurnDir, turn.TurnID)
-	os.MkdirAll(turnDir, 0755)
 
 	if r.enableTrace {
-		traceFile := filepath.Join(turnDir, "trace.txt")
+		traceFile := filepath.Join(turn.Dir(), "trace.txt")
 		turn.TraceFile = traceFile
 		r.trace = &TraceRun{filepath: traceFile}
 	}
@@ -193,7 +187,7 @@ func (r *AgentRun) Run(ctx context.Context, message string) {
 	// goroutine to read the action queue and process actions.
 	// it will terminate when the action queue is closed and the agent is finished.
 	go r.processLoop()
-	r.queueAction(&llmCallAction{Message: r.agentContext.ConversationTurn().UserMessage})
+	r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
 }
 
 func (r *AgentRun) stop() {

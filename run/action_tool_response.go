@@ -24,7 +24,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 	if len(action.Group.Responses) == len(action.Group.AIMessage.ToolCalls) {
 
 		// add all tool responses and queue their events
-		turn := r.agentContext.ConversationTurn()
+		turn := r.agentContext.Turn()
 		for _, tc := range action.Group.AIMessage.ToolCalls {
 			if response, exists := action.Group.Responses[tc.ID]; exists {
 				turn.AddMessage(response)
@@ -58,6 +58,6 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 			r.queueEvent(event)
 		}
 
-		r.queueAction(&llmCallAction{Message: r.agentContext.ConversationTurn().UserMessage})
+		r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
 	}
 }

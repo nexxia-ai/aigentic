@@ -160,7 +160,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		return
 	}
 
-	turn := r.agentContext.ConversationTurn()
+	turn := r.agentContext.Turn()
 	turn.AddMessage(msg)
 
 	// If we have a stream group from chunks, update it with the final message, otherwise create new group
@@ -170,7 +170,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 		// Check if all tool calls in the group are now completed (now that we have the final message)
 		if len(r.currentStreamGroup.Responses) == len(r.currentStreamGroup.AIMessage.ToolCalls) {
 			// add all tool responses and queue their events
-			turn := r.agentContext.ConversationTurn()
+			turn := r.agentContext.Turn()
 			for _, tc := range r.currentStreamGroup.AIMessage.ToolCalls {
 				if response, exists := r.currentStreamGroup.Responses[tc.ID]; exists {
 					turn.AddMessage(response)
@@ -204,7 +204,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 				r.queueEvent(event)
 			}
 
-			r.queueAction(&llmCallAction{Message: r.agentContext.ConversationTurn().UserMessage})
+			r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
 		}
 		r.currentStreamGroup = nil // clear after processing
 	} else {

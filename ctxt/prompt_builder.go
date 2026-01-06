@@ -113,10 +113,10 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		"Memories":           filteredMemories,
 		"Documents":          sessionDocs,
 		"OutputInstructions": ac.outputInstructions,
-		"SystemTags":         ac.ConversationTurn().systemTags,
+		"SystemTags":         ac.Turn().systemTags,
 	}
 
-	slog.Error("system template variables", "variables", ac.ConversationTurn().systemTags)
+	slog.Error("system template variables", "variables", ac.Turn().systemTags)
 	var systemBuf bytes.Buffer
 	if err := ac.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
 		return nil, fmt.Errorf("failed to execute system template: %w", err)
@@ -134,14 +134,14 @@ func createUserMsg(ac *AgentContext, message string, documents []*document.Docum
 		"HasMessage":         message != "",
 		"Documents":          documents,
 		"DocumentReferences": ac.documentReferences,
-		"UserTags":           ac.ConversationTurn().userTags,
+		"UserTags":           ac.Turn().userTags,
 	}
 	var userBuf bytes.Buffer
 	if err := ac.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user template: %w", err)
 	}
 
-	slog.Error("user template variables", "variables", ac.ConversationTurn().userTags)
+	slog.Error("user template variables", "variables", ac.Turn().userTags)
 	userMsg := ai.UserMessage{Role: ai.UserRole, Content: userBuf.String()}
 	return userMsg, nil
 }
@@ -166,7 +166,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	}
 
 	// Add user message before documents
-	userMsg, err := createUserMsg(r, r.currentConversationTurn.UserMessage, r.documents)
+	userMsg, err := createUserMsg(r, r.currentTurn.UserMessage, r.documents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user message: %w", err)
 	}
@@ -178,7 +178,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	msgs = append(msgs, r.insertDocuments(r.documents, r.documentReferences)...)
 
 	// tool messages are last
-	msgs = append(msgs, r.currentConversationTurn.messages...) // tool messages
+	msgs = append(msgs, r.currentTurn.messages...) // tool messages
 
 	return msgs, nil
 }

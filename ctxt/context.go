@@ -2,6 +2,9 @@ package ctxt
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"text/template"
 	"time"
@@ -17,15 +20,15 @@ type AgentContext struct {
 	SystemTemplate *template.Template
 	UserTemplate   *template.Template
 
-	mutex                   sync.RWMutex
-	memories                []MemoryEntry
-	documents               []*document.Document
-	documentReferences      []*document.Document
-	conversationHistory     *ConversationHistory
-	outputInstructions      string
-	currentConversationTurn *Turn
-	execEnv                 *ExecutionEnvironment
-	turnCounter             int
+	mutex               sync.RWMutex
+	memories            []MemoryEntry
+	documents           []*document.Document
+	documentReferences  []*document.Document
+	conversationHistory *ConversationHistory
+	outputInstructions  string
+	currentTurn         *Turn
+	execEnv             *ExecutionEnvironment
+	turnCounter         int
 }
 
 func New(id, description, instructions string, ee *ExecutionEnvironment) *AgentContext {
@@ -41,6 +44,7 @@ func New(id, description, instructions string, ee *ExecutionEnvironment) *AgentC
 	ctx.conversationHistory = NewConversationHistory(ee)
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
+	ctx.currentTurn = ctx.newTurn() // create the first turn so it is available for the first prompt
 	return ctx
 }
 
@@ -243,24 +247,37 @@ func (r *AgentContext) GetHistory() *ConversationHistory {
 	return r.conversationHistory
 }
 
-func (r *AgentContext) StartTurn(userMessage string) *Turn {
+func (r *AgentContext) newTurn() *Turn {
 	r.turnCounter++
 	turnID := fmt.Sprintf("turn-%03d", r.turnCounter)
+	turn := NewTurn(r, "", "", turnID)
 
-	turn := NewTurn(userMessage, r.id, "", turnID)
-	r.currentConversationTurn = turn
+	turnDir := filepath.Join(r.execEnv.TurnDir, turn.TurnID)
+	if err := os.MkdirAll(turnDir, 0755); err != nil {
+		slog.Error("failed to create turn directory", "error", err)
+	}
+
 	return turn
 }
 
+func (r *AgentContext) StartTurn(userMessage string) *Turn {
+	r.currentTurn.UserMessage = userMessage
+	r.currentTurn.Request = ai.UserMessage{Role: ai.UserRole, Content: userMessage}
+	return r.currentTurn
+}
+
 func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
-	r.currentConversationTurn.AddMessage(msg)
-	r.currentConversationTurn.Reply = msg
-	r.conversationHistory.appendTurn(*r.currentConversationTurn)
+	r.currentTurn.AddMessage(msg)
+	r.currentTurn.Reply = msg
+	r.conversationHistory.appendTurn(*r.currentTurn)
+
+	// create the next turn so it is available for callers
+	r.currentTurn = r.newTurn()
 	return r
 }
 
-func (r *AgentContext) ConversationTurn() *Turn {
-	return r.currentConversationTurn
+func (r *AgentContext) Turn() *Turn {
+	return r.currentTurn
 }
 
 func (r *AgentContext) ClearDocuments() *AgentContext {

@@ -104,6 +104,14 @@ func (t *Turn) InjectUserTag(tagName string, content string) {
 	})
 }
 
+func (t *Turn) GetDocuments() []*document.Document {
+	docs := make([]*document.Document, len(t.Documents))
+	for i, docEntry := range t.Documents {
+		docs[i] = docEntry.Document
+	}
+	return docs
+}
+
 func (t *Turn) MarshalJSON() ([]byte, error) {
 	type Alias Turn
 

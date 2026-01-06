@@ -116,7 +116,6 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		"SystemTags":         ac.Turn().systemTags,
 	}
 
-	slog.Error("system template variables", "variables", ac.Turn().systemTags)
 	var systemBuf bytes.Buffer
 	if err := ac.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
 		return nil, fmt.Errorf("failed to execute system template: %w", err)
@@ -141,7 +140,6 @@ func createUserMsg(ac *AgentContext, message string, documents []*document.Docum
 		return nil, fmt.Errorf("failed to execute user template: %w", err)
 	}
 
-	slog.Error("user template variables", "variables", ac.Turn().userTags)
 	userMsg := ai.UserMessage{Role: ai.UserRole, Content: userBuf.String()}
 	return userMsg, nil
 }
@@ -175,7 +173,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	}
 
 	// Add documents second (including session files)
-	msgs = append(msgs, r.insertDocuments(r.documents, r.documentReferences)...)
+	msgs = append(msgs, r.insertDocuments(r.Turn().GetDocuments(), r.documentReferences)...)
 
 	// tool messages are last
 	msgs = append(msgs, r.currentTurn.messages...) // tool messages

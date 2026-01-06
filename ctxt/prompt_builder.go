@@ -59,11 +59,21 @@ You have access to the following tools:
 {{.Text}}
 </document>
 {{end}}
+{{end}}
+
+{{if .SystemTags}}
+{{range .SystemTags}}<{{.Name}}>{{.Content}}</{{.Name}}>
+{{end}}
 {{end}}`
 
 const DefaultUserTemplate = `
 {{if .HasMessage}}Please answer the following request or task:
 {{.Message}} 
+{{end}}
+
+{{if .UserTags}}
+{{range .UserTags}}<{{.Name}}>{{.Content}}</{{.Name}}>
+{{end}}
 {{end}}
 
 {{if .Documents}}
@@ -77,7 +87,8 @@ const DefaultUserTemplate = `
 </document_reference>
 {{end}}
 </documents_attached>
-{{end}}`
+{{end}}
+`
 
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 	memories := ac.GetMemories()
@@ -102,8 +113,10 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		"Memories":           filteredMemories,
 		"Documents":          sessionDocs,
 		"OutputInstructions": ac.outputInstructions,
+		"SystemTags":         ac.ConversationTurn().systemTags,
 	}
 
+	slog.Error("system template variables", "variables", ac.ConversationTurn().systemTags)
 	var systemBuf bytes.Buffer
 	if err := ac.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
 		return nil, fmt.Errorf("failed to execute system template: %w", err)
@@ -121,12 +134,14 @@ func createUserMsg(ac *AgentContext, message string, documents []*document.Docum
 		"HasMessage":         message != "",
 		"Documents":          documents,
 		"DocumentReferences": ac.documentReferences,
+		"UserTags":           ac.ConversationTurn().userTags,
 	}
 	var userBuf bytes.Buffer
 	if err := ac.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user template: %w", err)
 	}
 
+	slog.Error("user template variables", "variables", ac.ConversationTurn().userTags)
 	userMsg := ai.UserMessage{Role: ai.UserRole, Content: userBuf.String()}
 	return userMsg, nil
 }

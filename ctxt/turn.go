@@ -3,6 +3,7 @@ package ctxt
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -12,6 +13,11 @@ import (
 type DocumentEntry struct {
 	Document *document.Document `json:"-"`
 	ToolID   string             `json:"tool_id"`
+}
+
+type Tag struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
 }
 
 type Turn struct {
@@ -26,6 +32,8 @@ type Turn struct {
 	Timestamp   time.Time       `json:"timestamp"`
 	AgentName   string          `json:"agent_name"`
 	Hidden      bool            `json:"hidden"`
+	systemTags  []Tag
+	userTags    []Tag
 }
 
 func NewTurn(userMessage, runID, agentName, turnID string) *Turn {
@@ -39,6 +47,8 @@ func NewTurn(userMessage, runID, agentName, turnID string) *Turn {
 		RunID:       runID,
 		Timestamp:   time.Now(),
 		AgentName:   agentName,
+		systemTags:  make([]Tag, 0),
+		userTags:    make([]Tag, 0),
 	}
 }
 
@@ -72,6 +82,21 @@ func (t *Turn) DeleteDocument(doc *document.Document) error {
 		}
 	}
 	return nil
+}
+
+func (t *Turn) InjectSystemTag(tagName string, content string) {
+	t.systemTags = append(t.systemTags, Tag{
+		Name:    tagName,
+		Content: content,
+	})
+}
+
+func (t *Turn) InjectUserTag(tagName string, content string) {
+	slog.Error("injecting user tag", "tag_name", tagName, "content", content)
+	t.userTags = append(t.userTags, Tag{
+		Name:    tagName,
+		Content: content,
+	})
 }
 
 func (t *Turn) MarshalJSON() ([]byte, error) {
@@ -155,16 +180,20 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(&struct {
 		*Alias
-		Request   *messageJSON   `json:"request"`
-		Messages  []*messageJSON `json:"messages"`
-		Reply     *messageJSON   `json:"reply,omitempty"`
-		Documents []documentJSON `json:"documents"`
+		Request    *messageJSON   `json:"request"`
+		Messages   []*messageJSON `json:"messages"`
+		Reply      *messageJSON   `json:"reply,omitempty"`
+		Documents  []documentJSON `json:"documents"`
+		SystemTags []Tag          `json:"system_tags"`
+		UserTags   []Tag          `json:"user_tags"`
 	}{
-		Alias:     (*Alias)(t),
-		Request:   request,
-		Messages:  messages,
-		Reply:     reply,
-		Documents: documents,
+		Alias:      (*Alias)(t),
+		Request:    request,
+		Messages:   messages,
+		Reply:      reply,
+		Documents:  documents,
+		SystemTags: t.systemTags,
+		UserTags:   t.userTags,
 	})
 }
 
@@ -219,10 +248,12 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 
 	aux := &struct {
 		*Alias
-		Request   *messageJSON   `json:"request"`
-		Messages  []*messageJSON `json:"messages"`
-		Reply     *messageJSON   `json:"reply,omitempty"`
-		Documents []documentJSON `json:"documents"`
+		Request    *messageJSON   `json:"request"`
+		Messages   []*messageJSON `json:"messages"`
+		Reply      *messageJSON   `json:"reply,omitempty"`
+		Documents  []documentJSON `json:"documents"`
+		SystemTags []Tag          `json:"system_tags"`
+		UserTags   []Tag          `json:"user_tags"`
 	}{
 		Alias: (*Alias)(t),
 	}
@@ -257,6 +288,18 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 			}
 			t.Documents[i].Document = doc
 		}
+	}
+
+	if aux.SystemTags != nil {
+		t.systemTags = aux.SystemTags
+	} else {
+		t.systemTags = make([]Tag, 0)
+	}
+
+	if aux.UserTags != nil {
+		t.userTags = aux.UserTags
+	} else {
+		t.userTags = make([]Tag, 0)
 	}
 
 	return nil

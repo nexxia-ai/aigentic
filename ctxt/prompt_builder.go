@@ -95,14 +95,14 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 	var filteredMemories []MemoryEntry
 	filteredMemories = append(filteredMemories, memories...)
 
-	// Load session files from execution environment
-	sessionDocs := make([]*document.Document, 0)
+	// Load memory files from execution environment
+	memoryDocs := make([]*document.Document, 0)
 	if ee := ac.ExecutionEnvironment(); ee != nil {
-		docs, err := ee.SessionFiles()
+		docs, err := ee.MemoryFiles()
 		if err != nil {
-			slog.Error("failed to load session files", "error", err)
+			slog.Error("failed to load memory files", "error", err)
 		} else {
-			sessionDocs = docs
+			memoryDocs = docs
 		}
 	}
 
@@ -111,7 +111,7 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		"Instructions":       ac.instructions,
 		"Tools":              tools,
 		"Memories":           filteredMemories,
-		"Documents":          sessionDocs,
+		"Documents":          memoryDocs,
 		"OutputInstructions": ac.outputInstructions,
 		"SystemTags":         ac.Turn().systemTags,
 	}
@@ -172,7 +172,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		msgs = append(msgs, userMsg)
 	}
 
-	// Add documents second (including session files)
+	// Add documents second (including memory files)
 	msgs = append(msgs, r.insertDocuments(r.Turn().GetDocuments(), r.documentReferences)...)
 
 	// tool messages are last

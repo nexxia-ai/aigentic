@@ -501,19 +501,19 @@ func TestHistoryQuery(t *testing.T) {
 	}
 }
 
-func TestBuildPromptIncludesSessionFiles(t *testing.T) {
+func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 	ee, err := NewExecutionEnvironment(t.TempDir(), "test-agent")
 	if err != nil {
 		t.Fatalf("failed to create test execution environment: %v", err)
 	}
 
-	sessionFileContent := "session file content for testing"
-	sessionFileName := "session_test.txt"
-	sessionFilePath := filepath.Join(ee.SessionDir, sessionFileName)
+	memoryFileContent := "memory file content for testing"
+	memoryFileName := "memory_test.txt"
+	memoryFilePath := filepath.Join(ee.MemoryDir, memoryFileName)
 
-	err = os.WriteFile(sessionFilePath, []byte(sessionFileContent), 0644)
+	err = os.WriteFile(memoryFilePath, []byte(memoryFileContent), 0644)
 	if err != nil {
-		t.Fatalf("failed to create session file: %v", err)
+		t.Fatalf("failed to create memory file: %v", err)
 	}
 
 	ctx := New("test-id", "test description", "test instructions", ee)
@@ -533,11 +533,11 @@ func TestBuildPromptIncludesSessionFiles(t *testing.T) {
 		t.Fatalf("expected first message to be SystemMessage, got %T", msgs[0])
 	}
 
-	if !strings.Contains(sysMsg.Content, sessionFileContent) {
-		t.Errorf("system message should contain session file content %q, got: %s", sessionFileContent, sysMsg.Content)
+	if !strings.Contains(sysMsg.Content, memoryFileContent) {
+		t.Errorf("system message should contain memory file content %q, got: %s", memoryFileContent, sysMsg.Content)
 	}
 
-	if !strings.Contains(sysMsg.Content, sessionFileName) {
-		t.Errorf("system message should contain session file name %q, got: %s", sessionFileName, sysMsg.Content)
+	if !strings.Contains(sysMsg.Content, memoryFileName) {
+		t.Errorf("system message should contain memory file name %q, got: %s", memoryFileName, sysMsg.Content)
 	}
 }

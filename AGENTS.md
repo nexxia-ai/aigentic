@@ -35,10 +35,10 @@ The root `aigentic` package (`agent.go`) provides the declarative `Agent` type t
 The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context management and execution environment for agents:
 
 - **AgentContext** (`context.go`) - Manages agent state including memories, documents, conversation history, and execution environment
-- **ExecutionEnvironment** (`environment.go`) - Provides structured directory layout for agent execution with `session/`, `files/`, and `output/` directories. Session files are automatically loaded into prompts.
+- **ExecutionEnvironment** (`environment.go`) - Provides structured directory layout for agent execution with `memory/`, `files/`, and `output/` directories. Memory files are automatically loaded into prompts.
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **ConversationTurn** (`conversation_turn.go`) - Represents individual conversation turns
-- **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context, memories, documents, and session files
+- **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context, memories, documents, and memory files
 
 ### The `document` Package
 

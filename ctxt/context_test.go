@@ -12,11 +12,10 @@ import (
 )
 
 func createTestContext(t *testing.T, id, description, instructions string) *AgentContext {
-	ee, err := NewExecutionEnvironment(t.TempDir(), id)
+	ctx, err := New(id, description, instructions, t.TempDir())
 	if err != nil {
-		t.Fatalf("failed to create test execution environment: %v", err)
+		t.Fatalf("failed to create test context: %v", err)
 	}
-	ctx := New(id, description, instructions, ee)
 	return ctx
 }
 
@@ -502,21 +501,20 @@ func TestHistoryQuery(t *testing.T) {
 }
 
 func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
-	ee, err := NewExecutionEnvironment(t.TempDir(), "test-agent")
+	baseDir := t.TempDir()
+	ctx, err := New("test-id", "test description", "test instructions", baseDir)
 	if err != nil {
-		t.Fatalf("failed to create test execution environment: %v", err)
+		t.Fatalf("failed to create test context: %v", err)
 	}
 
 	memoryFileContent := "memory file content for testing"
 	memoryFileName := "memory_test.txt"
-	memoryFilePath := filepath.Join(ee.MemoryDir, memoryFileName)
+	memoryFilePath := filepath.Join(ctx.ExecutionEnvironment().MemoryDir, memoryFileName)
 
 	err = os.WriteFile(memoryFilePath, []byte(memoryFileContent), 0644)
 	if err != nil {
 		t.Fatalf("failed to create memory file: %v", err)
 	}
-
-	ctx := New("test-id", "test description", "test instructions", ee)
 	ctx.StartTurn("test user message")
 
 	msgs, err := ctx.BuildPrompt([]ai.Tool{}, false)

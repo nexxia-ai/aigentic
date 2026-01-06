@@ -76,18 +76,6 @@ const DefaultUserTemplate = `
 {{end}}
 {{end}}
 
-{{if .Documents}}
-<documents_attached>
-{{range .Documents}}
-<document id="{{.ID}}" name="{{.Filename}}" type="{{.MimeType}}">
-</document>
-{{end}}
-{{range .DocumentReferences}}
-<document_reference id="{{.ID}}" name="{{.Filename}}" type="{{.MimeType}}">
-</document_reference>
-{{end}}
-</documents_attached>
-{{end}}
 `
 
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
@@ -126,14 +114,50 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 
 }
 
-func createUserMsg(ac *AgentContext, message string, documents []*document.Document) (ai.Message, error) {
+func createDocsMsg(ac *AgentContext) (ai.Message, error) {
+	docs := ac.GetDocuments()
+	docRefs := ac.GetDocumentReferences()
+
+	if len(docs) == 0 && len(docRefs) == 0 {
+		return nil, nil
+	}
+
+	var allDocs []*document.Document
+	for _, doc := range docs {
+		if doc != nil && doc.Filename != "" {
+			allDocs = append(allDocs, doc)
+		}
+	}
+	for _, doc := range docRefs {
+		if doc != nil && doc.Filename != "" {
+			allDocs = append(allDocs, doc)
+		}
+	}
+
+	if len(allDocs) == 0 {
+		return nil, nil
+	}
+
+	var promptBuf bytes.Buffer
+	promptBuf.WriteString("The following documents are available in this session:\n")
+	for _, doc := range allDocs {
+		mimeType := doc.MimeType
+		if mimeType == "" {
+			mimeType = "unknown"
+		}
+		promptBuf.WriteString(fmt.Sprintf("- ID: %s, Filename: %s, Type: %s\n", doc.ID(), doc.Filename, mimeType))
+	}
+
+	userMsg := ai.UserMessage{Role: ai.UserRole, Content: promptBuf.String()}
+	return userMsg, nil
+}
+
+func createUserMsg(ac *AgentContext, message string) (ai.Message, error) {
 
 	userVars := map[string]any{
-		"Message":            message,
-		"HasMessage":         message != "",
-		"Documents":          documents,
-		"DocumentReferences": ac.documentReferences,
-		"UserTags":           ac.Turn().userTags,
+		"Message":    message,
+		"HasMessage": message != "",
+		"UserTags":   ac.Turn().userTags,
 	}
 	var userBuf bytes.Buffer
 	if err := ac.UserTemplate.Execute(&userBuf, userVars); err != nil {
@@ -157,6 +181,11 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		msgs = append(msgs, sysMsg)
 	}
 
+	docsMsg, _ := createDocsMsg(r)
+	if docsMsg != nil {
+		msgs = append(msgs, docsMsg)
+	}
+
 	// Add history messages before user message
 	if includeHistory && r.conversationHistory != nil {
 		historyMessages := r.conversationHistory.GetMessages()
@@ -164,7 +193,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	}
 
 	// Add user message before documents
-	userMsg, err := createUserMsg(r, r.currentTurn.UserMessage, r.documents)
+	userMsg, err := createUserMsg(r, r.currentTurn.UserMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user message: %w", err)
 	}

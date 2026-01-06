@@ -136,39 +136,27 @@ func TestAgentFileAttachment(t *testing.T) {
 	assert.Contains(t, result, "I've received your message and the attached files")
 
 	// Verify that at least the expected messages were received by the model
-	if !assert.GreaterOrEqual(t, len(receivedMessages), 4) {
+	// Expected: System message, Documents list message, User message = 3 messages minimum
+	if !assert.GreaterOrEqual(t, len(receivedMessages), 3) {
 		t.FailNow()
 	}
 
-	// Check that the user message is present (it should be the last message)
+	// Check that the documents list message is present
+	docsListFound := false
 	userMsgFound := false
 	for _, msg := range receivedMessages {
 		if userMsg, ok := msg.(ai.UserMessage); ok {
-			assert.Contains(t, userMsg.Content, "Please analyze these attached files")
-			userMsgFound = true
-			break
-		}
-	}
-	assert.True(t, userMsgFound, "User message should be present")
-
-	// Check that both attachments are present as ResourceMessages
-	textFileFound := false
-	imageFileFound := false
-	for _, msg := range receivedMessages {
-		if resourceMsg, ok := msg.(ai.ResourceMessage); ok {
-			if resourceMsg.Name == "test.txt" {
-				assert.Equal(t, "text", resourceMsg.Type)
-				assert.Equal(t, []byte("This is a text file content"), resourceMsg.Body)
-				textFileFound = true
-			} else if resourceMsg.Name == "test.png" {
-				assert.Equal(t, "image", resourceMsg.Type)
-				assert.Equal(t, []byte("fake image data"), resourceMsg.Body)
-				imageFileFound = true
+			if strings.Contains(userMsg.Content, "The following documents are available in this session") {
+				assert.Contains(t, userMsg.Content, "test.txt")
+				assert.Contains(t, userMsg.Content, "test.png")
+				docsListFound = true
+			} else if strings.Contains(userMsg.Content, "Please analyze these attached files") {
+				userMsgFound = true
 			}
 		}
 	}
-	assert.True(t, textFileFound, "Text file attachment should be present")
-	assert.True(t, imageFileFound, "Image file attachment should be present")
+	assert.True(t, docsListFound, "Documents list message should be present")
+	assert.True(t, userMsgFound, "User message should be present")
 }
 
 func TestAgentCallingSubAgent(t *testing.T) {

@@ -94,15 +94,10 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 		return ai.AIMessage{}, fmt.Errorf("agent model is not set")
 	})
 
-	if baseDir == "" {
-		baseDir = filepath.Join(os.TempDir(), "aigentic-workspace")
-	}
-	ee, err := ctxt.NewExecutionEnvironment(baseDir, runID)
+	ac, err := ctxt.New(runID, description, instructions, baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize execution environment: %w", err)
+		return nil, fmt.Errorf("failed to create agent context: %w", err)
 	}
-
-	ac := ctxt.New(runID, description, instructions, ee)
 	// ac.StartTurn("")
 	run := &AgentRun{
 		agentName:            name,

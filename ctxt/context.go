@@ -31,7 +31,7 @@ type AgentContext struct {
 	turnCounter         int
 }
 
-func New(id, description, instructions string, ee *ExecutionEnvironment) *AgentContext {
+func New(id, description, instructions string, basePath string) (*AgentContext, error) {
 	ctx := &AgentContext{
 		id:                 id,
 		description:        description,
@@ -40,12 +40,21 @@ func New(id, description, instructions string, ee *ExecutionEnvironment) *AgentC
 		documents:          make([]*document.Document, 0),
 		documentReferences: make([]*document.Document, 0),
 	}
+
+	if basePath == "" {
+		basePath = filepath.Join(os.TempDir(), "aigentic-workspace")
+	}
+	ee, err := NewExecutionEnvironment(basePath, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create execution environment: %s: %w", basePath, err)
+	}
 	ctx.execEnv = ee
-	ctx.conversationHistory = NewConversationHistory(ee)
+
+	ctx.conversationHistory = NewConversationHistory(ctx.execEnv)
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	ctx.currentTurn = ctx.newTurn() // create the first turn so it is available for the first prompt
-	return ctx
+	return ctx, nil
 }
 
 func (r *AgentContext) ExecutionEnvironment() *ExecutionEnvironment {
@@ -252,9 +261,11 @@ func (r *AgentContext) newTurn() *Turn {
 	turnID := fmt.Sprintf("turn-%03d", r.turnCounter)
 	turn := NewTurn(r, "", "", turnID)
 
-	turnDir := filepath.Join(r.execEnv.TurnDir, turn.TurnID)
-	if err := os.MkdirAll(turnDir, 0755); err != nil {
-		slog.Error("failed to create turn directory", "error", err)
+	if r.execEnv != nil {
+		turnDir := filepath.Join(r.execEnv.TurnDir, turn.TurnID)
+		if err := os.MkdirAll(turnDir, 0755); err != nil {
+			slog.Error("failed to create turn directory", "error", err)
+		}
 	}
 
 	return turn

@@ -1,7 +1,6 @@
 package document
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"mime"
@@ -9,12 +8,6 @@ import (
 	"strings"
 	"time"
 )
-
-// DocumentStore interface for any storage backend
-type DocumentStore interface {
-	Open(ctx context.Context, filePath string) (*Document, error)
-	Close(ctx context.Context) error
-}
 
 type DocumentProcessor interface {
 	Process(doc *Document) ([]*Document, error)
@@ -123,4 +116,41 @@ func DeriveTypeFromMime(mimeType string) string {
 	default:
 		return "document"
 	}
+}
+
+// DocumentMetadata represents serializable document metadata for persistence
+type DocumentMetadata struct {
+	ID          string    `json:"id"`
+	Filename    string    `json:"filename"`
+	FilePath    string    `json:"file_path"`
+	MimeType    string    `json:"mime_type"`
+	FileSize    int64     `json:"file_size"`
+	CreatedAt   time.Time `json:"created_at"`
+	SourceDocID string    `json:"source_doc_id,omitempty"`
+	ChunkIndex  int       `json:"chunk_index,omitempty"`
+	TotalChunks int       `json:"total_chunks,omitempty"`
+}
+
+// Metadata returns the metadata for a document
+func (d *Document) Metadata() DocumentMetadata {
+	meta := DocumentMetadata{
+		ID:          d.ID(),
+		Filename:    d.Filename,
+		FilePath:    d.FilePath,
+		MimeType:    d.MimeType,
+		FileSize:    d.FileSize,
+		CreatedAt:   d.CreatedAt,
+		ChunkIndex:  d.ChunkIndex,
+		TotalChunks: d.TotalChunks,
+	}
+
+	if d.SourceDoc != nil {
+		meta.SourceDocID = d.SourceDoc.ID()
+	}
+
+	if meta.CreatedAt.IsZero() {
+		meta.CreatedAt = time.Now()
+	}
+
+	return meta
 }

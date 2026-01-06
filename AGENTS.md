@@ -8,7 +8,7 @@
   - `run/` agent runtime execution engine - contains `AgentRun`, events, tools, context management, conversation history, interceptors, tracing, and execution orchestration
   - `tools/` built-in tool implementations
   - `utils/` utility helpers
-  - `document/` document manipulation
+  - `document/` document manipulation, processing pipelines, and storage - contains `Document`, `Pipeline`, `Store`, and related types
 - Tests live alongside code as `*_test.go` (e.g., `agent_test.go`, `run/run_test.go`).
 
 ### The `run` Package
@@ -39,6 +39,20 @@ The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context manag
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **ConversationTurn** (`conversation_turn.go`) - Represents individual conversation turns
 - **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context, memories, documents, and session files
+
+### The `document` Package
+
+The `document` package (`github.com/nexxia-ai/aigentic/document`) provides document manipulation, processing, and storage capabilities:
+
+- **Document** (`document.go`) - Core document type representing files with metadata (filename, MIME type, file size, chunking info). Supports lazy loading via loader functions. Documents can be passed to agents and are automatically included in the agent's context.
+- **DocumentProcessor** (`document.go`) - Interface for processing documents. Processors take a document and return zero or more processed documents (e.g., chunking, transformation).
+- **Pipeline** (`pipeline.go`) - Chains multiple document processors together in stages. Supports pause/resume functionality, state persistence, and optional backing stores per stage. Create with `NewPipeline()`, add stages with `AddStage()`, then execute with `Run()` or `Resume()`.
+- **Stage** (`stage.go`) - Wraps a processor with an optional backing store for intermediate results.
+- **PipelineState** (`pipeline_state.go`) - Tracks pipeline execution state including status (pending, running, paused, completed, failed), current stage, and per-stage status.
+- **Store** (`store.go`) - Interface for document storage with `Save()`, `Load()`, `List()`, and `Delete()` operations.
+- **LocalStore** (`local_store.go`) - File system-based implementation of Store that persists documents and metadata to disk. Supports lazy loading of document content.
+
+Documents can be attached to agents via the `Agent.Documents` and `Agent.DocumentReferences` fields, and are automatically included in the agent's context when building prompts.
 
 ## Build, Test, and Development Commands
 - Build library: `go build ./...` — compile all packages.

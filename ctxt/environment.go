@@ -3,7 +3,6 @@ package ctxt
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -48,23 +47,8 @@ func (e *ExecutionEnvironment) init() error {
 }
 
 func (e *ExecutionEnvironment) SessionFiles() ([]*document.Document, error) {
-
-	docs := make([]*document.Document, 0)
 	s := document.NewLocalStore(e.SessionDir)
-	list, err := s.List(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to list session files: %w", err)
-	}
-
-	for _, entry := range list {
-		doc, err := s.Open(context.Background(), entry.FilePath)
-		if err != nil {
-			slog.Error("failed to open session file", "error", err)
-			continue
-		}
-		docs = append(docs, doc)
-	}
-	return docs, nil
+	return s.List(context.Background())
 }
 
 func (e *ExecutionEnvironment) EnvVars() map[string]string {

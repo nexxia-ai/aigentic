@@ -11,6 +11,8 @@ import (
 
 type ExecutionEnvironment struct {
 	RootDir    string
+	LLMDir     string
+	PrivateDir string
 	MemoryDir  string
 	FilesDir   string
 	OutputDir  string
@@ -22,13 +24,18 @@ func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, er
 	baseDir, _ = filepath.Abs(baseDir)
 
 	rootDir := filepath.Join(baseDir, fmt.Sprintf("agent-%s", agentID))
+	llmDir := filepath.Join(rootDir, "llm")
+	privateDir := filepath.Join(rootDir, "_private")
+
 	e := &ExecutionEnvironment{
 		RootDir:    rootDir,
-		MemoryDir:  filepath.Join(rootDir, "memory"),
-		FilesDir:   filepath.Join(rootDir, "files"),
-		OutputDir:  filepath.Join(rootDir, "output"),
-		HistoryDir: filepath.Join(rootDir, "history"),
-		TurnDir:    filepath.Join(rootDir, "turns"),
+		LLMDir:     llmDir,
+		PrivateDir: privateDir,
+		MemoryDir:  filepath.Join(privateDir, "memory"),
+		FilesDir:   filepath.Join(llmDir, "files"),
+		OutputDir:  filepath.Join(llmDir, "output"),
+		HistoryDir: filepath.Join(privateDir, "history"),
+		TurnDir:    filepath.Join(privateDir, "turns"),
 	}
 	if err := e.init(); err != nil {
 		return nil, err
@@ -37,7 +44,16 @@ func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, er
 }
 
 func (e *ExecutionEnvironment) init() error {
-	dirs := []string{e.RootDir, e.MemoryDir, e.FilesDir, e.OutputDir, e.HistoryDir, e.TurnDir}
+	dirs := []string{
+		e.RootDir,
+		e.LLMDir,
+		e.PrivateDir,
+		e.MemoryDir,
+		e.FilesDir,
+		e.OutputDir,
+		e.HistoryDir,
+		e.TurnDir,
+	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -57,6 +73,8 @@ func (e *ExecutionEnvironment) EnvVars() map[string]string {
 	}
 	return map[string]string{
 		"AGENT_ROOT_DIR":    e.RootDir,
+		"AGENT_LLM_DIR":     e.LLMDir,
+		"AGENT_PRIVATE_DIR": e.PrivateDir,
 		"AGENT_MEMORY_DIR":  e.MemoryDir,
 		"AGENT_FILES_DIR":   e.FilesDir,
 		"AGENT_OUTPUT_DIR":  e.OutputDir,

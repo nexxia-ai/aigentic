@@ -46,9 +46,8 @@ The `document` package (`github.com/nexxia-ai/aigentic/document`) provides docum
 
 - **Document** (`document.go`) - Core document type representing files with metadata (filename, MIME type, file size, chunking info). Supports lazy loading via loader functions. Documents can be passed to agents and are automatically included in the agent's context.
 - **DocumentProcessor** (`document.go`) - Interface for processing documents. Processors take a document and return zero or more processed documents (e.g., chunking, transformation).
-- **Pipeline** (`pipeline.go`) - Chains multiple document processors together in stages. Supports pause/resume functionality, state persistence, and optional backing stores per stage. Create with `NewPipeline()`, add stages with `AddStage()`, then execute with `Run()` or `Resume()`.
+- **Pipeline** (`pipeline.go`) - Chains multiple document processors together in stages. Supports optional backing stores per stage. Create with `NewPipeline()`, add stages with `AddStage()`, then execute with `Run()`.
 - **Stage** (`stage.go`) - Wraps a processor with an optional backing store for intermediate results.
-- **PipelineState** (`pipeline_state.go`) - Tracks pipeline execution state including status (pending, running, paused, completed, failed), current stage, and per-stage status.
 - **Store** (`store.go`) - Interface for document storage with `Save()`, `Load()`, `List()`, and `Delete()` operations.
 - **LocalStore** (`local_store.go`) - File system-based implementation of Store that persists documents and metadata to disk. Supports lazy loading of document content.
 

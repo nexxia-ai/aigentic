@@ -20,7 +20,7 @@ func (m *mockProcessor) Process(doc *Document) ([]*Document, error) {
 }
 
 func TestPipeline_EmptyPipeline(t *testing.T) {
-	pipeline := NewPipeline("test-empty", nil)
+	pipeline := NewPipeline("test-empty")
 
 	doc := NewInMemoryDocument("test1", "test.txt", []byte("content"), nil)
 
@@ -39,7 +39,7 @@ func TestPipeline_EmptyPipeline(t *testing.T) {
 }
 
 func TestPipeline_SingleProcessor(t *testing.T) {
-	pipeline := NewPipeline("test-single", nil)
+	pipeline := NewPipeline("test-single")
 
 	resultDoc := NewInMemoryDocument("chunk1", "chunk.txt", []byte("chunk content"), nil)
 	processor := &mockProcessor{
@@ -65,7 +65,7 @@ func TestPipeline_SingleProcessor(t *testing.T) {
 }
 
 func TestPipeline_MultipleProcessors(t *testing.T) {
-	pipeline := NewPipeline("test-multiple", nil)
+	pipeline := NewPipeline("test-multiple")
 
 	processor1 := &mockProcessor{
 		process: func(doc *Document) ([]*Document, error) {
@@ -101,7 +101,7 @@ func TestPipeline_MultipleProcessors(t *testing.T) {
 func TestPipeline_IsDocumentProcessor(t *testing.T) {
 	var _ DocumentProcessor = &Pipeline{}
 
-	pipeline := NewPipeline("test-processor", nil)
+	pipeline := NewPipeline("test-processor")
 	doc := NewInMemoryDocument("test1", "test.txt", []byte("content"), nil)
 
 	_, err := pipeline.Process(doc)
@@ -119,9 +119,8 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			processor DocumentProcessor
 			store     Store
 		}
-		inputDocs      []*Document
-		expectedCount  int
-		expectedStatus PipelineStatus
+		inputDocs     []*Document
+		expectedCount int
 	}{
 		{
 			name:       "single stage without store",
@@ -145,8 +144,7 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			inputDocs: []*Document{
 				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
 			},
-			expectedCount:  1,
-			expectedStatus: StatusCompleted,
+			expectedCount: 1,
 		},
 		{
 			name:       "multiple stages without stores",
@@ -180,8 +178,7 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			inputDocs: []*Document{
 				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
 			},
-			expectedCount:  1,
-			expectedStatus: StatusCompleted,
+			expectedCount: 1,
 		},
 		{
 			name:       "stage with store",
@@ -207,8 +204,7 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			inputDocs: []*Document{
 				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
 			},
-			expectedCount:  1,
-			expectedStatus: StatusCompleted,
+			expectedCount: 1,
 		},
 		{
 			name:       "multiple stages with stores",
@@ -250,8 +246,7 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			inputDocs: []*Document{
 				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
 			},
-			expectedCount:  1,
-			expectedStatus: StatusCompleted,
+			expectedCount: 1,
 		},
 		{
 			name:       "stage that produces multiple documents",
@@ -281,16 +276,14 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			inputDocs: []*Document{
 				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
 			},
-			expectedCount:  3,
-			expectedStatus: StatusCompleted,
+			expectedCount: 3,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			stateStore := NewLocalStore(t.TempDir())
-			pipeline := NewPipeline(tt.pipelineID, stateStore)
+			pipeline := NewPipeline(tt.pipelineID)
 
 			for _, stage := range tt.stages {
 				pipeline.AddStage(stage.name, stage.processor, stage.store)
@@ -304,257 +297,42 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			if len(results) != tt.expectedCount {
 				t.Errorf("expected %d results, got %d", tt.expectedCount, len(results))
 			}
-
-			state := pipeline.State()
-			if state.Status != tt.expectedStatus {
-				t.Errorf("expected status %s, got %s", tt.expectedStatus, state.Status)
-			}
-
-			if state.CurrentStage != len(tt.stages) {
-				t.Errorf("expected current stage %d, got %d", len(tt.stages), state.CurrentStage)
-			}
-
-			if len(state.Stages) != len(tt.stages) {
-				t.Errorf("expected %d stage states, got %d", len(tt.stages), len(state.Stages))
-			}
-
-			for i, stageState := range state.Stages {
-				if stageState.Status != StatusCompleted {
-					t.Errorf("stage %d expected status %s, got %s", i, StatusCompleted, stageState.Status)
-				}
-				if stageState.CompletedAt == nil {
-					t.Errorf("stage %d should have CompletedAt set", i)
-				}
-			}
 		})
 	}
 }
 
-func TestPipeline_PauseAndResume(t *testing.T) {
-	tests := []struct {
-		name       string
-		pipelineID string
-		stages     []struct {
-			name      string
-			processor DocumentProcessor
-			store     Store
-		}
-		inputDocs      []*Document
-		pauseAtStage   int
-		expectedResume bool
-		expectedCount  int
-	}{
-		{
-			name:       "pause at first stage with store",
-			pipelineID: "test-pause-first",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "stage1",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							time.Sleep(100 * time.Millisecond)
-							return []*Document{
-								NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
-							}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-				{
-					name: "stage2",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s2", "s2.txt", []byte("stage2"), nil),
-							}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-			},
-			inputDocs: []*Document{
-				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
-			},
-			pauseAtStage:   0,
-			expectedResume: true,
-			expectedCount:  1,
+func TestPipeline_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pipeline := NewPipeline("test-cancel")
+	pipeline.AddStage("stage1", &mockProcessor{
+		process: func(doc *Document) ([]*Document, error) {
+			time.Sleep(200 * time.Millisecond)
+			return []*Document{doc}, nil
 		},
-		{
-			name:       "pause at middle stage with store",
-			pipelineID: "test-pause-middle",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "stage1",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
-							}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-				{
-					name: "stage2",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							time.Sleep(100 * time.Millisecond)
-							return []*Document{
-								NewInMemoryDocument("s2", "s2.txt", []byte("stage2"), nil),
-							}, nil
-						},
-					},
-					store: nil,
-				},
-				{
-					name: "stage3",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s3", "s3.txt", []byte("stage3"), nil),
-							}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-			},
-			inputDocs: []*Document{
-				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
-			},
-			pauseAtStage:   1,
-			expectedResume: true,
-			expectedCount:  1,
+	}, nil)
+	pipeline.AddStage("stage2", &mockProcessor{
+		process: func(doc *Document) ([]*Document, error) {
+			return []*Document{doc}, nil
 		},
-		{
-			name:       "pause at stage without store resumes from previous",
-			pipelineID: "test-pause-no-store",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "stage1",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
-							}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-				{
-					name: "stage2",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							time.Sleep(100 * time.Millisecond)
-							return []*Document{
-								NewInMemoryDocument("s2", "s2.txt", []byte("stage2"), nil),
-							}, nil
-						},
-					},
-					store: nil,
-				},
-				{
-					name: "stage3",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s3", "s3.txt", []byte("stage3"), nil),
-							}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-			},
-			inputDocs: []*Document{
-				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
-			},
-			pauseAtStage:   1,
-			expectedResume: true,
-			expectedCount:  1,
-		},
+	}, nil)
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	inputDocs := []*Document{
+		NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stateDir := t.TempDir()
-			stateStore := NewLocalStore(stateDir)
-
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			pipeline := NewPipeline(tt.pipelineID, stateStore)
-			for _, stage := range tt.stages {
-				pipeline.AddStage(stage.name, stage.processor, stage.store)
-			}
-
-			go func() {
-				time.Sleep(30 * time.Millisecond)
-				cancel()
-			}()
-
-			_, err := pipeline.Run(ctx, tt.inputDocs)
-			if err == nil {
-				t.Fatal("expected error from cancelled context")
-			}
-
-			state := pipeline.State()
-			if state.Status != StatusPaused {
-				t.Errorf("expected status %s, got %s", StatusPaused, state.Status)
-			}
-
-			if !tt.expectedResume {
-				return
-			}
-
-			newPipeline := NewPipeline(tt.pipelineID, stateStore)
-			for _, stage := range tt.stages {
-				newPipeline.AddStage(stage.name, stage.processor, stage.store)
-			}
-
-			resumeCtx := context.Background()
-			results, err := newPipeline.Resume(resumeCtx)
-			if err != nil {
-				t.Fatalf("Pipeline.Resume() error = %v", err)
-			}
-
-			if len(results) != tt.expectedCount {
-				t.Errorf("expected %d results after resume, got %d", tt.expectedCount, len(results))
-			}
-
-			finalState := newPipeline.State()
-			if finalState.Status != StatusCompleted {
-				t.Errorf("expected status %s after resume, got %s", StatusCompleted, finalState.Status)
-			}
-		})
+	_, err := pipeline.Run(ctx, inputDocs)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if err != ctx.Err() {
+		t.Errorf("expected context error, got %v", err)
 	}
 }
 
@@ -567,10 +345,8 @@ func TestPipeline_ErrorHandling(t *testing.T) {
 			processor DocumentProcessor
 			store     Store
 		}
-		inputDocs      []*Document
-		expectError    bool
-		expectedStatus PipelineStatus
-		errorStage     int
+		inputDocs   []*Document
+		expectError bool
 	}{
 		{
 			name:       "processor error",
@@ -592,9 +368,7 @@ func TestPipeline_ErrorHandling(t *testing.T) {
 			inputDocs: []*Document{
 				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
 			},
-			expectError:    true,
-			expectedStatus: StatusFailed,
-			errorStage:     0,
+			expectError: true,
 		},
 		{
 			name:       "store save error",
@@ -617,17 +391,14 @@ func TestPipeline_ErrorHandling(t *testing.T) {
 			inputDocs: []*Document{
 				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
 			},
-			expectError:    true,
-			expectedStatus: StatusFailed,
-			errorStage:     0,
+			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			stateStore := NewLocalStore(t.TempDir())
-			pipeline := NewPipeline(tt.pipelineID, stateStore)
+			pipeline := NewPipeline(tt.pipelineID)
 
 			for _, stage := range tt.stages {
 				pipeline.AddStage(stage.name, stage.processor, stage.store)
@@ -642,113 +413,10 @@ func TestPipeline_ErrorHandling(t *testing.T) {
 			if !tt.expectError && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-
-			state := pipeline.State()
-			if state.Status != tt.expectedStatus {
-				t.Errorf("expected status %s, got %s", tt.expectedStatus, state.Status)
-			}
-
-			if tt.expectError && tt.errorStage < len(state.Stages) {
-				if state.Stages[tt.errorStage].Status != StatusFailed {
-					t.Errorf("expected stage %d to have status %s, got %s", tt.errorStage, StatusFailed, state.Stages[tt.errorStage].Status)
-				}
-				if state.Stages[tt.errorStage].Error == "" {
-					t.Errorf("expected stage %d to have error message", tt.errorStage)
-				}
-			}
 		})
 	}
 }
 
-func TestPipeline_StatePersistence(t *testing.T) {
-	stateDir := t.TempDir()
-	stateStore := NewLocalStore(stateDir)
-
-	pipelineID := "test-state-persistence"
-	ctx := context.Background()
-
-	pipeline1 := NewPipeline(pipelineID, stateStore)
-	pipeline1.AddStage("stage1", &mockProcessor{
-		process: func(doc *Document) ([]*Document, error) {
-			return []*Document{
-				NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
-			}, nil
-		},
-	}, NewLocalStore(t.TempDir()))
-
-	inputDocs := []*Document{
-		NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
-	}
-
-	_, err := pipeline1.Run(ctx, inputDocs)
-	if err != nil {
-		t.Fatalf("Pipeline.Run() error = %v", err)
-	}
-
-	state1 := pipeline1.State()
-	if state1.Status != StatusCompleted {
-		t.Errorf("expected status %s, got %s", StatusCompleted, state1.Status)
-	}
-
-	pipeline2 := NewPipeline(pipelineID, stateStore)
-	pipeline2.AddStage("stage1", &mockProcessor{
-		process: func(doc *Document) ([]*Document, error) {
-			return []*Document{
-				NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
-			}, nil
-		},
-	}, NewLocalStore(t.TempDir()))
-
-	err = pipeline2.LoadState(ctx)
-	if err != nil {
-		t.Fatalf("Pipeline.LoadState() error = %v", err)
-	}
-
-	state2 := pipeline2.State()
-	if state2.ID != state1.ID {
-		t.Errorf("expected ID %s, got %s", state1.ID, state2.ID)
-	}
-	if state2.Status != state1.Status {
-		t.Errorf("expected status %s, got %s", state1.Status, state2.Status)
-	}
-	if state2.CurrentStage != state1.CurrentStage {
-		t.Errorf("expected current stage %d, got %d", state1.CurrentStage, state2.CurrentStage)
-	}
-	if len(state2.Stages) != len(state1.Stages) {
-		t.Errorf("expected %d stages, got %d", len(state1.Stages), len(state2.Stages))
-	}
-}
-
-func TestPipeline_Resume_WithoutPause(t *testing.T) {
-	stateDir := t.TempDir()
-	stateStore := NewLocalStore(stateDir)
-
-	pipelineID := "test-resume-no-pause"
-	ctx := context.Background()
-
-	pipeline := NewPipeline(pipelineID, stateStore)
-	pipeline.AddStage("stage1", &mockProcessor{
-		process: func(doc *Document) ([]*Document, error) {
-			return []*Document{
-				NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
-			}, nil
-		},
-	}, NewLocalStore(t.TempDir()))
-
-	inputDocs := []*Document{
-		NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
-	}
-
-	_, err := pipeline.Run(ctx, inputDocs)
-	if err != nil {
-		t.Fatalf("Pipeline.Run() error = %v", err)
-	}
-
-	_, err = pipeline.Resume(ctx)
-	if err == nil {
-		t.Fatal("expected error when resuming non-paused pipeline")
-	}
-}
 
 type errorStore struct{}
 
@@ -767,3 +435,6 @@ func (e *errorStore) List(ctx context.Context) ([]*Document, error) {
 func (e *errorStore) Delete(ctx context.Context, id string) error {
 	return os.ErrPermission
 }
+
+
+

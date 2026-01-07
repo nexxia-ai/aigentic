@@ -179,7 +179,7 @@ func TestChainableMethods(t *testing.T) {
 		SetOutputInstructions("Use JSON").
 		AddDocument(doc1).
 		AddDocument(doc2).
-		AddMemory("key1", "desc1", "content1", "session", "run-1")
+		AddMemory("key1", "desc1", "content1")
 
 	if ctx.outputInstructions != "Use JSON" {
 		t.Errorf("expected output instructions 'Use JSON', got '%s'", ctx.outputInstructions)
@@ -199,30 +199,30 @@ func TestChainableMethods(t *testing.T) {
 func TestAddMemory(t *testing.T) {
 	tests := []struct {
 		name      string
-		memories  []struct{ id, desc, content, scope, runID string }
+		memories  []struct{ id, desc, content string }
 		wantCount int
 	}{
 		{
 			name: "add single memory",
-			memories: []struct{ id, desc, content, scope, runID string }{
-				{"key1", "desc1", "content1", "session", "run-1"},
+			memories: []struct{ id, desc, content string }{
+				{"key1", "desc1", "content1"},
 			},
 			wantCount: 1,
 		},
 		{
 			name: "add multiple memories",
-			memories: []struct{ id, desc, content, scope, runID string }{
-				{"key1", "desc1", "content1", "session", "run-1"},
-				{"key2", "desc2", "content2", "session", "run-1"},
-				{"key3", "desc3", "content3", "global", "run-1"},
+			memories: []struct{ id, desc, content string }{
+				{"key1", "desc1", "content1"},
+				{"key2", "desc2", "content2"},
+				{"key3", "desc3", "content3"},
 			},
 			wantCount: 3,
 		},
 		{
 			name: "update existing memory",
-			memories: []struct{ id, desc, content, scope, runID string }{
-				{"key1", "desc1", "content1", "session", "run-1"},
-				{"key1", "desc2", "content2", "session", "run-1"},
+			memories: []struct{ id, desc, content string }{
+				{"key1", "desc1", "content1"},
+				{"key1", "desc2", "content2"},
 			},
 			wantCount: 1,
 		},
@@ -232,7 +232,7 @@ func TestAddMemory(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createTestContext(t, "id", "desc", "inst")
 			for _, mem := range tt.memories {
-				ctx.AddMemory(mem.id, mem.desc, mem.content, mem.scope, mem.runID)
+				ctx.AddMemory(mem.id, mem.desc, mem.content)
 			}
 
 			got := len(ctx.GetMemories())
@@ -255,8 +255,8 @@ func TestAddMemory(t *testing.T) {
 
 func TestRemoveMemory(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst").
-		AddMemory("m1", "d1", "c1", "session", "run-1").
-		AddMemory("m2", "d2", "c2", "global", "run-1")
+		AddMemory("m1", "d1", "c1").
+		AddMemory("m2", "d2", "c2")
 
 	err := ctx.RemoveMemory("m1")
 	if err != nil {
@@ -276,9 +276,9 @@ func TestRemoveMemory(t *testing.T) {
 
 func TestMemoryFilters(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst").
-		AddMemory("m1", "d1", "c1", "session", "run-1").
-		AddMemory("m2", "d2", "c2", "global", "run-1").
-		AddMemory("m3", "d3", "c3", "session", "run-2")
+		AddMemory("m1", "d1", "c1").
+		AddMemory("m2", "d2", "c2").
+		AddMemory("m3", "d3", "c3")
 
 	time.Sleep(10 * time.Millisecond)
 
@@ -293,22 +293,13 @@ func TestMemoryFilters(t *testing.T) {
 			wantCount: 3,
 		},
 		{
-			name: "filter by scope session",
+			name: "filter by runID",
 			filter: func() []MemoryEntry {
 				return Filter(ctx.GetMemories(), func(m MemoryEntry) bool {
-					return m.Scope == "session"
+					return m.RunID == ""
 				})
 			},
-			wantCount: 2,
-		},
-		{
-			name: "filter by scope global",
-			filter: func() []MemoryEntry {
-				return Filter(ctx.GetMemories(), func(m MemoryEntry) bool {
-					return m.Scope == "global"
-				})
-			},
-			wantCount: 1,
+			wantCount: 3,
 		},
 		{
 			name: "filter by age",
@@ -333,8 +324,8 @@ func TestMemoryFilters(t *testing.T) {
 
 func TestMemoryFindByID(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst").
-		AddMemory("m1", "desc1", "content1", "session", "run-1").
-		AddMemory("m2", "desc2", "content2", "global", "run-1")
+		AddMemory("m1", "desc1", "content1").
+		AddMemory("m2", "desc2", "content2")
 
 	mem := Find(ctx.GetMemories(), func(m MemoryEntry) bool {
 		return m.ID == "m1"
@@ -378,8 +369,8 @@ func TestClearMethods(t *testing.T) {
 		{
 			name: "clear memories",
 			setup: func(ctx *AgentContext) {
-				ctx.AddMemory("k1", "d1", "c1", "session", "run-1")
-				ctx.AddMemory("k2", "d2", "c2", "session", "run-1")
+				ctx.AddMemory("k1", "d1", "c1")
+				ctx.AddMemory("k2", "d2", "c2")
 			},
 			clear:     func(ctx *AgentContext) { ctx.ClearMemories() },
 			check:     func(ctx *AgentContext) int { return len(ctx.GetMemories()) },
@@ -415,7 +406,7 @@ func TestClearAll(t *testing.T) {
 
 	ctx := createTestContext(t, "id", "desc", "inst").
 		AddDocument(doc).
-		AddMemory("m1", "d1", "c1", "session", "run-1")
+		AddMemory("m1", "d1", "c1")
 
 	ctx.GetHistory().appendTurn(Turn{})
 

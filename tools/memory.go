@@ -49,7 +49,7 @@ func NewMemoryTool() run.AgentTool {
 				}, nil
 			}
 
-			agentRun.AgentContext().AddMemory(id, description, content, "session", agentRun.ID())
+			agentRun.AgentContext().AddMemory(id, description, content)
 
 			msg := fmt.Sprintf("Memory '%s' stored", id)
 			return &ai.ToolResult{

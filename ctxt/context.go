@@ -177,7 +177,7 @@ func (r *AgentContext) GetDocumentByID(id string) *document.Document {
 	return nil
 }
 
-func (r *AgentContext) AddMemory(id, description, content, scope, runID string) *AgentContext {
+func (r *AgentContext) AddMemory(id, description, content string) *AgentContext {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -186,8 +186,6 @@ func (r *AgentContext) AddMemory(id, description, content, scope, runID string) 
 		if r.memories[i].ID == id {
 			r.memories[i].Description = description
 			r.memories[i].Content = content
-			r.memories[i].Scope = scope
-			r.memories[i].RunID = runID
 			r.memories[i].Timestamp = now
 			return r
 		}
@@ -197,8 +195,6 @@ func (r *AgentContext) AddMemory(id, description, content, scope, runID string) 
 		ID:          id,
 		Description: description,
 		Content:     content,
-		Scope:       scope,
-		RunID:       runID,
 		Timestamp:   now,
 	})
 	return r

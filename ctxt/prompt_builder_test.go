@@ -13,10 +13,10 @@ import (
 
 func TestCreateSystemMsg(t *testing.T) {
 	tests := []struct {
-		name              string
-		setup             func(*AgentContext) *AgentContext
-		tools             []ai.Tool
-		expectedContains  []string
+		name                string
+		setup               func(*AgentContext) *AgentContext
+		tools               []ai.Tool
+		expectedContains    []string
 		expectedNotContains []string
 	}{
 		{
@@ -93,8 +93,8 @@ func TestCreateSystemMsg(t *testing.T) {
 		{
 			name: "with memories",
 			setup: func(ac *AgentContext) *AgentContext {
-				ac.AddMemory("mem1", "Memory 1", "Content 1", "session", "run1")
-				ac.AddMemory("mem2", "Memory 2", "Content 2", "session", "run1")
+				ac.AddMemory("mem1", "Memory 1", "Content 1")
+				ac.AddMemory("mem2", "Memory 2", "Content 2")
 				return ac
 			},
 			tools: nil,
@@ -126,7 +126,7 @@ func TestCreateSystemMsg(t *testing.T) {
 				ac.SetDescription("Test Role")
 				ac.SetInstructions("Test Instructions")
 				ac.SetOutputInstructions("Test Output")
-				ac.AddMemory("mem1", "Memory 1", "Content 1", "session", "run1")
+				ac.AddMemory("mem1", "Memory 1", "Content 1")
 				ac.Turn().InjectSystemTag("tag1", "tag content")
 				return ac
 			},
@@ -181,7 +181,7 @@ func TestCreateSystemMsgWithMemoryFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	store := document.NewLocalStore(ac.ExecutionEnvironment().MemoryDir)
-	
+
 	memDoc1 := document.NewInMemoryDocument("mem1", "memory1.txt", []byte("Memory file 1 content"), nil)
 	memDoc2 := document.NewInMemoryDocument("mem2", "memory2.txt", []byte("Memory file 2 content"), nil)
 
@@ -209,7 +209,7 @@ func TestCreateDocsMsg(t *testing.T) {
 		name             string
 		setup            func(*AgentContext) *AgentContext
 		expectedContains []string
-		shouldBeNil       bool
+		shouldBeNil      bool
 	}{
 		{
 			name: "no documents",
@@ -329,10 +329,10 @@ func TestCreateDocsMsg(t *testing.T) {
 
 func TestCreateUserMsg(t *testing.T) {
 	tests := []struct {
-		name             string
-		setup            func(*AgentContext) *AgentContext
-		message          string
-		expectedContains []string
+		name                string
+		setup               func(*AgentContext) *AgentContext
+		message             string
+		expectedContains    []string
 		expectedNotContains []string
 	}{
 		{
@@ -426,11 +426,11 @@ func TestBuildPrompt(t *testing.T) {
 			setup: func(ac *AgentContext) *AgentContext {
 				return ac
 			},
-			tools:          nil,
-			includeHistory: false,
-			userMessage:    "Hello",
+			tools:            nil,
+			includeHistory:   false,
+			userMessage:      "Hello",
 			expectedMsgCount: 2,
-			expectedOrder: []string{"system", "user"},
+			expectedOrder:    []string{"system", "user"},
 		},
 		{
 			name: "with documents",
@@ -439,11 +439,11 @@ func TestBuildPrompt(t *testing.T) {
 				ac.AddDocument(doc)
 				return ac
 			},
-			tools:          nil,
-			includeHistory: false,
-			userMessage:    "Process document",
+			tools:            nil,
+			includeHistory:   false,
+			userMessage:      "Process document",
 			expectedMsgCount: 3,
-			expectedOrder: []string{"system", "user", "user"},
+			expectedOrder:    []string{"system", "user", "user"},
 		},
 		{
 			name: "with history",
@@ -452,11 +452,11 @@ func TestBuildPrompt(t *testing.T) {
 				ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "First response"})
 				return ac
 			},
-			tools:          nil,
-			includeHistory: true,
-			userMessage:    "Second message",
+			tools:            nil,
+			includeHistory:   true,
+			userMessage:      "Second message",
 			expectedMsgCount: 0,
-			expectedOrder: []string{"system"},
+			expectedOrder:    []string{"system"},
 			validate: func(t *testing.T, msgs []ai.Message) {
 				assert.GreaterOrEqual(t, len(msgs), 3, "Should have at least system, history user, history assistant, and current user")
 				historyUserFound := false
@@ -487,11 +487,11 @@ func TestBuildPrompt(t *testing.T) {
 				ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "First response"})
 				return ac
 			},
-			tools:          nil,
-			includeHistory: false,
-			userMessage:    "Second message",
+			tools:            nil,
+			includeHistory:   false,
+			userMessage:      "Second message",
 			expectedMsgCount: 2,
-			expectedOrder: []string{"system", "user"},
+			expectedOrder:    []string{"system", "user"},
 		},
 		{
 			name: "with turn documents",
@@ -500,9 +500,9 @@ func TestBuildPrompt(t *testing.T) {
 				ac.Turn().AddDocument("tool1", doc)
 				return ac
 			},
-			tools:          nil,
-			includeHistory: false,
-			userMessage:    "Process",
+			tools:            nil,
+			includeHistory:   false,
+			userMessage:      "Process",
 			expectedMsgCount: 3,
 			validate: func(t *testing.T, msgs []ai.Message) {
 				resourceFound := false
@@ -528,9 +528,9 @@ func TestBuildPrompt(t *testing.T) {
 				ac.Turn().AddMessage(toolMsg)
 				return ac
 			},
-			tools:          nil,
-			includeHistory: false,
-			userMessage:    "Test",
+			tools:            nil,
+			includeHistory:   false,
+			userMessage:      "Test",
 			expectedMsgCount: 3,
 			validate: func(t *testing.T, msgs []ai.Message) {
 				toolFound := false
@@ -549,24 +549,24 @@ func TestBuildPrompt(t *testing.T) {
 			setup: func(ac *AgentContext) *AgentContext {
 				ac.SetDescription("Test Role")
 				ac.SetInstructions("Test Instructions")
-				ac.AddMemory("mem1", "Memory 1", "Content 1", "session", "run1")
-				
+				ac.AddMemory("mem1", "Memory 1", "Content 1")
+
 				doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
 				ac.AddDocument(doc1)
-				
+
 				doc2 := document.NewInMemoryDocument("doc2", "turn.pdf", []byte("turn content"), nil)
 				ac.Turn().AddDocument("tool1", doc2)
-				
+
 				ac.StartTurn("Previous message")
 				ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Previous response"})
-				
+
 				return ac
 			},
 			tools: []ai.Tool{
 				{Name: "tool1", Description: "Tool description"},
 			},
-			includeHistory: true,
-			userMessage:    "Current message",
+			includeHistory:   true,
+			userMessage:      "Current message",
 			expectedMsgCount: 0,
 			validate: func(t *testing.T, msgs []ai.Message) {
 				assert.GreaterOrEqual(t, len(msgs), 3, "Should have at least system, docs, and user messages")
@@ -575,7 +575,7 @@ func TestBuildPrompt(t *testing.T) {
 				assert.Contains(t, sysMsg.Content, "Test Instructions")
 				assert.Contains(t, sysMsg.Content, "mem1")
 				assert.Contains(t, sysMsg.Content, "tool1")
-				
+
 				var userMsgFound bool
 				for _, msg := range msgs {
 					if um, ok := msg.(ai.UserMessage); ok && strings.Contains(um.Content, "Current message") {
@@ -652,7 +652,7 @@ func TestBuildPromptWithSystemAndUserTags(t *testing.T) {
 
 	ac.SetDescription("Test Role")
 	ac.Turn().InjectSystemTag("tag1", "system tag content")
-	
+
 	ac.StartTurn("Test message")
 	ac.Turn().InjectUserTag("tag2", "user tag content")
 
@@ -684,7 +684,7 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 	ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Response"})
 
 	ac.StartTurn("Current message")
-	
+
 	doc2 := document.NewInMemoryDocument("doc2", "turn.pdf", []byte("turn content"), nil)
 	ac.Turn().AddDocument("tool1", doc2)
 
@@ -716,7 +716,7 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 		if msg == nil {
 			continue
 		}
-		
+
 		if um, ok := msg.(ai.UserMessage); ok {
 			if strings.Contains(um.Content, "The following documents are available") {
 				docsMsgFound = true
@@ -727,15 +727,15 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 				currentUserFound = true
 			}
 		}
-		
+
 		if am, ok := msg.(ai.AIMessage); ok && strings.Contains(am.Content, "Response") {
 			historyAssistantFound = true
 		}
-		
+
 		if rm, ok := msg.(ai.ResourceMessage); ok {
 			resourceMsgs = append(resourceMsgs, rm)
 		}
-		
+
 		if tm, ok := msg.(ai.ToolMessage); ok && tm.Content == "Tool result" {
 			toolMsgFound = true
 		}
@@ -755,12 +755,12 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	store := document.NewLocalStore(ac.ExecutionEnvironment().MemoryDir)
-	
+
 	memDoc := document.NewInMemoryDocument("mem1", "memory.txt", []byte("Memory content"), nil)
 	_, err = store.Save(context.Background(), memDoc)
 	require.NoError(t, err)
 
-	ac.AddMemory("mem1", "Test Memory", "Memory content", "session", "run1")
+	ac.AddMemory("mem1", "Test Memory", "Memory content")
 	ac.StartTurn("Test message")
 
 	msgs, err := ac.BuildPrompt(nil, false)
@@ -779,7 +779,7 @@ func TestBuildPromptDocumentReferences(t *testing.T) {
 
 	doc1 := document.NewInMemoryDocument("doc1", "ref1.pdf", []byte("content1"), nil)
 	doc2 := document.NewInMemoryDocument("doc2", "ref2.txt", []byte("content2"), nil)
-	
+
 	ac.AddDocument(doc1)
 	ac.AddDocumentReference(doc2)
 
@@ -807,7 +807,7 @@ func TestBuildPromptDocumentReferences(t *testing.T) {
 
 	assert.True(t, docsMsgFound, "Should have documents message")
 	assert.GreaterOrEqual(t, len(resourceMsgs), 1, "Should have at least one resource message (document reference)")
-	
+
 	refFound := false
 	for _, rm := range resourceMsgs {
 		if rm.URI != "" {
@@ -836,4 +836,3 @@ func TestBuildPromptEmptyUserMessage(t *testing.T) {
 	}
 	assert.True(t, userMsgFound, "Should have user message even with empty content")
 }
-

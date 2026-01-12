@@ -27,8 +27,14 @@ The MemoryTool provides a single `update_memory` tool that allows the LLM to sto
 
 **Example Usage:**
 ```go
+import (
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
+	"github.com/nexxia-ai/aigentic/tools"
+)
+
 agent := aigentic.Agent{
-    AgentTools: []aigentic.AgentTool{tools.NewMemoryTool()},
+	AgentTools: []run.AgentTool{tools.NewMemoryTool()},
 }
 
 // The LLM will automatically use update_memory to store information
@@ -39,39 +45,48 @@ Memories are automatically injected into the system prompt, so the LLM always ha
 
 ## Using Tools with Agents
 
-All tools in this directory return `aigentic.AgentTool` and can be used directly with agents:
+All tools in this directory return `run.AgentTool` and can be used directly with agents:
 
 ```go
 package main
 
 import (
-    "github.com/nexxia-ai/aigentic"
-    "github.com/nexxia-ai/aigentic/tools"
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/run"
+	"github.com/nexxia-ai/aigentic/tools"
 )
 
 func main() {
-    agent := aigentic.Agent{
-        Name:        "my-agent",
-        Description: "An agent with file and Python tools",
-        Model:       model,
-        AgentTools: []aigentic.AgentTool{
-            tools.NewMemoryTool(),
-            tools.NewReadFileTool(),
-            tools.NewWriteFileTool(),
-            tools.NewPythonSandboxTool(),
-        },
-    }
+	agent := aigentic.Agent{
+		Name:        "my-agent",
+		Description: "An agent with file and Python tools",
+		Model:       model,
+		AgentTools: []run.AgentTool{
+			tools.NewMemoryTool(),
+			tools.NewReadFileTool(),
+			tools.NewWriteFileTool(),
+			tools.NewPythonSandboxTool(),
+		},
+	}
 
-    result, err := agent.Execute("Read myfile.txt from store1")
-    // ...
+	result, err := agent.Execute("Read myfile.txt from store1")
+	_ = result
+	_ = err
 }
 ```
 
 ## Writing Tests for AgentTools
 
-When testing tools, you must use the `AgentTool` interface which requires an `*AgentRun` parameter:
+When testing tools, you must use the `AgentTool` interface which requires a `*run.AgentRun` parameter:
 
 ```go
+import (
+    "testing"
+
+    "github.com/nexxia-ai/aigentic/ai"
+    "github.com/nexxia-ai/aigentic/run"
+)
+
 func TestMyTool(t *testing.T) {
     tool := NewMyTool()
 
@@ -80,7 +95,7 @@ func TestMyTool(t *testing.T) {
     }
 
     // AgentTool.Execute requires *AgentRun as first parameter
-    result, err := tool.Execute(&aigentic.AgentRun{}, args)
+    result, err := tool.Execute(&run.AgentRun{}, args)
     if err != nil {
         t.Fatalf("unexpected error: %v", err)
     }
@@ -106,7 +121,7 @@ Execute func(args map[string]interface{}) (*ai.ToolResult, error)
 
 **AgentTool (new):**
 ```go
-Execute func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error)
+Execute func(run *run.AgentRun, args map[string]interface{}) (*ai.ToolResult, error)
 ```
 
 The `AgentRun` parameter provides access to:
@@ -115,7 +130,7 @@ The `AgentRun` parameter provides access to:
 - Trace information
 - Other agent context
 
-For simple tests, you can pass an empty `&aigentic.AgentRun{}`.
+For simple tests, you can pass an empty `&run.AgentRun{}`.
 
 ## Creating New Agent Tools
 
@@ -124,7 +139,7 @@ Use the `run.NewTool` helper function:
 ```go
 import "github.com/nexxia-ai/aigentic/run"
 
-func NewMyTool() aigentic.AgentTool {
+func NewMyTool() run.AgentTool {
     type MyToolInput struct {
         Param1 string `json:"param1" description:"Description of param1"`
         Param2 int    `json:"param2,omitempty" description:"Optional param2"`
@@ -210,7 +225,7 @@ If you encounter build errors related to dependencies, the tool code itself is c
 
 ## Tool Migration Notes
 
-All tools were migrated from `ai.Tool` to `aigentic.AgentTool` to:
+All tools were migrated from `ai.Tool` to `run.AgentTool` to:
 - Support agent-specific context (memory, trace)
 - Enable approval workflows
 - Provide validation capabilities

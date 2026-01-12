@@ -1,5 +1,10 @@
 # Repository Guidelines
 
+## Package API Notes
+- Create models with `ai.New(<model identifier>, apiKey)` after importing provider modules (e.g., `_ "github.com/nexxia-ai/aigentic-openai"`); identifiers are listed via `ai.Models()`.
+- Agent tools use the `run.AgentTool` type and `run.NewTool` helper; built-in tools in `tools/` return `run.AgentTool`.
+- Documents come from the `document` package and are passed as `[]*document.Document` via `Agent.Documents` or `Agent.DocumentReferences`.
+
 ## Project Structure & Module Organization
 - Root Go module: `aigentic` (see `go.mod`).
 - Core package files at repo root: `agent.go`, `interface.go`, etc.
@@ -46,8 +51,7 @@ The `document` package (`github.com/nexxia-ai/aigentic/document`) provides docum
 
 - **Document** (`document.go`) - Core document type representing files with metadata (filename, MIME type, file size, chunking info). Supports lazy loading via loader functions. Documents can be passed to agents and are automatically included in the agent's context.
 - **DocumentProcessor** (`document.go`) - Interface for processing documents. Processors take a document and return zero or more processed documents (e.g., chunking, transformation).
-- **Pipeline** (`pipeline.go`) - Chains multiple document processors together in stages. Supports optional backing stores per stage. Create with `NewPipeline()`, add stages with `AddStage()`, then execute with `Run()`.
-- **Stage** (`stage.go`) - Wraps a processor with an optional backing store for intermediate results.
+- **Pipeline** (`pipeline.go`) - Chains multiple document processors together. Create with `NewPipeline()`, add processors with `Add()`, then execute with `Run()` or `Process()`.
 - **Store** (`store.go`) - Interface for document storage with `Save()`, `Load()`, `List()`, and `Delete()` operations.
 - **LocalStore** (`local_store.go`) - File system-based implementation of Store that persists documents and metadata to disk. Supports lazy loading of document content.
 

@@ -42,7 +42,7 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 	}
 
 	if basePath == "" {
-		basePath = filepath.Join(os.TempDir(), "aigentic-workspace")
+		return nil, fmt.Errorf("context base path is required")
 	}
 	ee, err := NewExecutionEnvironment(basePath, id)
 	if err != nil {

@@ -11,6 +11,19 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 )
 
+// withTempWorkingDir switches to a temp working directory for the test and restores it afterward.
+func withTempWorkingDir(t *testing.T) {
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+}
+
 func createTestContext(t *testing.T, id, description, instructions string) *AgentContext {
 	ctx, err := New(id, description, instructions, t.TempDir())
 	if err != nil {
@@ -492,6 +505,8 @@ func TestHistoryQuery(t *testing.T) {
 }
 
 func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
+	withTempWorkingDir(t)
+
 	baseDir := t.TempDir()
 	ctx, err := New("test-id", "test description", "test instructions", baseDir)
 	if err != nil {
@@ -529,4 +544,9 @@ func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 	if !strings.Contains(sysMsg.Content, memoryFileName) {
 		t.Errorf("system message should contain memory file name %q, got: %s", memoryFileName, sysMsg.Content)
 	}
+
+	storeName := ctx.ExecutionEnvironment().MemoryStoreName()
+	t.Cleanup(func() {
+		document.UnregisterStore(storeName)
+	})
 }

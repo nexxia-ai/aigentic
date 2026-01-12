@@ -1,85 +1,307 @@
 package document
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
-func TestLocalStore_Quick(t *testing.T) {
-	b := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}
-	s := string(b)
-	s2 := string(b)
+func TestLocalStore_StoreOperations(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewLocalStore(tempDir)
+	storeID := store.ID()
 
-	if &s == &s2 {
-		t.Errorf("s and s2 should not be the same")
+	if err := RegisterStore(store); err != nil {
+		t.Fatalf("Failed to register store: %v", err)
 	}
 
-	hello := "Hello, World!"
-	b3 := []byte(hello)
-	s3 := string(b3)
+	// Cleanup: unregister store
+	t.Cleanup(func() {
+		UnregisterStore(storeID)
+	})
 
-	if &hello == &s3 {
-		t.Errorf("hello and s3 should not be the same")
-	}
+	ctx := context.Background()
 
+	t.Run("Create and Open", func(t *testing.T) {
+		filename := "test.txt"
+		content := "Hello, World!"
+		reader := bytes.NewReader([]byte(content))
+
+		docID, err := store.Create(ctx, filename, reader)
+		if err != nil {
+			t.Fatalf("Failed to create document: %v", err)
+		}
+
+		if docID != filename {
+			t.Errorf("Expected ID %s, got %s", filename, docID)
+		}
+
+		readCloser, err := store.Open(ctx, docID)
+		if err != nil {
+			t.Fatalf("Failed to open document: %v", err)
+		}
+		defer readCloser.Close()
+
+		readContent, err := io.ReadAll(readCloser)
+		if err != nil {
+			t.Fatalf("Failed to read content: %v", err)
+		}
+
+		if string(readContent) != content {
+			t.Errorf("Expected content %s, got %s", content, string(readContent))
+		}
+	})
+
+	t.Run("Save", func(t *testing.T) {
+		docID := "update.txt"
+		initialContent := "initial"
+		updatedContent := "updated"
+
+		reader1 := bytes.NewReader([]byte(initialContent))
+		if _, err := store.Create(ctx, docID, reader1); err != nil {
+			t.Fatalf("Failed to create document: %v", err)
+		}
+
+		reader2 := bytes.NewReader([]byte(updatedContent))
+		if err := store.Save(ctx, docID, reader2); err != nil {
+			t.Fatalf("Failed to save document: %v", err)
+		}
+
+		readCloser, err := store.Open(ctx, docID)
+		if err != nil {
+			t.Fatalf("Failed to open document: %v", err)
+		}
+		defer readCloser.Close()
+
+		readContent, err := io.ReadAll(readCloser)
+		if err != nil {
+			t.Fatalf("Failed to read content: %v", err)
+		}
+
+		if string(readContent) != updatedContent {
+			t.Errorf("Expected content %s, got %s", updatedContent, string(readContent))
+		}
+	})
+
+	t.Run("List", func(t *testing.T) {
+		files := []string{"file1.txt", "file2.txt", "file3.txt"}
+		for _, file := range files {
+			content := "content for " + file
+			reader := bytes.NewReader([]byte(content))
+			if _, err := store.Create(ctx, file, reader); err != nil {
+				t.Fatalf("Failed to create %s: %v", file, err)
+			}
+		}
+
+		ids, err := store.List(ctx)
+		if err != nil {
+			t.Fatalf("Failed to list documents: %v", err)
+		}
+
+		if len(ids) < len(files) {
+			t.Errorf("Expected at least %d documents, got %d", len(files), len(ids))
+		}
+
+		found := make(map[string]bool)
+		for _, id := range ids {
+			found[id] = true
+		}
+
+		for _, file := range files {
+			if !found[file] {
+				t.Errorf("Expected file %s in list", file)
+			}
+		}
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		docID := "delete_me.txt"
+		content := "delete this"
+		reader := bytes.NewReader([]byte(content))
+		if _, err := store.Create(ctx, docID, reader); err != nil {
+			t.Fatalf("Failed to create document: %v", err)
+		}
+
+		if err := store.Delete(ctx, docID); err != nil {
+			t.Fatalf("Failed to delete document: %v", err)
+		}
+
+		_, err := store.Open(ctx, docID)
+		if err == nil {
+			t.Error("Expected error when opening deleted document")
+		}
+	})
 }
 
-func TestLocalStore_Open(t *testing.T) {
-	// Create a temporary file for testing
+func TestDocument_FacadeFunctions(t *testing.T) {
 	tempDir := t.TempDir()
-	tempFile := filepath.Join(tempDir, "test.txt")
-
-	content := "Hello, World!"
-	err := os.WriteFile(tempFile, []byte(content), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	// Create LocalStore
 	store := NewLocalStore(tempDir)
+	storeID := store.ID()
 
-	// Test Open
-	doc, err := store.Load(context.Background(), tempFile)
-	if err != nil {
-		t.Fatalf("Failed to open document: %v", err)
-	}
-
-	// Verify document metadata
-	if doc.Filename != "test.txt" {
-		t.Errorf("Expected filename 'test.txt', got '%s'", doc.Filename)
-	}
-	if doc.MimeType != "text/plain; charset=utf-8" {
-		t.Errorf("Expected type TXT, got %s", doc.MimeType)
-	}
-	if doc.FileSize != int64(len(content)) {
-		t.Errorf("Expected file size %d, got %d", len(content), doc.FileSize)
+	if err := RegisterStore(store); err != nil {
+		t.Fatalf("Failed to register store: %v", err)
 	}
 
-	// Access content to trigger lazy loading
-	docContent, err := doc.Bytes()
-	if err != nil {
-		t.Fatalf("Failed to get content: %v", err)
-	}
-	if string(docContent) != content {
-		t.Errorf("Expected content '%s', got '%s'", content, string(docContent))
-	}
+	ctx := context.Background()
 
-	// Test binary access
-	binaryData, err := doc.Bytes()
-	if err != nil {
-		t.Fatalf("Failed to get binary data: %v", err)
-	}
-	if len(binaryData) != len(content) {
-		t.Errorf("Expected binary data length %d, got %d", len(content), len(binaryData))
-	}
+	t.Run("Upload", func(t *testing.T) {
+		tempFile := filepath.Join(t.TempDir(), "upload_test.txt")
+		content := "upload test content"
+		if err := os.WriteFile(tempFile, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		doc, err := Upload(ctx, storeID, tempFile)
+		if err != nil {
+			t.Fatalf("Failed to upload document: %v", err)
+		}
+
+		if doc.Filename != "upload_test.txt" {
+			t.Errorf("Expected filename 'upload_test.txt', got '%s'", doc.Filename)
+		}
+
+		docContent, err := doc.Bytes()
+		if err != nil {
+			t.Fatalf("Failed to get content: %v", err)
+		}
+
+		if string(docContent) != content {
+			t.Errorf("Expected content %s, got %s", content, string(docContent))
+		}
+	})
+
+	t.Run("Create", func(t *testing.T) {
+		filename := "create_test.txt"
+		content := "create test content"
+		reader := bytes.NewReader([]byte(content))
+
+		doc, err := Create(ctx, storeID, filename, reader)
+		if err != nil {
+			t.Fatalf("Failed to create document: %v", err)
+		}
+
+		if doc.Filename != filename {
+			t.Errorf("Expected filename %s, got %s", filename, doc.Filename)
+		}
+
+		docContent, err := doc.Bytes()
+		if err != nil {
+			t.Fatalf("Failed to get content: %v", err)
+		}
+
+		if string(docContent) != content {
+			t.Errorf("Expected content %s, got %s", content, string(docContent))
+		}
+	})
+
+	t.Run("Open", func(t *testing.T) {
+		filename := "open_test.txt"
+		content := "open test content"
+		reader := bytes.NewReader([]byte(content))
+
+		createdDoc, err := Create(ctx, storeID, filename, reader)
+		if err != nil {
+			t.Fatalf("Failed to create document: %v", err)
+		}
+		docID := createdDoc.ID()
+
+		openedDoc, err := Open(ctx, storeID, docID)
+		if err != nil {
+			t.Fatalf("Failed to open document: %v", err)
+		}
+
+		if openedDoc.Filename != filename {
+			t.Errorf("Expected filename %s, got %s", filename, openedDoc.Filename)
+		}
+
+		docContent, err := openedDoc.Bytes()
+		if err != nil {
+			t.Fatalf("Failed to get content: %v", err)
+		}
+
+		if string(docContent) != content {
+			t.Errorf("Expected content %s, got %s", content, string(docContent))
+		}
+	})
+
+	t.Run("List", func(t *testing.T) {
+		files := []string{"list1.txt", "list2.txt", "list3.txt"}
+		for _, file := range files {
+			content := "content for " + file
+			reader := bytes.NewReader([]byte(content))
+			if _, err := Create(ctx, storeID, file, reader); err != nil {
+				t.Fatalf("Failed to create %s: %v", file, err)
+			}
+		}
+
+		docs, err := List(ctx, storeID)
+		if err != nil {
+			t.Fatalf("Failed to list documents: %v", err)
+		}
+
+		if len(docs) < len(files) {
+			t.Errorf("Expected at least %d documents, got %d", len(files), len(docs))
+		}
+
+		found := make(map[string]bool)
+		for _, doc := range docs {
+			found[doc.Filename] = true
+		}
+
+		for _, file := range files {
+			if !found[file] {
+				t.Errorf("Expected file %s in list", file)
+			}
+		}
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		filename := "delete_test.txt"
+		content := "delete test content"
+		reader := bytes.NewReader([]byte(content))
+
+		doc, err := Create(ctx, storeID, filename, reader)
+		if err != nil {
+			t.Fatalf("Failed to create document: %v", err)
+		}
+		docID := doc.ID()
+
+		if err := Delete(ctx, storeID, docID); err != nil {
+			t.Fatalf("Failed to delete document: %v", err)
+		}
+
+		_, err = Open(ctx, storeID, docID)
+		if err == nil {
+			t.Error("Expected error when opening deleted document")
+		}
+	})
+
+	t.Run("Remove", func(t *testing.T) {
+		filename := "remove_test.txt"
+		content := "remove test content"
+		reader := bytes.NewReader([]byte(content))
+
+		doc, err := Create(ctx, storeID, filename, reader)
+		if err != nil {
+			t.Fatalf("Failed to create document: %v", err)
+		}
+		docID := doc.ID()
+
+		if err := Remove(ctx, doc); err != nil {
+			t.Fatalf("Failed to remove document: %v", err)
+		}
+
+		_, err = Open(ctx, storeID, docID)
+		if err == nil {
+			t.Error("Expected error when opening removed document")
+		}
+	})
 }
 
 func TestDocument_IsChunk(t *testing.T) {
-	// Test main document
 	doc := NewInMemoryDocument(
 		"test.txt",
 		"test.txt",
@@ -90,7 +312,6 @@ func TestDocument_IsChunk(t *testing.T) {
 		t.Error("Main document should not be a chunk")
 	}
 
-	// Test chunk document
 	chunk := NewInMemoryDocument(
 		"test_chunk_0.txt",
 		"test_chunk_0.txt",
@@ -102,215 +323,77 @@ func TestDocument_IsChunk(t *testing.T) {
 	}
 }
 
-func TestLocalStore_OptionalMetadata(t *testing.T) {
-	tempDir := t.TempDir()
-	store := NewLocalStore(tempDir)
+func TestStore_Registry(t *testing.T) {
+	t.Run("Register and Get", func(t *testing.T) {
+		store := NewInMemoryStore()
+		storeID := store.ID()
 
-	plainFileName := "plain_file.txt"
-	plainFileContent := "plain file content"
-	plainFilePath := filepath.Join(tempDir, plainFileName)
-
-	err := os.WriteFile(plainFilePath, []byte(plainFileContent), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create plain file: %v", err)
-	}
-
-	doc, err := store.Load(context.Background(), plainFileName)
-	if err != nil {
-		t.Fatalf("Failed to load plain file: %v", err)
-	}
-
-	if doc.Filename != plainFileName {
-		t.Errorf("Expected filename %s, got %s", plainFileName, doc.Filename)
-	}
-
-	content, err := doc.Bytes()
-	if err != nil {
-		t.Fatalf("Failed to get document bytes: %v", err)
-	}
-
-	if string(content) != plainFileContent {
-		t.Errorf("Expected content %s, got %s", plainFileContent, string(content))
-	}
-
-	list, err := store.List(context.Background())
-	if err != nil {
-		t.Fatalf("Failed to list documents: %v", err)
-	}
-
-	found := false
-	for _, d := range list {
-		if d.Filename == plainFileName {
-			found = true
-			content, err := d.Bytes()
-			if err != nil {
-				t.Fatalf("Failed to get document bytes: %v", err)
-			}
-			if string(content) != plainFileContent {
-				t.Errorf("Expected content %s, got %s", plainFileContent, string(content))
-			}
-			break
-		}
-	}
-
-	if !found {
-		t.Error("Plain file not found in list")
-	}
-}
-
-func TestLocalStore_MixedMetadata(t *testing.T) {
-	tempDir := t.TempDir()
-	store := NewLocalStore(tempDir)
-
-	plainFileName := "plain.txt"
-	plainFileContent := "plain content"
-	plainFilePath := filepath.Join(tempDir, plainFileName)
-
-	err := os.WriteFile(plainFilePath, []byte(plainFileContent), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create plain file: %v", err)
-	}
-
-	docWithMeta := NewInMemoryDocument("doc1", "doc1.txt", []byte("content with metadata"), nil)
-	_, err = store.Save(context.Background(), docWithMeta)
-	if err != nil {
-		t.Fatalf("Failed to save document with metadata: %v", err)
-	}
-
-	list, err := store.List(context.Background())
-	if err != nil {
-		t.Fatalf("Failed to list documents: %v", err)
-	}
-
-	if len(list) != 2 {
-		t.Errorf("Expected 2 documents, got %d", len(list))
-	}
-
-	foundPlain := false
-	foundWithMeta := false
-	for _, d := range list {
-		if d.Filename == plainFileName {
-			foundPlain = true
-		}
-		if d.ID() == docWithMeta.ID() {
-			foundWithMeta = true
-		}
-	}
-
-	if !foundPlain {
-		t.Error("Plain file not found in list")
-	}
-
-	if !foundWithMeta {
-		t.Error("Document with metadata not found in list")
-	}
-}
-
-func TestLocalStore_ListAllScenarios(t *testing.T) {
-	tempDir := t.TempDir()
-	store := NewLocalStore(tempDir)
-	ctx := context.Background()
-
-	scenario1ID := "doc_with_meta"
-	scenario2FileName := "doc_without_meta.txt"
-	scenario3ID := "meta_only"
-
-	scenario1Content := []byte("content with metadata")
-	scenario2Content := []byte("content without metadata")
-	scenario3MetaFilename := "meta_only_file.txt"
-
-	docWithMeta := NewInMemoryDocument(scenario1ID, scenario1ID+".txt", scenario1Content, nil)
-	_, err := store.Save(ctx, docWithMeta)
-	if err != nil {
-		t.Fatalf("Failed to save document with metadata: %v", err)
-	}
-
-	scenario2Path := filepath.Join(tempDir, scenario2FileName)
-	err = os.WriteFile(scenario2Path, scenario2Content, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create file without metadata: %v", err)
-	}
-
-	metaOnlyMetaPath := filepath.Join(tempDir, scenario3ID+".meta.json")
-	metaOnlyMeta := DocumentMetadata{
-		ID:        scenario3ID,
-		Filename:  scenario3MetaFilename,
-		FilePath:  scenario3ID,
-		MimeType:  "text/plain",
-		FileSize:  0,
-		CreatedAt: time.Now(),
-	}
-	metaOnlyMetaJSON, err := json.Marshal(metaOnlyMeta)
-	if err != nil {
-		t.Fatalf("Failed to marshal metadata: %v", err)
-	}
-	err = os.WriteFile(metaOnlyMetaPath, metaOnlyMetaJSON, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create metadata file: %v", err)
-	}
-
-	list, err := store.List(ctx)
-	if err != nil {
-		t.Fatalf("Failed to list documents: %v", err)
-	}
-
-	if len(list) != 3 {
-		t.Errorf("Expected 3 documents, got %d", len(list))
-	}
-
-	foundScenario1 := false
-	foundScenario2 := false
-	foundScenario3 := false
-
-	for _, doc := range list {
-		if doc.ID() == scenario1ID {
-			foundScenario1 = true
-			content, err := doc.Bytes()
-			if err != nil {
-				t.Errorf("Failed to get content for scenario 1: %v", err)
-			} else if string(content) != string(scenario1Content) {
-				t.Errorf("Scenario 1: Expected content %s, got %s", string(scenario1Content), string(content))
-			}
-			if doc.Filename != scenario1ID+".txt" {
-				t.Errorf("Scenario 1: Expected filename %s, got %s", scenario1ID+".txt", doc.Filename)
-			}
+		if err := RegisterStore(store); err != nil {
+			t.Fatalf("Failed to register store: %v", err)
 		}
 
-		if doc.Filename == scenario2FileName {
-			foundScenario2 = true
-			content, err := doc.Bytes()
-			if err != nil {
-				t.Errorf("Failed to get content for scenario 2: %v", err)
-			} else if string(content) != string(scenario2Content) {
-				t.Errorf("Scenario 2: Expected content %s, got %s", string(scenario2Content), string(content))
-			}
-			if doc.MimeType == "" {
-				t.Error("Scenario 2: Expected MIME type to be set")
-			}
+		retrievedStore, exists := GetStore(storeID)
+		if !exists {
+			t.Error("Store should exist after registration")
 		}
 
-		if doc.ID() == scenario3ID {
-			foundScenario3 = true
-			if doc.Filename != scenario3MetaFilename {
-				t.Errorf("Scenario 3: Expected filename %s, got %s", scenario3MetaFilename, doc.Filename)
+		if retrievedStore != store {
+			t.Error("Retrieved store should be the same instance")
+		}
+
+		t.Cleanup(func() {
+			UnregisterStore(storeID)
+		})
+	})
+
+	t.Run("ListStores", func(t *testing.T) {
+		store1 := NewInMemoryStore()
+		store2 := NewInMemoryStore()
+		store3 := NewInMemoryStore()
+		stores := []Store{store1, store2, store3}
+		storeIDs := make([]string, len(stores))
+
+		for i, store := range stores {
+			if err := RegisterStore(store); err != nil {
+				t.Fatalf("Failed to register store %d: %v", i, err)
 			}
-			content, err := doc.Bytes()
-			if err == nil && len(content) != 0 {
-				t.Errorf("Scenario 3: Expected empty content, got %d bytes", len(content))
+			storeIDs[i] = store.ID()
+		}
+
+		t.Cleanup(func() {
+			for _, id := range storeIDs {
+				UnregisterStore(id)
 			}
-			if doc.FileSize != 0 {
-				t.Errorf("Scenario 3: Expected file size 0, got %d", doc.FileSize)
+		})
+
+		registeredStores := ListStores()
+		found := make(map[string]bool)
+		for _, id := range registeredStores {
+			found[id] = true
+		}
+
+		for _, id := range storeIDs {
+			if !found[id] {
+				t.Errorf("Store %s should be in list", id)
 			}
 		}
-	}
+	})
 
-	if !foundScenario1 {
-		t.Error("Scenario 1 (file with metadata) not found in list")
-	}
-	if !foundScenario2 {
-		t.Error("Scenario 2 (file without metadata) not found in list")
-	}
-	if !foundScenario3 {
-		t.Error("Scenario 3 (metadata without file) not found in list")
-	}
+	t.Run("Register duplicate", func(t *testing.T) {
+		store1 := NewLocalStore(t.TempDir())
+		store2 := NewLocalStore(store1.ID())
+
+		if err := RegisterStore(store1); err != nil {
+			t.Fatalf("Failed to register first store: %v", err)
+		}
+
+		err := RegisterStore(store2)
+		if err == nil {
+			t.Error("Expected error when registering duplicate store ID")
+		}
+
+		t.Cleanup(func() {
+			UnregisterStore(store1.ID())
+		})
+	})
 }

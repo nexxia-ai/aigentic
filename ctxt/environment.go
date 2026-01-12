@@ -9,6 +9,8 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 )
 
+const memoryStoreName = "memory_files"
+
 type ExecutionEnvironment struct {
 	RootDir    string
 	LLMDir     string
@@ -64,7 +66,18 @@ func (e *ExecutionEnvironment) init() error {
 
 func (e *ExecutionEnvironment) MemoryFiles() ([]*document.Document, error) {
 	s := document.NewLocalStore(e.MemoryDir)
-	return s.List(context.Background())
+	storeID := s.ID()
+
+	// Try to get existing store first
+	_, exists := document.GetStore(storeID)
+	if !exists {
+		if err := document.RegisterStore(s); err != nil {
+			return nil, fmt.Errorf("failed to register memory store: %w", err)
+		}
+	}
+
+	ctx := context.Background()
+	return document.List(ctx, storeID)
 }
 
 func (e *ExecutionEnvironment) EnvVars() map[string]string {
@@ -81,4 +94,8 @@ func (e *ExecutionEnvironment) EnvVars() map[string]string {
 		"AGENT_HISTORY_DIR": e.HistoryDir,
 		"AGENT_TURN_DIR":    e.TurnDir,
 	}
+}
+
+func (e *ExecutionEnvironment) MemoryStoreName() string {
+	return memoryStoreName
 }

@@ -47,27 +47,33 @@ The declarative approach means you focus on agent configuration and event handli
 package main
 
 import (
-    "fmt"
-    "log"
-    
-    "github.com/nexxia-ai/aigentic"
-    openai "github.com/nexxia-ai/aigentic-openai"
+	"fmt"
+	"log"
+
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 func main() {
-    agent := aigentic.Agent{
-        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:         "Assistant",
-        Description:  "A helpful AI assistant",
-        Instructions: "You are a friendly and knowledgeable assistant.",
-    }
-    
-    response, err := agent.Execute("What is the capital of France?")
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    fmt.Println("Response:", response)
+	model, err := ai.New("GPT-4o Mini", "your-api-key")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	agent := aigentic.Agent{
+		Model:        model,
+		Name:         "Assistant",
+		Description:  "A helpful AI assistant",
+		Instructions: "You are a friendly and knowledgeable assistant.",
+	}
+
+	response, err := agent.Execute("What is the capital of France?")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Response:", response)
 }
 ```
 
@@ -83,29 +89,46 @@ go run github.com/nexxia-ai/aigentic-examples/simple@latest
 For interactive applications, streaming UI updates, and human-in-the-loop workflows, use the advanced event system.
 
 ```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
 func main() {
-    agent := aigentic.Agent{
-        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:         "StreamingAssistant",
-        Description:  "An assistant that streams responses",
-        Instructions: "Provide detailed explanations step by step.",
-        Stream:       true, // Enable streaming
-    }
-    
-    run, err := agent.Start("Explain quantum computing in simple terms")
-    ... error checking removed
-    
-    // Process real-time events
-    for event := range run.Next() {
-        switch e := event.(type) {
-        case *aigentic.ContentEvent:
-            fmt.Print(e.Content) // Stream content as it generates
-        case *aigentic.ThinkingEvent:
-            fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
-        case *aigentic.ErrorEvent:
-            fmt.Printf("\n❌ Error: %v\n", e.Err)
-        }
-    }
+	model, err := ai.New("GPT-4o Mini", "your-api-key")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	agent := aigentic.Agent{
+		Model:        model,
+		Name:         "StreamingAssistant",
+		Description:  "An assistant that streams responses",
+		Instructions: "Provide detailed explanations step by step.",
+		Stream:       true,
+	}
+
+	run, err := agent.Start("Explain quantum computing in simple terms")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for event := range run.Next() {
+		switch e := event.(type) {
+		case *aigentic.ContentEvent:
+			fmt.Print(e.Content)
+		case *aigentic.ThinkingEvent:
+			fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
+		case *aigentic.ErrorEvent:
+			fmt.Printf("\n❌ Error: %v\n", e.Err)
+		}
+	}
 }
 ```
 
@@ -121,34 +144,51 @@ go run github.com/nexxia-ai/aigentic-examples/streaming@latest
 Use `run.NewTool()` for type-safe tools with automatic JSON schema generation:
 
 ```go
-import "github.com/nexxia-ai/aigentic/run"
+package main
 
-func createCalculatorTool() aigentic.AgentTool {
-    type CalculatorInput struct {
-        Expression string `json:"expression" description:"Mathematical expression to evaluate"`
-    }
+import (
+	"fmt"
+	"log"
 
-    return run.NewTool(
-        "calculator",
-        "Performs mathematical calculations",
-        func(run *run.AgentRun, input CalculatorInput) (string, error) {
-            result := evaluateExpression(input.Expression)
-            return fmt.Sprintf("Result: %v", result), nil
-        },
-    )
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
+func createCalculatorTool() run.AgentTool {
+	type CalculatorInput struct {
+		Expression string `json:"expression" description:"Mathematical expression to evaluate"`
+	}
+
+	return run.NewTool(
+		"calculator",
+		"Performs mathematical calculations",
+		func(run *run.AgentRun, input CalculatorInput) (string, error) {
+			return fmt.Sprintf("Result: %s", input.Expression), nil
+		},
+	)
 }
 
 func main() {
-    agent := aigentic.Agent{
-        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:         "MathAssistant",
-        Description:  "An assistant that can perform calculations",
-        Instructions: "Use the calculator tool for mathematical operations.",
-        AgentTools:   []aigentic.AgentTool{createCalculatorTool()},
-    }
+	model, err := ai.New("GPT-4o Mini", "your-api-key")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    response, _ := agent.Execute("What is 15 * 23 + 100?")
-    fmt.Println(response)
+	agent := aigentic.Agent{
+		Model:        model,
+		Name:         "MathAssistant",
+		Description:  "An assistant that can perform calculations",
+		Instructions: "Use the calculator tool for mathematical operations.",
+		AgentTools:   []run.AgentTool{createCalculatorTool()},
+	}
+
+	response, err := agent.Execute("What is 15 * 23 + 100?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(response)
 }
 ```
 
@@ -164,51 +204,65 @@ go run github.com/nexxia-ai/aigentic-examples/tools@latest
 To enable approval for tools, create the tool with `run.NewTool()` and set `RequireApproval: true`. This will generate an `ApprovalEvent` in the event stream.
 
 ```go
-import "github.com/nexxia-ai/aigentic/run"
+package main
 
-func createSendEmailTool() aigentic.AgentTool {
-    type SendEmailInput struct {
-        To      string `json:"to" description:"Email recipient address"`
-        Subject string `json:"subject" description:"Email subject line"`
-        Body    string `json:"body" description:"Email body content"`
-    }
+import (
+	"fmt"
+	"log"
 
-    emailTool := run.NewTool(
-        "send_email",
-        "Sends an email to a recipient with subject and body. Requires approval before sending.",
-        func(run *run.AgentRun, input SendEmailInput) (string, error) {
-            return fmt.Sprintf("Email sent to %s", input.To), nil
-        },
-    )
-    emailTool.RequireApproval = true
-    return emailTool
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
+func createSendEmailTool() run.AgentTool {
+	type SendEmailInput struct {
+		To      string `json:"to" description:"Email recipient address"`
+		Subject string `json:"subject" description:"Email subject line"`
+		Body    string `json:"body" description:"Email body content"`
+	}
+
+	emailTool := run.NewTool(
+		"send_email",
+		"Sends an email to a recipient with subject and body. Requires approval before sending.",
+		func(run *run.AgentRun, input SendEmailInput) (string, error) {
+			return fmt.Sprintf("Email sent to %s", input.To), nil
+		},
+	)
+	emailTool.RequireApproval = true
+	return emailTool
 }
 
 func main() {
-    agent := aigentic.Agent{
-        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:         "EmailAgent",
-        Instructions: "Use the send_email tool when asked to send emails.",
-        AgentTools:   []aigentic.AgentTool{createSendEmailTool()},
-        Stream:       true,
-    }
+	model, err := ai.New("GPT-4o Mini", "your-api-key")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    run, err := agent.Start("Send an email to john@example.com")
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    for event := range run.Next() {
-        switch e := event.(type) {
-        case *aigentic.ContentEvent:
-            fmt.Print(e.Content)
-        case *aigentic.ApprovalEvent:
-            approved := yourUIApprovalFlow(e)
-            run.Approve(e.ApprovalID, approved)
-        case *aigentic.ErrorEvent:
-            fmt.Printf("\n❌ Error: %v\n", e.Err)
-        }
-    }
+	agent := aigentic.Agent{
+		Model:        model,
+		Name:         "EmailAgent",
+		Instructions: "Use the send_email tool when asked to send emails.",
+		AgentTools:   []run.AgentTool{createSendEmailTool()},
+		Stream:       true,
+	}
+
+	run, err := agent.Start("Send an email to john@example.com")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for event := range run.Next() {
+		switch e := event.(type) {
+		case *aigentic.ContentEvent:
+			fmt.Print(e.Content)
+		case *aigentic.ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
+		case *aigentic.ErrorEvent:
+			fmt.Printf("\n❌ Error: %v\n", e.Err)
+		}
+	}
 }
 ```
 
@@ -225,20 +279,39 @@ Native document support. You can choose to embed the document on the prompt or s
 
 
 ```go
-func main() {
-    // Load document from file or memory
-    doc := aigentic.NewInMemoryDocument("", "report.pdf", pdfData, nil)
-    
-    agent := aigentic.Agent{
-        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:         "DocumentAnalyst", 
-        Description:  "Analyzes documents and extracts insights",
-        Instructions: "Analyze the provided documents and summarize key findings.",
-        Documents:    []*aigentic.Document{doc},
-    }
+package main
 
-    response, _ := agent.Execute("What are the main points in this document?")
-    fmt.Println(response)
+import (
+	"fmt"
+	"log"
+
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/document"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
+func main() {
+	doc := document.NewInMemoryDocument("", "report.pdf", pdfData, nil)
+
+	model, err := ai.New("GPT-4o Mini", "your-api-key")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	agent := aigentic.Agent{
+		Model:        model,
+		Name:         "DocumentAnalyst",
+		Description:  "Analyzes documents and extracts insights",
+		Instructions: "Analyze the provided documents and summarize key findings.",
+		Documents:    []*document.Document{doc},
+	}
+
+	response, err := agent.Execute("What are the main points in this document?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(response)
 }
 ```
 
@@ -248,7 +321,7 @@ DocumentReferences field instead. This way the LLM will decide what to retrieve 
 ```go
 agent := aigentic.Agent{
     ...
-    DocumentReferences: []*aigentic.Document{doc},
+    DocumentReferences: []*document.Document{doc},
     ...
 }
 ```
@@ -263,36 +336,50 @@ go run github.com/nexxia-ai/aigentic-examples/documents@latest
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/multi-agent)
 
 ```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
 func main() {
-    // Create specialized agents
-    researchAgent := aigentic.Agent{
-        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:         "Researcher",
-        Description:  "Expert at gathering and analyzing information",
-        Instructions: "Conduct thorough research and provide detailed findings.",
-    }
+	model, err := ai.New("GPT-4o Mini", "your-api-key")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    writerAgent := aigentic.Agent{
-        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:         "Writer", 
-        Description:  "Expert at creating engaging content",
-        Instructions: "Write clear, engaging content based on research.",
-    }
+	researchAgent := aigentic.Agent{
+		Model:        model,
+		Name:         "Researcher",
+		Description:  "Expert at gathering and analyzing information",
+		Instructions: "Conduct thorough research and provide detailed findings.",
+	}
 
-    // Coordinator agent that manages the team
-    coordinator := aigentic.Agent{
-        Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:         "ProjectManager",
-        Description:  "Coordinates research and writing tasks",
-        Instructions: "Delegate tasks to specialists and synthesize results.",
-        
-        // Team members become available as tools
-        Agents: []aigentic.Agent{researchAgent, writerAgent},
-    }
+	writerAgent := aigentic.Agent{
+		Model:        model,
+		Name:         "Writer",
+		Description:  "Expert at creating engaging content",
+		Instructions: "Write clear, engaging content based on research.",
+	}
 
-    // The coordinator automatically delegates to team members
-    response, _ := coordinator.Execute("Write an article about renewable energy trends")
-    fmt.Println(response)
+	coordinator := aigentic.Agent{
+		Model:        model,
+		Name:         "ProjectManager",
+		Description:  "Coordinates research and writing tasks",
+		Instructions: "Delegate tasks to specialists and synthesize results.",
+		Agents:       []aigentic.Agent{researchAgent, writerAgent},
+	}
+
+	response, err := coordinator.Execute("Write an article about renewable energy trends")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(response)
 }
 ```
 
@@ -315,23 +402,32 @@ Enable memory tools for persistent context across agent runs:
 
 ```go
 import (
-    "github.com/nexxia-ai/aigentic"
-    "github.com/nexxia-ai/aigentic/tools"
+	"log"
+
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
+	"github.com/nexxia-ai/aigentic/tools"
+	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
-agent := aigentic.Agent{
-    Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Name:         "PersonalAssistant",
-    Description:  "A personal assistant that remembers user preferences",
-    Instructions: "Remember user preferences and context using the memory tools.",
-    AgentTools:   []aigentic.AgentTool{tools.NewMemoryTool()}, // Enable memory tools
+func main() {
+	model, err := ai.New("GPT-4o Mini", "your-api-key")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	agent := aigentic.Agent{
+		Model:        model,
+		Name:         "PersonalAssistant",
+		Description:  "A personal assistant that remembers user preferences",
+		Instructions: "Remember user preferences and context using the memory tools.",
+		AgentTools:   []run.AgentTool{tools.NewMemoryTool()},
+	}
+
+	agent.Execute("My name is John and I'm a software engineer")
+	agent.Execute("What did I tell you about my profession?")
 }
-
-// First conversation - agent saves information to memory
-agent.Execute("My name is John and I'm a software engineer")
-
-// Later conversation - agent retrieves from memory
-agent.Execute("What did I tell you about my profession?")
 ```
 
 The memory system provides a single tool that the agent can use:
@@ -354,123 +450,74 @@ go run github.com/nexxia-ai/aigentic-examples/memory@latest
 
 ### Conversation History
 
-Track full conversation history across multiple `Execute()` or `Start()` calls with automatic message capture and trace correlation.
-
-**Single Agent with Multiple Calls:**
+Each `AgentRun` keeps a per-run conversation history inside its execution environment. History is included in prompts by default; set `IncludeHistory` to `false` on your `Agent` to disable it. You can inspect turns after a run finishes:
 
 ```go
-func main() {
-    // Create conversation history
-    history := aigentic.NewConversationHistory()
-    
-    agent := aigentic.Agent{
-        Model:               openai.NewModel("gpt-4o-mini", "your-api-key"),
-        Name:                "Chatbot",
-        ConversationHistory: history,  // Enable history tracking
-        Tracer:              aigentic.NewTracer(),
-    }
-    
-    // First conversation turn
-    agent.Execute("My name is Alice and I love programming")
-    
-    // Second turn - agent remembers context
-    agent.Execute("What's my name?")
-    
-    // View history with trace files
-    for i, entry := range history.GetEntries() {
-        fmt.Printf("Turn %d:\n", i+1)
-        fmt.Printf("  User: %v\n", entry.UserMessage)
-        fmt.Printf("  Assistant: %v\n", entry.AssistantMessage)
-        fmt.Printf("  Trace: %s\n", entry.TraceFile)
-        fmt.Printf("  RunID: %s\n", entry.RunID)
-    }
+run, err := agent.Start("Hello!")
+if err != nil {
+	log.Fatal(err)
+}
+if _, err := run.Wait(0); err != nil {
+	log.Fatal(err)
+}
+
+history := run.AgentContext().GetHistory()
+for _, turn := range history.GetTurns() {
+	fmt.Printf("[%s] user: %s\n", turn.TurnID, turn.UserMessage)
 }
 ```
 
-**Multiple Agents Sharing History:**
-
-```go
-func main() {
-    sharedHistory := aigentic.NewConversationHistory()
-    
-    // Multiple agents share the same history
-    greeter := aigentic.Agent{
-        Model:               openai.NewModel("gpt-4o-mini", "your-api-key"),
-        ConversationHistory: sharedHistory,
-    }
-    
-    assistant := aigentic.Agent{
-        Model:               openai.NewModel("gpt-4o-mini", "your-api-key"),
-        ConversationHistory: sharedHistory,  // Same history
-    }
-    
-    // Greeter interacts
-    greeter.Execute("Hello!")
-    
-    // Assistant sees full conversation context
-    assistant.Execute("What did we talk about?")
-}
-```
-
-**History Management:**
-
-```go
-// Clear all history
-history.Clear()
-
-// Remove specific entry
-history.RemoveAt(0)
-
-// Keep only recent messages (sliding window)
-entries := history.GetEntries()
-history.SetEntries(entries[len(entries)-10:])
-
-// Find entries by trace file
-entries := history.FindByTraceFile("trace-20251102042420.001.txt")
-
-// Find entries by run ID
-entries := history.FindByRunID("a1b2c3d4-...")
-```
-
-**HistoryEntry Structure:**
-
-Each conversation turn stores:
-- `UserMessage` - The user's input message
-- `AssistantMessage` - The AI's response
-- `ToolMessages` - Any tool call/response messages in this turn
-- `TraceFile` - Path to trace file for debugging
-- `RunID` - The agent run ID that produced this turn
-- `Timestamp` - When the turn started
-- `AgentName` - Which agent handled this turn
+To clear on-disk history between runs, set `BaseDir` on the agent and delete the generated `agent-<runID>` directory when you are done.
 
 ### Event-Driven Architecture
 
 The framework is event-driven, allowing you to react to execution state changes in real-time:
 
 ```go
-agent := aigentic.Agent{
-    Model:        openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Instructions: "Use tools to help users",
-    AgentTools:   []aigentic.AgentTool{createCalculatorTool()},
-    Stream:       true,
-}
+package main
 
-run, _ := agent.Start("Calculate 15 * 23")
+import (
+	"fmt"
+	"log"
 
-for event := range run.Next() {
-    switch e := event.(type) {
-    case *aigentic.ContentEvent:
-        fmt.Print(e.Content) // Stream content as it generates
-    case *aigentic.ThinkingEvent:
-        fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
-    case *aigentic.ToolEvent:
-        fmt.Printf("\n🔧 Tool executed: %s\n", e.ToolName)
-    case *aigentic.ApprovalEvent:
-        // Handle approval requests
-        run.Approve(e.ApprovalID, true)
-    case *aigentic.ErrorEvent:
-        fmt.Printf("\n❌ Error: %v\n", e.Err)
-    }
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
+func main() {
+	model, err := ai.New("GPT-4o Mini", "your-api-key")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	agent := aigentic.Agent{
+		Model:        model,
+		Instructions: "Use tools to help users",
+		AgentTools:   []run.AgentTool{createCalculatorTool()},
+		Stream:       true,
+	}
+
+	run, err := agent.Start("Calculate 15 * 23")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for event := range run.Next() {
+		switch e := event.(type) {
+		case *aigentic.ContentEvent:
+			fmt.Print(e.Content)
+		case *aigentic.ThinkingEvent:
+			fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
+		case *aigentic.ToolEvent:
+			fmt.Printf("\n🔧 Tool executed: %s\n", e.ToolName)
+		case *aigentic.ApprovalEvent:
+			run.Approve(e.ApprovalID, true)
+		case *aigentic.ErrorEvent:
+			fmt.Printf("\n❌ Error: %v\n", e.Err)
+		}
+	}
 }
 ```
 
@@ -480,16 +527,30 @@ All interactions are automatically logged if you set the Tracer field.
 Traces are saved to `<tmp_dir>/traces/`
 
 ```go
-import "log/slog"
+import (
+	"log"
+	"log/slog"
 
-agent := aigentic.Agent{
-    Model:    openai.NewModel("gpt-4o-mini", "your-api-key"),
-    Tracer:   aigentic.NewTracer(),     // Enable tracing for prompt debugging
-    LogLevel: slog.LevelDebug,          // Enable debug logging for execution flow
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
+model, err := ai.New("GPT-4o Mini", "your-api-key")
+if err != nil {
+	log.Fatal(err)
 }
 
-// All interactions are automatically traced
-response, _ := agent.Execute("Complex reasoning task")
+agent := aigentic.Agent{
+	Model:    model,
+	Tracer:   aigentic.NewTracer(),
+	LogLevel: slog.LevelDebug,
+}
+
+response, err := agent.Execute("Complex reasoning task")
+if err != nil {
+	log.Fatal(err)
+}
 ```
 
 ### Execution Environment
@@ -520,15 +581,28 @@ aigentic supports MCP servers for tool integration. See the [MCP examples](https
 The framework includes built-in tools for common operations:
 
 ```go
-import "github.com/nexxia-ai/aigentic/tools"
+import (
+	"log"
+
+	"github.com/nexxia-ai/aigentic"
+	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/run"
+	"github.com/nexxia-ai/aigentic/tools"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
+model, err := ai.New("GPT-4o Mini", "your-api-key")
+if err != nil {
+	log.Fatal(err)
+}
 
 agent := aigentic.Agent{
-    Model:      openai.NewModel("gpt-4o-mini", "your-api-key"),
-    AgentTools: []aigentic.AgentTool{
-        tools.NewMemoryTool(),        // Memory operations
-        tools.NewReadFileTool(),      // Read files from filesystem
-        tools.NewWriteFileTool(),     // Write files to filesystem
-    },
+	Model: model,
+	AgentTools: []run.AgentTool{
+		tools.NewMemoryTool(),
+		tools.NewReadFileTool(),
+		tools.NewWriteFileTool(),
+	},
 }
 ```
 
@@ -540,30 +614,49 @@ Create custom tools using `run.NewTool()` for type-safe tool definitions with au
 
 ```bash
 go get github.com/nexxia-ai/aigentic
-go get github.com/nexxia-ai/aigentic-openai    # For OpenAI support
-go get github.com/nexxia-ai/aigentic-ollama    # For Ollama support  
-go get github.com/nexxia-ai/aigentic-google    # For Google Gemini support
+go get github.com/nexxia-ai/aigentic-openai
+go get github.com/nexxia-ai/aigentic-ollama
+go get github.com/nexxia-ai/aigentic-google
 ```
 
 ## Provider Setup
 
-Choose the model provider and set parameters if need be.
+Providers register themselves with the `ai` registry when imported (a blank import is fine). Use `ai.Models()` to inspect available identifiers, then create a model with `ai.New(identifier, apiKey)`.
 
 ### OpenAI
 ```go
-import openai "github.com/nexxia-ai/aigentic-openai"
-model := openai.NewModel("gpt-4o-mini", "your-api-key")
+import (
+	"log"
+
+	"github.com/nexxia-ai/aigentic/ai"
+	_ "github.com/nexxia-ai/aigentic-openai"
+)
+
+model, err := ai.New("GPT-4o Mini", "your-api-key")
+if err != nil {
+	log.Fatal(err)
+}
 ```
 
 ### Ollama (Local)
-```go  
-import ollama "github.com/nexxia-ai/aigentic-ollama"
-model := ollama.NewModel("llama3.2:3b", "")
+```go
+import (
+	"log"
+
+	"github.com/nexxia-ai/aigentic/ai"
+	_ "github.com/nexxia-ai/aigentic-ollama"
+)
+
+model, err := ai.New("Qwen3 4B", "")
+if err != nil {
+	log.Fatal(err)
+}
 ```
 
 ### Google Gemini
 ```go
-import gemini "github.com/nexxia-ai/aigentic-google" 
+import gemini "github.com/nexxia-ai/aigentic-google"
+
 model := gemini.NewGeminiModel("gemini-pro", "your-api-key")
 ```
 

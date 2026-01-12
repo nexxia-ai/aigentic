@@ -2,6 +2,7 @@ package ctxt
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -12,6 +13,8 @@ import (
 )
 
 func TestCreateSystemMsg(t *testing.T) {
+	withTempWorkingDirPB(t)
+
 	tests := []struct {
 		name                string
 		setup               func(*AgentContext) *AgentContext
@@ -151,8 +154,13 @@ func TestCreateSystemMsg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ac, err := New("test-id", "", "", "")
+			ac, err := New("test-id", "", "", t.TempDir())
 			require.NoError(t, err)
+
+			storeName := ac.ExecutionEnvironment().MemoryStoreName()
+			t.Cleanup(func() {
+				document.UnregisterStore(storeName)
+			})
 
 			ac = tt.setup(ac)
 
@@ -175,20 +183,46 @@ func TestCreateSystemMsg(t *testing.T) {
 	}
 }
 
+// withTempWorkingDirPB switches the process working directory to a temp dir for the test.
+// It restores the original working directory when the test ends.
+func withTempWorkingDirPB(t *testing.T) {
+	prev, err := os.Getwd()
+	require.NoError(t, err)
+	tmp := t.TempDir()
+	require.NoError(t, os.Chdir(tmp))
+	t.Cleanup(func() {
+		_ = os.Chdir(prev)
+	})
+}
+
 func TestCreateSystemMsgWithMemoryFiles(t *testing.T) {
+	withTempWorkingDirPB(t)
+
 	tempDir := t.TempDir()
 	ac, err := New("test-id", "", "", tempDir)
 	require.NoError(t, err)
 
 	store := document.NewLocalStore(ac.ExecutionEnvironment().MemoryDir)
+	storeID := store.ID()
 
-	memDoc1 := document.NewInMemoryDocument("mem1", "memory1.txt", []byte("Memory file 1 content"), nil)
-	memDoc2 := document.NewInMemoryDocument("mem2", "memory2.txt", []byte("Memory file 2 content"), nil)
+	// Try to get existing store or register new one
+	_, exists := document.GetStore(storeID)
+	if !exists {
+		if err := document.RegisterStore(store); err != nil {
+			t.Fatalf("Failed to register store: %v", err)
+		}
+	}
 
-	_, err = store.Save(context.Background(), memDoc1)
+	memDoc1Bytes := []byte("Memory file 1 content")
+	memDoc2Bytes := []byte("Memory file 2 content")
+
+	memDoc1, err := document.Create(context.Background(), store.ID(), "memory1.txt", strings.NewReader(string(memDoc1Bytes)))
 	require.NoError(t, err)
-	_, err = store.Save(context.Background(), memDoc2)
+	memDoc2, err := document.Create(context.Background(), store.ID(), "memory2.txt", strings.NewReader(string(memDoc2Bytes)))
 	require.NoError(t, err)
+
+	_ = memDoc1
+	_ = memDoc2
 
 	msg, err := createSystemMsg(ac, nil)
 	require.NoError(t, err)
@@ -303,7 +337,7 @@ func TestCreateDocsMsg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ac, err := New("test-id", "", "", "")
+			ac, err := New("test-id", "", "", t.TempDir())
 			require.NoError(t, err)
 
 			ac = tt.setup(ac)
@@ -386,7 +420,7 @@ func TestCreateUserMsg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ac, err := New("test-id", "", "", "")
+			ac, err := New("test-id", "", "", t.TempDir())
 			require.NoError(t, err)
 
 			ac = tt.setup(ac)
@@ -590,7 +624,7 @@ func TestBuildPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ac, err := New("test-id", "", "", "")
+			ac, err := New("test-id", "", "", t.TempDir())
 			require.NoError(t, err)
 
 			ac = tt.setup(ac)
@@ -647,7 +681,7 @@ func getMessageTypes(msgs []ai.Message) []string {
 }
 
 func TestBuildPromptWithSystemAndUserTags(t *testing.T) {
-	ac, err := New("test-id", "", "", "")
+	ac, err := New("test-id", "", "", t.TempDir())
 	require.NoError(t, err)
 
 	ac.SetDescription("Test Role")
@@ -674,7 +708,7 @@ func TestBuildPromptWithSystemAndUserTags(t *testing.T) {
 }
 
 func TestBuildPromptMessageOrder(t *testing.T) {
-	ac, err := New("test-id", "", "", "")
+	ac, err := New("test-id", "", "", t.TempDir())
 	require.NoError(t, err)
 
 	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
@@ -750,15 +784,28 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 }
 
 func TestBuildPromptWithMemoryFiles(t *testing.T) {
+	withTempWorkingDirPB(t)
+
 	tempDir := t.TempDir()
 	ac, err := New("test-id", "", "", tempDir)
 	require.NoError(t, err)
 
 	store := document.NewLocalStore(ac.ExecutionEnvironment().MemoryDir)
+	storeID := store.ID()
 
-	memDoc := document.NewInMemoryDocument("mem1", "memory.txt", []byte("Memory content"), nil)
-	_, err = store.Save(context.Background(), memDoc)
+	// Try to get existing store or register new one
+	_, exists := document.GetStore(storeID)
+	if !exists {
+		if err := document.RegisterStore(store); err != nil {
+			t.Fatalf("Failed to register store: %v", err)
+		}
+	}
+
+	memDocBytes := []byte("Memory content")
+	memDoc, err := document.Create(context.Background(), store.ID(), "memory.txt", strings.NewReader(string(memDocBytes)))
 	require.NoError(t, err)
+
+	_ = memDoc
 
 	ac.AddMemory("mem1", "Test Memory", "Memory content")
 	ac.StartTurn("Test message")
@@ -774,7 +821,7 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 }
 
 func TestBuildPromptDocumentReferences(t *testing.T) {
-	ac, err := New("test-id", "", "", "")
+	ac, err := New("test-id", "", "", t.TempDir())
 	require.NoError(t, err)
 
 	doc1 := document.NewInMemoryDocument("doc1", "ref1.pdf", []byte("content1"), nil)
@@ -819,7 +866,7 @@ func TestBuildPromptDocumentReferences(t *testing.T) {
 }
 
 func TestBuildPromptEmptyUserMessage(t *testing.T) {
-	ac, err := New("test-id", "", "", "")
+	ac, err := New("test-id", "", "", t.TempDir())
 	require.NoError(t, err)
 
 	ac.StartTurn("")

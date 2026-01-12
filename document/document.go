@@ -1,7 +1,11 @@
 package document
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime"
 	"path/filepath"
@@ -9,37 +13,30 @@ import (
 	"time"
 )
 
-type DocumentProcessor interface {
-	Process(doc *Document) ([]*Document, error)
-}
-
 // Document is a common type to work with documents. You can load documents using the DocumentStore interface.
 // Pass documents to agents and the agents will handle the inclusion of the document in the context.
 type Document struct {
 	id        string
-	Filename  string
-	FilePath  string
-	URL       string
-	FileSize  int64
-	MimeType  string
-	CreatedAt time.Time
+	Filename  string    `json:"filename"`
+	FilePath  string    `json:"file_path"`
+	URL       string    `json:"url,omitempty"`
+	FileSize  int64     `json:"file_size"`
+	MimeType  string    `json:"mime_type"`
+	CreatedAt time.Time `json:"created_at"`
 
-	// Private content field to enable lazy loading
-	binary []byte
-
-	Selected bool
+	Selected bool `json:"-"`
 
 	// Chunking metadata - used when this is part of another document
-	SourceDoc   *Document
-	ChunkIndex  int
-	TotalChunks int
-	StartChar   int
-	EndChar     int
-	PageNumber  int
+	SourceDoc   *Document `json:"-"`
+	SourceDocID string    `json:"source_doc_id,omitempty"`
+	ChunkIndex  int       `json:"chunk_index,omitempty"`
+	TotalChunks int       `json:"total_chunks,omitempty"`
+	StartChar   int       `json:"-"`
+	EndChar     int       `json:"-"`
+	PageNumber  int       `json:"-"`
 
-	// loader loads the document from the store
-	// it must be implemented by the store provider
-	loader func(*Document) ([]byte, error)
+	// store is the backing store for this document
+	store Store `json:"-"`
 }
 
 func (d *Document) ID() string {
@@ -50,23 +47,28 @@ func (d *Document) ID() string {
 	return d.id
 }
 
-// Bytes returns the binary data of the document
-func (d *Document) Bytes() ([]byte, error) {
-	if d.binary != nil {
-		return d.binary, nil
+func (d *Document) Reader() (io.ReadCloser, error) {
+	if d.store == nil {
+		return nil, fmt.Errorf("document has no backing store")
 	}
 
-	if d.loader == nil {
-		return nil, fmt.Errorf("loader not implemented")
-	}
-
-	var err error
-	d.binary, err = d.loader(d)
+	reader, err := d.store.Open(context.Background(), d.ID())
 	if err != nil {
 		return nil, err
 	}
 
-	return d.binary, nil
+	return reader, nil
+}
+
+// Bytes returns the binary data of the document
+func (d *Document) Bytes() ([]byte, error) {
+	reader, err := d.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	return io.ReadAll(reader)
 }
 
 func (d *Document) Text() string {
@@ -81,23 +83,37 @@ func (d *Document) IsChunk() bool {
 	return d.SourceDoc != nil
 }
 
-func (d *Document) SetLoader(loader func(*Document) ([]byte, error)) {
-	d.loader = loader
+func (d *Document) Store() Store {
+	return d.store
 }
 
 func NewInMemoryDocument(id, filename string, data []byte, srcDoc *Document) *Document {
+	return NewDocument(defaultMemoryStore, id, filename, data, srcDoc)
+}
+
+func NewDocument(store Store, id, filename string, data []byte, srcDoc *Document) *Document {
 	mimeType := mime.TypeByExtension(filepath.Ext(filename))
-	return &Document{
-		id:         id,
+
+	docID := id
+	if docID == "" {
+		docID = fmt.Sprintf("doc_%s", filepath.Base(filename))
+	}
+
+	store.Create(context.Background(), docID, bytes.NewReader(data))
+
+	doc := &Document{
+		id:         docID,
 		Filename:   filename,
 		FilePath:   filename,
 		FileSize:   int64(len(data)),
 		MimeType:   mimeType,
-		binary:     data,
 		Selected:   false,
 		SourceDoc:  srcDoc,
 		ChunkIndex: -1,
+		store:      store,
+		CreatedAt:  time.Now(),
 	}
+	return doc
 }
 
 // DeriveTypeFromMime derives the resource type from MIME type
@@ -118,39 +134,46 @@ func DeriveTypeFromMime(mimeType string) string {
 	}
 }
 
-// DocumentMetadata represents serializable document metadata for persistence
-type DocumentMetadata struct {
-	ID          string    `json:"id"`
-	Filename    string    `json:"filename"`
-	FilePath    string    `json:"file_path"`
-	MimeType    string    `json:"mime_type"`
-	FileSize    int64     `json:"file_size"`
-	CreatedAt   time.Time `json:"created_at"`
-	SourceDocID string    `json:"source_doc_id,omitempty"`
-	ChunkIndex  int       `json:"chunk_index,omitempty"`
-	TotalChunks int       `json:"total_chunks,omitempty"`
+// prepareForSerialization prepares the document for JSON serialization by setting SourceDocID
+func (d *Document) prepareForSerialization() {
+	if d.SourceDoc != nil && d.SourceDocID == "" {
+		d.SourceDocID = d.SourceDoc.ID()
+	}
+	if d.CreatedAt.IsZero() {
+		d.CreatedAt = time.Now()
+	}
+	if d.id == "" {
+		d.id = fmt.Sprintf("doc_%s", filepath.Base(d.FilePath))
+	}
 }
 
-// Metadata returns the metadata for a document
-func (d *Document) Metadata() DocumentMetadata {
-	meta := DocumentMetadata{
-		ID:          d.ID(),
-		Filename:    d.Filename,
-		FilePath:    d.FilePath,
-		MimeType:    d.MimeType,
-		FileSize:    d.FileSize,
-		CreatedAt:   d.CreatedAt,
-		ChunkIndex:  d.ChunkIndex,
-		TotalChunks: d.TotalChunks,
-	}
+// MarshalJSON customizes JSON serialization to include ID and prepare document
+func (d *Document) MarshalJSON() ([]byte, error) {
+	type Alias Document
+	d.prepareForSerialization()
+	return json.Marshal(&struct {
+		ID string `json:"id"`
+		*Alias
+	}{
+		ID:    d.ID(),
+		Alias: (*Alias)(d),
+	})
+}
 
-	if d.SourceDoc != nil {
-		meta.SourceDocID = d.SourceDoc.ID()
+// UnmarshalJSON customizes JSON deserialization to handle ID field
+func (d *Document) UnmarshalJSON(data []byte) error {
+	type Alias Document
+	aux := &struct {
+		ID string `json:"id"`
+		*Alias
+	}{
+		Alias: (*Alias)(d),
 	}
-
-	if meta.CreatedAt.IsZero() {
-		meta.CreatedAt = time.Now()
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
 	}
-
-	return meta
+	if aux.ID != "" {
+		d.id = aux.ID
+	}
+	return nil
 }

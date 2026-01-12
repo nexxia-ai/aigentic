@@ -3,6 +3,8 @@ package aigentic
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
@@ -93,6 +95,9 @@ func (a Agent) Start(message string) (*run.AgentRun, error) {
 func (a Agent) New() (*run.AgentRun, error) {
 	if a.Name == "" {
 		a.Name = "noname_" + uuid.New().String()
+	}
+	if a.BaseDir == "" {
+		a.BaseDir = filepath.Join(os.TempDir(), "aigentic-workspace")
 	}
 	ar, err := run.NewAgentRun(a.Name, a.Description, a.Instructions, a.BaseDir)
 	if err != nil {

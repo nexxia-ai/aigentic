@@ -110,34 +110,23 @@ func TestPipeline_IsDocumentProcessor(t *testing.T) {
 	}
 }
 
-func TestPipeline_Run_WithStages(t *testing.T) {
+func TestPipeline_Run_WithProcessors(t *testing.T) {
 	tests := []struct {
-		name       string
-		pipelineID string
-		stages     []struct {
-			name      string
-			processor DocumentProcessor
-			store     Store
-		}
+		name          string
+		pipelineID    string
+		processors    []DocumentProcessor
 		inputDocs     []*Document
 		expectedCount int
 	}{
 		{
-			name:       "single stage without store",
-			pipelineID: "test-single-no-store",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "transform",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("transformed", "transformed.txt", []byte("transformed"), nil),
-							}, nil
-						},
+			name:       "single processor",
+			pipelineID: "test-single",
+			processors: []DocumentProcessor{
+				&mockProcessor{
+					process: func(doc *Document) ([]*Document, error) {
+						return []*Document{
+							NewInMemoryDocument("transformed", "transformed.txt", []byte("transformed"), nil),
+						}, nil
 					},
 				},
 			},
@@ -147,31 +136,21 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			expectedCount: 1,
 		},
 		{
-			name:       "multiple stages without stores",
-			pipelineID: "test-multi-no-store",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "stage1",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
-							}, nil
-						},
+			name:       "multiple processors",
+			pipelineID: "test-multi",
+			processors: []DocumentProcessor{
+				&mockProcessor{
+					process: func(doc *Document) ([]*Document, error) {
+						return []*Document{
+							NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
+						}, nil
 					},
 				},
-				{
-					name: "stage2",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s2", "s2.txt", []byte("stage2"), nil),
-							}, nil
-						},
+				&mockProcessor{
+					process: func(doc *Document) ([]*Document, error) {
+						return []*Document{
+							NewInMemoryDocument("s2", "s2.txt", []byte("stage2"), nil),
+						}, nil
 					},
 				},
 			},
@@ -181,96 +160,17 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			expectedCount: 1,
 		},
 		{
-			name:       "stage with store",
-			pipelineID: "test-with-store",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "save",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{doc}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-			},
-			inputDocs: []*Document{
-				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
-			},
-			expectedCount: 1,
-		},
-		{
-			name:       "multiple stages with stores",
-			pipelineID: "test-multi-store",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "stage1",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s1", "s1.txt", []byte("stage1"), nil),
-							}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-				{
-					name: "stage2",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("s2", "s2.txt", []byte("stage2"), nil),
-							}, nil
-						},
-					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
-				},
-			},
-			inputDocs: []*Document{
-				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
-			},
-			expectedCount: 1,
-		},
-		{
-			name:       "stage that produces multiple documents",
+			name:       "processor that produces multiple documents",
 			pipelineID: "test-multi-output",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "split",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{
-								NewInMemoryDocument("out1", "out1.txt", []byte("output1"), nil),
-								NewInMemoryDocument("out2", "out2.txt", []byte("output2"), nil),
-								NewInMemoryDocument("out3", "out3.txt", []byte("output3"), nil),
-							}, nil
-						},
+			processors: []DocumentProcessor{
+				&mockProcessor{
+					process: func(doc *Document) ([]*Document, error) {
+						return []*Document{
+							NewInMemoryDocument("out1", "out1.txt", []byte("output1"), nil),
+							NewInMemoryDocument("out2", "out2.txt", []byte("output2"), nil),
+							NewInMemoryDocument("out3", "out3.txt", []byte("output3"), nil),
+						}, nil
 					},
-					store: func() Store {
-						dir := t.TempDir()
-						return NewLocalStore(dir)
-					}(),
 				},
 			},
 			inputDocs: []*Document{
@@ -285,8 +185,8 @@ func TestPipeline_Run_WithStages(t *testing.T) {
 			ctx := context.Background()
 			pipeline := NewPipeline(tt.pipelineID)
 
-			for _, stage := range tt.stages {
-				pipeline.AddStage(stage.name, stage.processor, stage.store)
+			for _, processor := range tt.processors {
+				pipeline.Add(processor)
 			}
 
 			results, err := pipeline.Run(ctx, tt.inputDocs)
@@ -306,17 +206,17 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 	defer cancel()
 
 	pipeline := NewPipeline("test-cancel")
-	pipeline.AddStage("stage1", &mockProcessor{
+	pipeline.Add(&mockProcessor{
 		process: func(doc *Document) ([]*Document, error) {
 			time.Sleep(200 * time.Millisecond)
 			return []*Document{doc}, nil
 		},
-	}, nil)
-	pipeline.AddStage("stage2", &mockProcessor{
+	})
+	pipeline.Add(&mockProcessor{
 		process: func(doc *Document) ([]*Document, error) {
 			return []*Document{doc}, nil
 		},
-	}, nil)
+	})
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -338,54 +238,20 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 
 func TestPipeline_ErrorHandling(t *testing.T) {
 	tests := []struct {
-		name       string
-		pipelineID string
-		stages     []struct {
-			name      string
-			processor DocumentProcessor
-			store     Store
-		}
+		name        string
+		pipelineID  string
+		processors  []DocumentProcessor
 		inputDocs   []*Document
 		expectError bool
 	}{
 		{
 			name:       "processor error",
 			pipelineID: "test-processor-error",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "error-stage",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return nil, os.ErrNotExist
-						},
+			processors: []DocumentProcessor{
+				&mockProcessor{
+					process: func(doc *Document) ([]*Document, error) {
+						return nil, os.ErrNotExist
 					},
-				},
-			},
-			inputDocs: []*Document{
-				NewInMemoryDocument("input1", "input.txt", []byte("input"), nil),
-			},
-			expectError: true,
-		},
-		{
-			name:       "store save error",
-			pipelineID: "test-store-error",
-			stages: []struct {
-				name      string
-				processor DocumentProcessor
-				store     Store
-			}{
-				{
-					name: "save-stage",
-					processor: &mockProcessor{
-						process: func(doc *Document) ([]*Document, error) {
-							return []*Document{doc}, nil
-						},
-					},
-					store: &errorStore{},
 				},
 			},
 			inputDocs: []*Document{
@@ -400,8 +266,8 @@ func TestPipeline_ErrorHandling(t *testing.T) {
 			ctx := context.Background()
 			pipeline := NewPipeline(tt.pipelineID)
 
-			for _, stage := range tt.stages {
-				pipeline.AddStage(stage.name, stage.processor, stage.store)
+			for _, processor := range tt.processors {
+				pipeline.Add(processor)
 			}
 
 			_, err := pipeline.Run(ctx, tt.inputDocs)
@@ -416,25 +282,3 @@ func TestPipeline_ErrorHandling(t *testing.T) {
 		})
 	}
 }
-
-
-type errorStore struct{}
-
-func (e *errorStore) Save(ctx context.Context, doc *Document) (*Document, error) {
-	return nil, os.ErrPermission
-}
-
-func (e *errorStore) Load(ctx context.Context, id string) (*Document, error) {
-	return nil, os.ErrNotExist
-}
-
-func (e *errorStore) List(ctx context.Context) ([]*Document, error) {
-	return nil, os.ErrNotExist
-}
-
-func (e *errorStore) Delete(ctx context.Context, id string) error {
-	return os.ErrPermission
-}
-
-
-

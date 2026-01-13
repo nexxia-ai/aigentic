@@ -1,6 +1,7 @@
 package ctxt
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,8 @@ type AgentContext struct {
 	id             string
 	description    string
 	instructions   string
+	name           string
+	summary        string
 	SystemTemplate *template.Template
 	UserTemplate   *template.Template
 
@@ -63,6 +66,7 @@ func (r *AgentContext) ExecutionEnvironment() *ExecutionEnvironment {
 
 func (r *AgentContext) SetOutputInstructions(instructions string) *AgentContext {
 	r.outputInstructions = instructions
+	r.save()
 	return r
 }
 
@@ -86,11 +90,13 @@ func (r *AgentContext) UpdateUserTemplate(templateStr string) error {
 
 func (r *AgentContext) SetDescription(description string) *AgentContext {
 	r.description = description
+	r.save()
 	return r
 }
 
 func (r *AgentContext) SetInstructions(instructions string) *AgentContext {
 	r.instructions = instructions
+	r.save()
 	return r
 }
 
@@ -179,37 +185,42 @@ func (r *AgentContext) GetDocumentByID(id string) *document.Document {
 
 func (r *AgentContext) AddMemory(id, description, content string) *AgentContext {
 	r.mutex.Lock()
-	defer r.mutex.Unlock()
 
-	now := time.Now()
-	for i := range r.memories {
-		if r.memories[i].ID == id {
-			r.memories[i].Description = description
-			r.memories[i].Content = content
-			r.memories[i].Timestamp = now
-			return r
+		now := time.Now()
+		for i := range r.memories {
+			if r.memories[i].ID == id {
+				r.memories[i].Description = description
+				r.memories[i].Content = content
+				r.memories[i].Timestamp = now
+				r.mutex.Unlock()
+				r.save()
+				return r
+			}
 		}
-	}
 
-	r.memories = append(r.memories, MemoryEntry{
-		ID:          id,
-		Description: description,
-		Content:     content,
-		Timestamp:   now,
-	})
-	return r
+		r.memories = append(r.memories, MemoryEntry{
+			ID:          id,
+			Description: description,
+			Content:     content,
+			Timestamp:   now,
+		})
+		r.mutex.Unlock()
+		r.save()
+		return r
 }
 
 func (r *AgentContext) RemoveMemory(id string) error {
 	r.mutex.Lock()
-	defer r.mutex.Unlock()
 
 	for i := range r.memories {
 		if r.memories[i].ID == id {
 			r.memories = append(r.memories[:i], r.memories[i+1:]...)
+			r.mutex.Unlock()
+			r.save()
 			return nil
 		}
 	}
+	r.mutex.Unlock()
 	return fmt.Errorf("memory not found: %s", id)
 }
 
@@ -252,6 +263,30 @@ func (r *AgentContext) GetHistory() *ConversationHistory {
 	return r.conversationHistory
 }
 
+func (r *AgentContext) ID() string {
+	return r.id
+}
+
+func (r *AgentContext) Name() string {
+	return r.name
+}
+
+func (r *AgentContext) Summary() string {
+	return r.summary
+}
+
+func (r *AgentContext) SetName(name string) *AgentContext {
+	r.name = name
+	r.save()
+	return r
+}
+
+func (r *AgentContext) SetSummary(summary string) *AgentContext {
+	r.summary = summary
+	r.save()
+	return r
+}
+
 func (r *AgentContext) newTurn() *Turn {
 	r.turnCounter++
 	turnID := fmt.Sprintf("turn-%03d", r.turnCounter)
@@ -280,6 +315,7 @@ func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 
 	// create the next turn so it is available for callers
 	r.currentTurn = r.newTurn()
+	r.save()
 	return r
 }
 
@@ -318,4 +354,54 @@ func (r *AgentContext) ClearAll() *AgentContext {
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx
+}
+
+type contextData struct {
+	ID                string       `json:"id"`
+	Description       string       `json:"description"`
+	Instructions      string       `json:"instructions"`
+	Name              string       `json:"name"`
+	Summary           string       `json:"summary"`
+	OutputInstructions string      `json:"output_instructions"`
+	Memories          []MemoryEntry `json:"memories"`
+	TurnCounter       int          `json:"turn_counter"`
+}
+
+func (r *AgentContext) save() error {
+	if r.execEnv == nil {
+		return nil
+	}
+
+	r.mutex.RLock()
+	memories := make([]MemoryEntry, len(r.memories))
+	copy(memories, r.memories)
+	r.mutex.RUnlock()
+
+	data := contextData{
+		ID:                 r.id,
+		Description:        r.description,
+		Instructions:       r.instructions,
+		Name:               r.name,
+		Summary:            r.summary,
+		OutputInstructions: r.outputInstructions,
+		Memories:           memories,
+		TurnCounter:        r.turnCounter,
+	}
+
+	contextFile := filepath.Join(r.execEnv.PrivateDir, "context.json")
+	file, err := os.Create(contextFile)
+	if err != nil {
+		slog.Error("failed to save context", "error", err, "context_file", contextFile)
+		return fmt.Errorf("failed to create context file: %w", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
+		slog.Error("failed to save context", "error", err, "context_file", contextFile)
+		return fmt.Errorf("failed to encode context: %w", err)
+	}
+
+	return nil
 }

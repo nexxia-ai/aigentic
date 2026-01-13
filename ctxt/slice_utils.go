@@ -1,6 +1,6 @@
 package ctxt
 
-func Filter[T any](slice []T, predicate func(T) bool) []T {
+func filter[T any](slice []T, predicate func(T) bool) []T {
 	var result []T
 	for _, item := range slice {
 		if predicate(item) {
@@ -10,7 +10,7 @@ func Filter[T any](slice []T, predicate func(T) bool) []T {
 	return result
 }
 
-func Find[T any](slice []T, predicate func(T) bool) *T {
+func find[T any](slice []T, predicate func(T) bool) *T {
 	for _, item := range slice {
 		if predicate(item) {
 			itemCopy := item

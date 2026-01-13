@@ -3,7 +3,6 @@ package ctxt
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"time"
 
@@ -11,12 +10,12 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 )
 
-type DocumentEntry struct {
+type documentEntry struct {
 	Document *document.Document `json:"-"`
 	ToolID   string             `json:"tool_id"`
 }
 
-type Tag struct {
+type tag struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
 }
@@ -28,13 +27,13 @@ type Turn struct {
 	UserMessage  string          `json:"user_message"`
 	messages     []ai.Message    `json:"-"`
 	Reply        ai.Message      `json:"-"`
-	Documents    []DocumentEntry `json:"-"`
+	Documents    []documentEntry `json:"-"`
 	TraceFile    string          `json:"trace_file"`
 	Timestamp    time.Time       `json:"timestamp"`
 	AgentName    string          `json:"agent_name"`
 	Hidden       bool            `json:"hidden"`
-	systemTags   []Tag
-	userTags     []Tag
+	systemTags   []tag
+	userTags     []tag
 }
 
 func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) *Turn {
@@ -44,12 +43,12 @@ func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) 
 		Request:      ai.UserMessage{Role: ai.UserRole, Content: userMessage},
 		UserMessage:  userMessage,
 		messages:     make([]ai.Message, 0),
-		Documents:    make([]DocumentEntry, 0),
+		Documents:    make([]documentEntry, 0),
 		TraceFile:    "",
 		Timestamp:    time.Now(),
 		AgentName:    agentName,
-		systemTags:   make([]Tag, 0),
-		userTags:     make([]Tag, 0),
+		systemTags:   make([]tag, 0),
+		userTags:     make([]tag, 0),
 	}
 }
 
@@ -62,7 +61,7 @@ func (t *Turn) AddDocument(toolID string, doc *document.Document) error {
 		return fmt.Errorf("document cannot be nil")
 	}
 
-	entry := DocumentEntry{
+	entry := documentEntry{
 		Document: doc,
 		ToolID:   toolID,
 	}
@@ -90,15 +89,14 @@ func (t *Turn) DeleteDocument(doc *document.Document) error {
 }
 
 func (t *Turn) InjectSystemTag(tagName string, content string) {
-	t.systemTags = append(t.systemTags, Tag{
+	t.systemTags = append(t.systemTags, tag{
 		Name:    tagName,
 		Content: content,
 	})
 }
 
 func (t *Turn) InjectUserTag(tagName string, content string) {
-	slog.Error("injecting user tag", "tag_name", tagName, "content", content)
-	t.userTags = append(t.userTags, Tag{
+	t.userTags = append(t.userTags, tag{
 		Name:    tagName,
 		Content: content,
 	})
@@ -197,8 +195,8 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		Messages   []*messageJSON `json:"messages"`
 		Reply      *messageJSON   `json:"reply,omitempty"`
 		Documents  []documentJSON `json:"documents"`
-		SystemTags []Tag          `json:"system_tags"`
-		UserTags   []Tag          `json:"user_tags"`
+		SystemTags []tag          `json:"system_tags"`
+		UserTags   []tag          `json:"user_tags"`
 	}{
 		Alias:      (*Alias)(t),
 		Request:    request,
@@ -265,8 +263,8 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		Messages   []*messageJSON `json:"messages"`
 		Reply      *messageJSON   `json:"reply,omitempty"`
 		Documents  []documentJSON `json:"documents"`
-		SystemTags []Tag          `json:"system_tags"`
-		UserTags   []Tag          `json:"user_tags"`
+		SystemTags []tag          `json:"system_tags"`
+		UserTags   []tag          `json:"user_tags"`
 	}{
 		Alias: (*Alias)(t),
 	}
@@ -288,9 +286,9 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		t.messages[i] = jsonToMessage(mj)
 	}
 
-	t.Documents = make([]DocumentEntry, len(aux.Documents))
+	t.Documents = make([]documentEntry, len(aux.Documents))
 	for i, dj := range aux.Documents {
-		t.Documents[i] = DocumentEntry{
+		t.Documents[i] = documentEntry{
 			ToolID: dj.ToolID,
 		}
 		if dj.FilePath != "" {
@@ -306,13 +304,13 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 	if aux.SystemTags != nil {
 		t.systemTags = aux.SystemTags
 	} else {
-		t.systemTags = make([]Tag, 0)
+		t.systemTags = make([]tag, 0)
 	}
 
 	if aux.UserTags != nil {
 		t.userTags = aux.UserTags
 	} else {
-		t.userTags = make([]Tag, 0)
+		t.userTags = make([]tag, 0)
 	}
 
 	return nil

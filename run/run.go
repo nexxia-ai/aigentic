@@ -122,6 +122,33 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 	return run, nil
 }
 
+func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*AgentRun, error) {
+	runID := uuid.New().String()
+	sessionID := ctx.ID()
+
+	run := &AgentRun{
+		agentName:            "",
+		id:                   runID,
+		sessionID:            sessionID,
+		agentContext:         ctx,
+		model:                model,
+		maxLLMCalls:          20,
+		eventQueue:           make(chan event.Event, 100),
+		actionQueue:          make(chan action, 100),
+		pendingApprovals:     make(map[string]pendingApproval),
+		processedToolCallIDs: make(map[string]bool),
+		approvalTimeout:      approvalTimeout,
+		interceptors:         make([]Interceptor, 0),
+		tools:                tools,
+		trace:                &TraceRun{},
+		streaming:            false,
+		includeHistory:       true,
+	}
+	run.logLevel.Set(slog.LevelError)
+	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel}))
+	return run, nil
+}
+
 func (r *AgentRun) AgentContext() *ctxt.AgentContext {
 	return r.agentContext
 }

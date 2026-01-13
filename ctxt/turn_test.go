@@ -8,12 +8,15 @@ import (
 )
 
 func TestConversationTurnAddDocument(t *testing.T) {
-	ac, _ := New("test", "test", "test", "")
+	ac, err := New("test", "test", "test", t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test context: %v", err)
+	}
 	turn := NewTurn(ac, "test message", "agent1", "turn-001")
 
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("test content"), nil)
 
-	err := turn.AddDocument("tool1", doc)
+	err = turn.AddDocument("tool1", doc)
 	assert.NoError(t, err)
 	assert.Len(t, turn.Documents, 1)
 	assert.Equal(t, doc, turn.Documents[0].Document)

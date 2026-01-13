@@ -99,3 +99,27 @@ func (e *ExecutionEnvironment) EnvVars() map[string]string {
 func (e *ExecutionEnvironment) MemoryStoreName() string {
 	return memoryStoreName
 }
+
+func loadExecutionEnvironment(sessionDir string) (*ExecutionEnvironment, error) {
+	sessionDir, err := filepath.Abs(sessionDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	rootDir := sessionDir
+	llmDir := filepath.Join(rootDir, "llm")
+	privateDir := filepath.Join(rootDir, "_private")
+
+	e := &ExecutionEnvironment{
+		RootDir:    rootDir,
+		LLMDir:     llmDir,
+		PrivateDir: privateDir,
+		MemoryDir:  filepath.Join(privateDir, "memory"),
+		FilesDir:   filepath.Join(llmDir, "files"),
+		OutputDir:  filepath.Join(llmDir, "output"),
+		HistoryDir: filepath.Join(privateDir, "history"),
+		TurnDir:    filepath.Join(privateDir, "turns"),
+	}
+
+	return e, nil
+}

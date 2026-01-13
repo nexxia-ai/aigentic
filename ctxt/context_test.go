@@ -308,7 +308,7 @@ func TestMemoryFilters(t *testing.T) {
 		{
 			name: "filter by runID",
 			filter: func() []MemoryEntry {
-				return Filter(ctx.GetMemories(), func(m MemoryEntry) bool {
+				return filter(ctx.GetMemories(), func(m MemoryEntry) bool {
 					return m.RunID == ""
 				})
 			},
@@ -317,7 +317,7 @@ func TestMemoryFilters(t *testing.T) {
 		{
 			name: "filter by age",
 			filter: func() []MemoryEntry {
-				return Filter(ctx.GetMemories(), func(m MemoryEntry) bool {
+				return filter(ctx.GetMemories(), func(m MemoryEntry) bool {
 					return time.Since(m.Timestamp) <= 1*time.Second
 				})
 			},
@@ -340,7 +340,7 @@ func TestMemoryFindByID(t *testing.T) {
 		AddMemory("m1", "desc1", "content1").
 		AddMemory("m2", "desc2", "content2")
 
-	mem := Find(ctx.GetMemories(), func(m MemoryEntry) bool {
+	mem := find(ctx.GetMemories(), func(m MemoryEntry) bool {
 		return m.ID == "m1"
 	})
 	if mem == nil {
@@ -353,7 +353,7 @@ func TestMemoryFindByID(t *testing.T) {
 		t.Errorf("expected description 'desc1', got '%s'", mem.Description)
 	}
 
-	mem = Find(ctx.GetMemories(), func(m MemoryEntry) bool {
+	mem = find(ctx.GetMemories(), func(m MemoryEntry) bool {
 		return m.ID == "nonexistent"
 	})
 	if mem != nil {

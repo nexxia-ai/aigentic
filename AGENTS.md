@@ -21,7 +21,7 @@
 The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runtime execution engine. It contains:
 
 - **AgentRun** (`run.go`) - Main execution runtime type that orchestrates agent execution, handles LLM calls, tool execution, and event streaming
-- **Events** (`event.go`) - Event types for execution lifecycle: `ContentEvent`, `ToolEvent`, `ThinkingEvent`, `ErrorEvent`, `ApprovalEvent`, `LLMCallEvent`, `EvalEvent`, etc.
+- **Events** (`event.go`) - Event types for execution lifecycle: `ContentEvent`, `ToolEvent`, `ThinkingEvent`, `ErrorEvent`, `LLMCallEvent`, `EvalEvent`, etc.
 - **AgentTool** (`agent_tool.go`) - Tool definition type and `NewTool()` helper for creating type-safe tools
 - **AgentContext** (`context.go`) - Context management for agent state, messages, memories, and documents
 - **ContextManager** (`context_manager.go`) - Interface for custom context management implementations

@@ -1,7 +1,5 @@
 package run
 
-import "github.com/nexxia-ai/aigentic/event"
-
 // action is a marker interface for internal agent actions.
 // Types implement this interface by defining the unexported isAction method.
 type action interface {
@@ -14,18 +12,11 @@ type llmCallAction struct {
 
 func (*llmCallAction) isAction() {}
 
-type approvalAction struct {
-	ApprovalID string
-	Approved   bool
-}
-
-func (*approvalAction) isAction() {}
-
 type toolCallAction struct {
-	ToolCallID       string
-	ToolName         string
-	ValidationResult event.ValidationResult
-	Group            *ToolCallGroup
+	ToolCallID string
+	ToolName   string
+	Args       map[string]any
+	Group      *ToolCallGroup
 }
 
 func (*toolCallAction) isAction() {}

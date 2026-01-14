@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
 )
 
@@ -30,8 +29,7 @@ func NewMemoryTool() run.AgentTool {
 			},
 			"required": []string{"memory_id", "memory_description", "memory_content"},
 		},
-		NewExecute: func(agentRun *run.AgentRun, result event.ValidationResult) (*ai.ToolResult, error) {
-			args := result.Values.(map[string]interface{})
+		Execute: func(agentRun *run.AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			id := args["memory_id"].(string)
 			description := args["memory_description"].(string)
 			content := args["memory_content"].(string)

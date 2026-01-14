@@ -227,8 +227,6 @@ If you encounter build errors related to dependencies, the tool code itself is c
 
 All tools were migrated from `ai.Tool` to `run.AgentTool` to:
 - Support agent-specific context (memory, trace)
-- Enable approval workflows
-- Provide validation capabilities
 - Simplify tool creation with auto-schema generation
 
 The Python sandbox tool is designed with Docker migration in mind - only the `executePythonCode` function would need to be replaced to switch from subprocess to Docker execution.

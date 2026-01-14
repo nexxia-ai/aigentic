@@ -21,11 +21,11 @@ func (n *noOpTrace) AfterCall(run *AgentRun, request []ai.Message, response ai.A
 	return response, nil
 }
 
-func (n *noOpTrace) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult) (event.ValidationResult, error) {
-	return validationResult, nil
+func (n *noOpTrace) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, args map[string]any) (map[string]any, error) {
+	return args, nil
 }
 
-func (n *noOpTrace) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
+func (n *noOpTrace) AfterToolCall(run *AgentRun, toolName string, toolCallID string, args map[string]any, result *ai.ToolResult) (*ai.ToolResult, error) {
 	return result, nil
 }
 
@@ -415,121 +415,6 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 	}
 	expectedFinal := "Hello world! This is a test response."
 	assert.Equal(t, expectedFinal, finalContent, "Final concatenated content should match expected")
-}
-
-func getApprovalTool() AgentTool {
-	type ApprovalToolInput struct {
-		Action string `json:"action" description:"The action to perform"`
-	}
-
-	approvalTool := NewTool(
-		"test_approval_tool",
-		"A test tool that requires approval",
-		func(run *AgentRun, input ApprovalToolInput) (string, error) {
-			return "Tool executed: " + input.Action, nil
-		},
-	)
-	approvalTool.RequireApproval = true
-	return approvalTool
-}
-
-func getApprovalTestData() []ai.RecordedResponse {
-	return []ai.RecordedResponse{
-		{
-			AIMessage: ai.AIMessage{
-				Role: ai.AssistantRole,
-				ToolCalls: []ai.ToolCall{
-					{
-						ID:   "call_1",
-						Name: "test_approval_tool",
-						Args: `{"action": "test_action"}`,
-					},
-				},
-			},
-			Error: "",
-		},
-		{
-			AIMessage: ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Tool execution completed successfully.",
-			},
-			Error: "",
-		},
-	}
-}
-
-func TestToolApprovalTimeout(t *testing.T) {
-	approvalTool := getApprovalTool()
-	testData := getApprovalTestData()
-
-	replayFunc, err := ai.ReplayFunctionFromData(testData)
-	if err != nil {
-		t.Fatalf("Failed to create replay function: %v", err)
-	}
-	model := ai.NewDummyModel(replayFunc)
-
-	oldApprovalTimeout := approvalTimeout
-	oldTickerInterval := tickerInterval
-	defer func() {
-		approvalTimeout = oldApprovalTimeout
-		tickerInterval = oldTickerInterval
-	}()
-
-	approvalTimeout = time.Millisecond * 300
-	tickerInterval = time.Millisecond * 100
-
-	ar, err := NewAgentRun("timeout_test_agent", "Test agent for approval timeout functionality", "Use the test_approval_tool when requested.", t.TempDir())
-	if err != nil {
-		t.Fatalf("failed to create test agent run: %v", err)
-	}
-	ar.SetModel(model)
-	ar.SetTools([]AgentTool{approvalTool})
-	ar.SetEnableTrace(true)
-	ar.approvalTimeout = approvalTimeout
-	ar.Run(context.Background(), "Please execute the test tool with action 'test_action'")
-	defer func() {
-		select {
-		case <-ar.ctx.Done():
-		default:
-			ar.stop()
-		}
-	}()
-
-	var approvalEvent *event.ApprovalEvent
-	var toolRequested bool
-	var toolResponseReceived bool
-
-	timeout := time.After(500 * time.Millisecond)
-	done := make(chan bool)
-
-	go func() {
-		defer func() { done <- true }()
-		for ev := range ar.Next() {
-			switch e := ev.(type) {
-			case *event.ApprovalEvent:
-				approvalEvent = e
-				toolRequested = true
-			case *event.ToolResponseEvent:
-				toolResponseReceived = true
-			case *event.ErrorEvent:
-				t.Logf("Error occurred: %v", e.Err)
-			}
-		}
-	}()
-
-	select {
-	case <-timeout:
-	case <-done:
-	}
-
-	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
-	if approvalEvent != nil {
-		assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
-		assert.Contains(t, approvalEvent.ValidationResult.Message, "", "message should be empty")
-	}
-	assert.True(t, toolRequested, "Tool should have been requested")
-	assert.Equal(t, 0, len(ar.pendingApprovals), "Should have no pending approvals")
-	t.Logf("Tool response received: %v", toolResponseReceived)
 }
 
 func TestAgentRun_ReuseAfterCompletion(t *testing.T) {

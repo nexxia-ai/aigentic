@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -24,26 +23,25 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 
 	eventID := uuid.New().String()
 	toolEvent := &event.ToolEvent{
-		RunID:            r.id,
-		EventID:          eventID,
-		AgentName:        r.AgentName(),
-		SessionID:        r.sessionID,
-		ToolName:         act.ToolName,
-		ValidationResult: act.ValidationResult,
-		ToolGroup:        act.Group,
+		RunID:     r.id,
+		EventID:   eventID,
+		AgentName: r.AgentName(),
+		SessionID: r.sessionID,
+		ToolName:  act.ToolName,
+		Args:      act.Args,
+		ToolGroup: act.Group,
 	}
-	r.queueEvent(toolEvent) // send after adding to the map
+	r.queueEvent(toolEvent)
 
-	currentValidationResult := act.ValidationResult
+	currentArgs := act.Args
 	var err error
 	interceptors := r.interceptors
 
-	// Trace must be the last interceptor to capture the full exchange
 	if r.enableTrace {
 		interceptors = append(interceptors, r.trace)
 	}
 	for _, interceptor := range interceptors {
-		currentValidationResult, err = interceptor.BeforeToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult)
+		currentArgs, err = interceptor.BeforeToolCall(r, act.ToolName, act.ToolCallID, currentArgs)
 		if err != nil {
 			errMsg := fmt.Sprintf("interceptor rejected tool call: %v", err)
 			r.queueAction(&toolResponseAction{request: act, response: errMsg})
@@ -51,7 +49,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		}
 	}
 
-	result, err := tool.call(r, currentValidationResult)
+	result, err := tool.call(r, currentArgs)
 	if err != nil {
 		if r.enableTrace {
 			r.trace.RecordError(err)
@@ -63,7 +61,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 
 	currentResult := result
 	for _, interceptor := range interceptors {
-		currentResult, err = interceptor.AfterToolCall(r, act.ToolName, act.ToolCallID, currentValidationResult, currentResult)
+		currentResult, err = interceptor.AfterToolCall(r, act.ToolName, act.ToolCallID, currentArgs, currentResult)
 		if err != nil {
 			errMsg := fmt.Sprintf("interceptor error after tool call: %v", err)
 			if r.enableTrace {
@@ -145,9 +143,9 @@ func stringifyToolContent(content any) string {
 	}
 }
 
-func (r *AgentRun) processToolCall(tc ai.ToolCall, group *ToolCallGroup) bool {
+func (r *AgentRun) processToolCall(tc ai.ToolCall, group *ToolCallGroup) {
 	if r.processedToolCallIDs[tc.ID] {
-		return false
+		return
 	}
 	r.processedToolCallIDs[tc.ID] = true
 
@@ -158,64 +156,32 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *ToolCallGroup) bool {
 		}
 		r.queueAction(&toolResponseAction{
 			request: &toolCallAction{
-				ToolCallID:       tc.ID,
-				ToolName:         tc.Name,
-				ValidationResult: event.ValidationResult{Values: args},
-				Group:            group,
+				ToolCallID: tc.ID,
+				ToolName:   tc.Name,
+				Args:       args,
+				Group:      group,
 			},
 			response: fmt.Sprintf("invalid tool parameters: %v", err),
 		})
-		return false
+		return
 	}
 
 	tool := r.findTool(tc.Name)
 	if tool == nil {
 		r.queueAction(&toolResponseAction{
-			request:  &toolCallAction{ToolName: tc.Name, ValidationResult: event.ValidationResult{Values: args}, Group: group},
+			request:  &toolCallAction{ToolName: tc.Name, Args: args, Group: group},
 			response: fmt.Sprintf("tool not found: %s", tc.Name),
 		})
-		return false
+		return
 	}
 
-	values, err := tool.validateInput(r, args)
-	if err != nil {
-		r.queueAction(&toolResponseAction{
-			request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: event.ValidationResult{Values: args}, Group: group},
-			response: fmt.Sprintf("invalid tool parameters: %v", err),
-		})
-		return false
-	}
-
-	if tool.RequireApproval {
-		approvalID := uuid.New().String()
-		r.pendingApprovals[approvalID] = pendingApproval{
-			ApprovalID:       approvalID,
-			Tool:             tool,
-			ToolCallID:       tc.ID,
-			ValidationResult: values,
-			Group:            group,
-			deadline:         time.Now().Add(r.approvalTimeout),
-		}
-		approvalEvent := &event.ApprovalEvent{
-			RunID:            r.id,
-			ApprovalID:       approvalID,
-			ToolName:         tc.Name,
-			ValidationResult: values,
-		}
-		r.queueEvent(approvalEvent)
-		return true
-	}
-
-	r.queueAction(&toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, ValidationResult: values, Group: group})
-	return false
+	r.queueAction(&toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, Args: args, Group: group})
 }
 
 // processToolCallsFromChunk processes tool calls from a streaming chunk using the shared stream group
 func (r *AgentRun) processToolCallsFromChunk(toolCalls []ai.ToolCall) {
 	for _, tc := range toolCalls {
-		if r.processToolCall(tc, r.currentStreamGroup) {
-			return
-		}
+		r.processToolCall(tc, r.currentStreamGroup)
 	}
 }
 
@@ -233,8 +199,6 @@ func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, exi
 	}
 
 	for _, tc := range toolCalls {
-		if r.processToolCall(tc, group) {
-			return
-		}
+		r.processToolCall(tc, group)
 	}
 }

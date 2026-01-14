@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/event"
 )
 
 type Trace interface {
@@ -126,18 +125,18 @@ func (tr *TraceRun) AfterCall(run *AgentRun, request []ai.Message, response ai.A
 	return response, nil
 }
 
-func (tr *TraceRun) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult) (event.ValidationResult, error) {
+func (tr *TraceRun) BeforeToolCall(run *AgentRun, toolName string, toolCallID string, args map[string]any) (map[string]any, error) {
 
 	tr.writeToFile(func(w io.Writer) {
 		fmt.Fprintf(w, "\n---- Tool START: %s (callID=%s) agent=%s\n", toolName, toolCallID, run.AgentName())
-		argsJSON, _ := json.Marshal(validationResult)
+		argsJSON, _ := json.Marshal(args)
 		fmt.Fprintf(w, " args: %s\n", string(argsJSON))
 	})
 
-	return validationResult, nil
+	return args, nil
 }
 
-func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
+func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID string, args map[string]any, result *ai.ToolResult) (*ai.ToolResult, error) {
 
 	response := ""
 	if result != nil {
@@ -176,7 +175,7 @@ func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID str
 		fmt.Fprintf(w, " result: %s\n", response)
 		fmt.Fprintf(w, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
 
-		argsJSON, _ := json.Marshal(validationResult)
+		argsJSON, _ := json.Marshal(args)
 		fmt.Fprintf(w, "🛠️️  %s tool response:\n", run.AgentName())
 		fmt.Fprintf(w, "   • %s(%s)\n", toolName, string(argsJSON))
 

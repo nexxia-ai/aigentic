@@ -26,8 +26,6 @@ import (
 //				fmt.Println(ev.Content)
 //			case *ErrorEvent:
 //				fmt.Println(ev.Err)
-//			case *ApprovalEvent:
-//				fmt.Println(ev.ToolName)
 //			case *ThinkingEvent:
 //				fmt.Println(ev.Thought)
 //			}
@@ -68,16 +66,15 @@ type ToolResponseEvent struct {
 func (e *ToolResponseEvent) ID() string { return e.RunID }
 
 type ToolEvent struct {
-	RunID            string
-	EventID          string
-	AgentName        string
-	SessionID        string
-	ToolName         string
-	ValidationResult ValidationResult
-	ToolGroup        interface{}
-	Approved         bool
-	Result           interface{}
-	Error            error
+	RunID     string
+	EventID   string
+	AgentName string
+	SessionID string
+	ToolName  string
+	Args      map[string]any
+	ToolGroup interface{}
+	Result    interface{}
+	Error     error
 }
 
 func (e *ToolEvent) ID() string { return e.RunID }
@@ -99,15 +96,6 @@ type ErrorEvent struct {
 }
 
 func (e *ErrorEvent) ID() string { return e.RunID }
-
-type ApprovalEvent struct {
-	RunID            string
-	ApprovalID       string
-	ToolName         string
-	ValidationResult ValidationResult
-}
-
-func (e *ApprovalEvent) ID() string { return e.RunID }
 
 type EvalEvent struct {
 	RunID     string

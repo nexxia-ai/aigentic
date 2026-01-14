@@ -8,34 +8,18 @@ import (
 	"strings"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/event"
 )
 
 type AgentTool struct {
-	RequireApproval bool
-	Name            string
-	Description     string
-	InputSchema     map[string]interface{}
-	Execute         func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error)
-	Validate        func(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error)
-	NewExecute      func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error)
+	Name        string
+	Description string
+	InputSchema map[string]interface{}
+	Execute     func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error)
 }
 
-func (t *AgentTool) validateInput(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error) {
-	if t.Validate == nil {
-		return event.ValidationResult{Values: args}, nil
-	}
-	return t.Validate(run, args)
-}
-
-func (t *AgentTool) call(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+func (t *AgentTool) call(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 	if t.Execute != nil {
-		args := validationResult.Values.(map[string]any)
 		return t.Execute(run, args)
-	}
-
-	if t.NewExecute != nil {
-		return t.NewExecute(run, validationResult)
 	}
 	return nil, nil
 }

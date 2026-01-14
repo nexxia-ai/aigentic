@@ -12,7 +12,6 @@ import (
 )
 
 func TestDummyBasicAgent(t *testing.T) {
-	// Test data specific to BasicAgent
 	testData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -37,12 +36,10 @@ func TestDummyBasicAgent(t *testing.T) {
 
 	model := ai.NewDummyModel(replayFunc)
 
-	// Use the integration suite
 	TestBasicAgent(t, model)
 }
 
 func TestDummyAgentRun(t *testing.T) {
-	// Test data specific to AgentRun
 	testData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -67,12 +64,10 @@ func TestDummyAgentRun(t *testing.T) {
 
 	model := ai.NewDummyModel(replayFunc)
 
-	// Use the integration suite
 	TestAgentRun(t, model)
 }
 
 func TestDummyToolIntegration(t *testing.T) {
-	// Test data specific to ToolIntegration
 	testData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -102,12 +97,10 @@ func TestDummyToolIntegration(t *testing.T) {
 
 	model := ai.NewDummyModel(replayFunc)
 
-	// Use the integration suite
 	TestToolIntegration(t, model)
 }
 
 func TestDummyConcurrentRuns(t *testing.T) {
-	// Test data specific to ConcurrentRuns
 	testData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -151,12 +144,10 @@ func TestDummyConcurrentRuns(t *testing.T) {
 
 	model := ai.NewDummyModel(replayFunc)
 
-	// Use the integration suite
 	TestConcurrentRuns(t, model)
 }
 
 func TestDummyLLMCallLimit(t *testing.T) {
-	// Test data that will cause infinite tool calls (LLM keeps requesting tools)
 	testData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -215,7 +206,6 @@ func TestDummyLLMCallLimit(t *testing.T) {
 
 	model := ai.NewDummyModel(replayFunc)
 
-	// Create a tool that always returns a response
 	type LookupCompanyInput struct {
 		CompanyNumber string `json:"company_number" description:"The company number to lookup"`
 	}
@@ -228,16 +218,14 @@ func TestDummyLLMCallLimit(t *testing.T) {
 		},
 	)
 
-	// Test agent with LLM call limit
 	agent := Agent{
 		Model:        model,
 		Name:         "limited_agent",
 		Description:  "You are a helpful assistant that looks up company information.",
 		Instructions: "Always use the lookup_company_name tool to get information.",
-		MaxLLMCalls:  3, // Limit to 3 LLM calls
+		MaxLLMCalls:  3,
 		AgentTools:   []run.AgentTool{tool},
 		EnableTrace:  true,
-		// LogLevel:     slog.LevelDebug,
 	}
 
 	ar, err := agent.Start("Look up company information")
@@ -251,17 +239,13 @@ func TestDummyLLMCallLimit(t *testing.T) {
 	for ev := range ar.Next() {
 		switch e := ev.(type) {
 		case *event.ContentEvent:
-			// Content received
 		case *event.ToolEvent:
-		case *event.ApprovalEvent:
-			ar.Approve(e.ApprovalID, true)
 		case *event.ErrorEvent:
 			errorOccurred = true
 			errorMessage = e.Err.Error()
 		}
 	}
 
-	// Verify that the limit was enforced
 	assert.True(t, errorOccurred, "Expected an error due to LLM call limit")
 	assert.Contains(t, errorMessage, "LLM call limit exceeded", "Error should mention LLM call limit")
 	assert.Contains(t, errorMessage, "3 calls", "Error should mention the limit of 3 calls")
@@ -269,7 +253,6 @@ func TestDummyLLMCallLimit(t *testing.T) {
 }
 
 func TestDummyStreaming(t *testing.T) {
-	// Test data for basic streaming (capital of France)
 	basicTestData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -280,7 +263,6 @@ func TestDummyStreaming(t *testing.T) {
 		},
 	}
 
-	// Test data for content only streaming
 	contentOnlyTestData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -291,7 +273,6 @@ func TestDummyStreaming(t *testing.T) {
 		},
 	}
 
-	// Test data for city summary streaming
 	citySummaryTestData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -302,7 +283,6 @@ func TestDummyStreaming(t *testing.T) {
 		},
 	}
 
-	// Test data for streaming with tools
 	toolsTestData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -325,7 +305,6 @@ func TestDummyStreaming(t *testing.T) {
 		},
 	}
 
-	// Test data for tool lookup streaming
 	toolLookupTestData := []ai.RecordedResponse{
 		{
 			AIMessage: ai.AIMessage{
@@ -348,7 +327,6 @@ func TestDummyStreaming(t *testing.T) {
 		},
 	}
 
-	// Run the specific streaming tests with their own test data
 	t.Run("BasicStreaming", func(t *testing.T) {
 		replayFunc, err := ai.ReplayFunctionFromData(basicTestData)
 		if err != nil {
@@ -395,156 +373,8 @@ func TestDummyStreaming(t *testing.T) {
 	})
 }
 
-func getApprovalTool() run.AgentTool {
-	type ApprovalToolInput struct {
-		Action string `json:"action" description:"The action to perform"`
-	}
-
-	approvalTool := run.NewTool(
-		"test_approval_tool",
-		"A test tool that requires approval",
-		func(run *run.AgentRun, input ApprovalToolInput) (string, error) {
-			return "Tool executed: " + input.Action, nil
-		},
-	)
-	approvalTool.RequireApproval = true
-	return approvalTool
-}
-
-func getApprovalTestData() []ai.RecordedResponse {
-	return []ai.RecordedResponse{
-		{
-			AIMessage: ai.AIMessage{
-				Role: ai.AssistantRole,
-				ToolCalls: []ai.ToolCall{
-					{
-						ID:   "call_1",
-						Name: "test_approval_tool",
-						Args: `{"action": "test_action"}`,
-					},
-				},
-			},
-			Error: "",
-		},
-		{
-			AIMessage: ai.AIMessage{
-				Role:    ai.AssistantRole,
-				Content: "Tool execution completed successfully.",
-			},
-			Error: "",
-		},
-	}
-}
-
-func TestToolApprovalGiven(t *testing.T) {
-	approvalTool := getApprovalTool()
-	testData := getApprovalTestData()
-
-	replayFunc, err := ai.ReplayFunctionFromData(testData)
-	if err != nil {
-		t.Fatalf("Failed to create replay function: %v", err)
-	}
-	model := ai.NewDummyModel(replayFunc)
-
-	agent := Agent{
-		Model:        model,
-		Name:         "approval_test_agent",
-		Description:  "Test agent for approval functionality",
-		Instructions: "Use the test_approval_tool when requested.",
-		AgentTools:   []run.AgentTool{approvalTool},
-		EnableTrace:  true,
-		// LogLevel:     slog.LevelDebug,
-	}
-
-	ar, err := agent.Start("Please execute the test tool with action 'test_action'")
-	if err != nil {
-		t.Fatalf("Agent run failed: %v", err)
-	}
-
-	var finalContent string
-	var approvalEvent *event.ApprovalEvent
-	var toolEvent *event.ToolEvent
-
-	for ev := range ar.Next() {
-		switch e := ev.(type) {
-		case *event.ContentEvent:
-			finalContent = e.Content
-		case *event.ApprovalEvent:
-			approvalEvent = e
-			ar.Approve(e.ApprovalID, true)
-		case *event.ToolEvent:
-			toolEvent = e
-		case *event.ErrorEvent:
-			t.Fatalf("Unexpected error: %v", e.Err)
-		}
-	}
-
-	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
-	assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
-	assert.Contains(t, approvalEvent.ValidationResult.Message, "", "message should be empty")
-	assert.NotNil(t, toolEvent, "Should have received a ToolEvent")
-	assert.Contains(t, finalContent, "Tool execution completed successfully", "Should have final content")
-}
-
-func TestToolApprovalRejected(t *testing.T) {
-	approvalTool := getApprovalTool()
-	testData := getApprovalTestData()
-
-	replayFunc, err := ai.ReplayFunctionFromData(testData)
-	if err != nil {
-		t.Fatalf("Failed to create replay function: %v", err)
-	}
-	model := ai.NewDummyModel(replayFunc)
-
-	agent := Agent{
-		Model:        model,
-		Name:         "approval_test_agent",
-		Description:  "Test agent for approval functionality",
-		Instructions: "Use the test_approval_tool when requested.",
-		AgentTools:   []run.AgentTool{approvalTool},
-		EnableTrace:  true,
-		// LogLevel:     slog.LevelDebug,
-	}
-
-	ar, err := agent.Start("Please execute the test tool with action 'test_action'")
-	if err != nil {
-		t.Fatalf("Agent run failed: %v", err)
-	}
-
-	var approvalEvent *event.ApprovalEvent
-	var toolRequested bool
-	var toolResponseReceived bool
-
-	for ev := range ar.Next() {
-		switch e := ev.(type) {
-		case *event.ApprovalEvent:
-			approvalEvent = e
-			toolRequested = true
-			ar.Approve(e.ApprovalID, false)
-		case *event.ToolResponseEvent:
-			toolResponseReceived = true
-			assert.Contains(t, e.Content, "approval denied", "Tool response should indicate approval was denied")
-		case *event.ErrorEvent:
-			// Error might occur if the approval system times out
-			t.Logf("Error occurred: %v", e.Err)
-		}
-	}
-
-	assert.NotNil(t, approvalEvent, "Should have received an ApprovalEvent")
-	if approvalEvent != nil {
-		assert.NotEmpty(t, approvalEvent.ApprovalID, "ApprovalEvent should have an approval ID")
-		assert.Contains(t, approvalEvent.ValidationResult.Message, "", "message should be empty")
-	}
-	assert.True(t, toolRequested, "Tool should have been requested")
-	assert.True(t, toolResponseReceived, "Should have received a tool response indicating denial")
-}
-
 func TestDummyTeamCoordination(t *testing.T) {
-	// Create separate test data for each agent in the team coordination
-
-	// Coordinator responses - handles orchestration and final responses
 	coordinatorData := []ai.RecordedResponse{
-		// Test 1: Existing company "Nexxia"
 		{
 			AIMessage: ai.AIMessage{
 				Role: ai.AssistantRole,
@@ -576,7 +406,6 @@ func TestDummyTeamCoordination(t *testing.T) {
 			},
 		},
 
-		// Test 2: Non-existing company "Contoso"
 		{
 			AIMessage: ai.AIMessage{
 				Role: ai.AssistantRole,
@@ -625,9 +454,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 		},
 	}
 
-	// Lookup agent responses - handles company lookups
 	lookupData := []ai.RecordedResponse{
-		// Test 1: Lookup "Nexxia" - found
 		{
 			AIMessage: ai.AIMessage{
 				Role: ai.AssistantRole,
@@ -643,7 +470,6 @@ func TestDummyTeamCoordination(t *testing.T) {
 			},
 		},
 
-		// Test 2: Lookup "Contoso" - not found
 		{
 			AIMessage: ai.AIMessage{
 				Role: ai.AssistantRole,
@@ -660,9 +486,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 		},
 	}
 
-	// Company creator responses - handles company creation
 	companyCreatorData := []ai.RecordedResponse{
-		// Only called in Test 2: Create "Contoso"
 		{
 			AIMessage: ai.AIMessage{
 				Role: ai.AssistantRole,
@@ -679,9 +503,7 @@ func TestDummyTeamCoordination(t *testing.T) {
 		},
 	}
 
-	// Invoice creator responses - handles invoice creation
 	invoiceCreatorData := []ai.RecordedResponse{
-		// Test 1: Create invoice for COMP-001
 		{
 			AIMessage: ai.AIMessage{
 				Role: ai.AssistantRole,
@@ -697,7 +519,6 @@ func TestDummyTeamCoordination(t *testing.T) {
 			},
 		},
 
-		// Test 2: Create invoice for COMP-CONTOSO-001
 		{
 			AIMessage: ai.AIMessage{
 				Role: ai.AssistantRole,
@@ -714,7 +535,6 @@ func TestDummyTeamCoordination(t *testing.T) {
 		},
 	}
 
-	// Create separate models for each agent
 	coordinatorReplayFunc, err := ai.ReplayFunctionFromData(coordinatorData)
 	if err != nil {
 		t.Fatalf("Failed to create coordinator replay function: %v", err)
@@ -739,9 +559,6 @@ func TestDummyTeamCoordination(t *testing.T) {
 	}
 	invoiceCreatorModel := ai.NewDummyModel(invoiceCreatorReplayFunc)
 
-	// Create a custom test that mimics TestTeamCoordination but uses our separate models
-
-	// Subagents with their own models
 	lookup := Agent{
 		Model:        lookupModel,
 		Name:         "lookup",
@@ -776,11 +593,10 @@ func TestDummyTeamCoordination(t *testing.T) {
 		Instructions: "Call exactly one tool at a time and wait for the response before the next call. " +
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
-		Agents: []Agent{lookup, companyCreator, invoiceCreator},
+		Agents:      []Agent{lookup, companyCreator, invoiceCreator},
 		EnableTrace: true,
 	}
 
-	// Now run the same test logic as TestTeamCoordination
 	type testCase struct {
 		name              string
 		companyName       string
@@ -829,15 +645,12 @@ func TestDummyTeamCoordination(t *testing.T) {
 					chunks = append(chunks, e.Content)
 				case *event.ToolEvent:
 					toolOrder = append(toolOrder, e.ToolName)
-				case *event.ApprovalEvent:
-					ar.Approve(e.ApprovalID, true)
 				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
 			finalContent := strings.Join(chunks, "")
 
-			// Validate final content
 			assert.NotEmpty(t, finalContent)
 			assert.Contains(t, finalContent, "COMPANY_ID:")
 			assert.Contains(t, finalContent, "NAME:")
@@ -848,7 +661,6 @@ func TestDummyTeamCoordination(t *testing.T) {
 			assert.Contains(t, finalContent, tc.expectInvoiceID)
 			assert.Contains(t, finalContent, tc.amount)
 
-			// Ensure orchestration used tools and subagents in expected order
 			indexOf := func(name string) int {
 				for i, n := range toolOrder {
 					if n == name {
@@ -858,11 +670,9 @@ func TestDummyTeamCoordination(t *testing.T) {
 				return -1
 			}
 
-			// Coordinator should call lookup subagent first
 			lookupIdx := indexOf("lookup")
 			assert.NotEqual(t, -1, lookupIdx, "lookup subagent should be called")
 
-			// It should create the company only in the non-existing path
 			createCompanyIdx := indexOf("company_creator")
 			if tc.expectCallsCreate {
 				assert.NotEqual(t, -1, createCompanyIdx, "company_creator should be called when company is not found")
@@ -879,7 +689,6 @@ func TestDummyTeamCoordination(t *testing.T) {
 				assert.Greater(t, invoiceIdx, lookupIdx, "invoice should be created after lookup result")
 			}
 
-			// Check for save_memory usage
 			saveIdx := indexOf("save_memory")
 			if saveIdx == -1 {
 				t.Log("Warning: save_memory was not called during the workflow. This may indicate the coordinator is not persisting context between steps.")

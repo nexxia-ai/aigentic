@@ -14,8 +14,6 @@ import (
 	"github.com/nexxia-ai/aigentic/event"
 )
 
-var approvalTimeout = time.Minute * 60
-
 type AgentRun struct {
 	id        string
 	sessionID string // a unique identifier for multiple runs
@@ -32,7 +30,6 @@ type AgentRun struct {
 
 	eventQueue           chan event.Event
 	actionQueue          chan action
-	pendingApprovals     map[string]pendingApproval
 	processedToolCallIDs map[string]bool
 	currentStreamGroup   *ToolCallGroup
 	trace                Trace
@@ -42,7 +39,6 @@ type AgentRun struct {
 	logLevel             slog.LevelVar
 	maxLLMCalls          int
 	llmCallCount         int
-	approvalTimeout      time.Duration
 	includeHistory       bool
 
 	streaming bool
@@ -98,7 +94,6 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent context: %w", err)
 	}
-	// ac.StartTurn("")
 	run := &AgentRun{
 		agentName:            name,
 		id:                   runID,
@@ -108,9 +103,7 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 		maxLLMCalls:          20,
 		eventQueue:           make(chan event.Event, 100),
 		actionQueue:          make(chan action, 100),
-		pendingApprovals:     make(map[string]pendingApproval),
 		processedToolCallIDs: make(map[string]bool),
-		approvalTimeout:      approvalTimeout,
 		interceptors:         make([]Interceptor, 0),
 		tools:                make([]AgentTool, 0),
 		trace:                &TraceRun{},
@@ -135,9 +128,7 @@ func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*Agen
 		maxLLMCalls:          20,
 		eventQueue:           make(chan event.Event, 100),
 		actionQueue:          make(chan action, 100),
-		pendingApprovals:     make(map[string]pendingApproval),
 		processedToolCallIDs: make(map[string]bool),
-		approvalTimeout:      approvalTimeout,
 		interceptors:         make([]Interceptor, 0),
 		tools:                tools,
 		trace:                &TraceRun{},
@@ -198,16 +189,12 @@ func (r *AgentRun) Run(ctx context.Context, message string) {
 	turn.AgentName = r.agentName
 
 	r.ctx, r.cancelFunc = context.WithCancel(ctx)
-	r.pendingApprovals = make(map[string]pendingApproval)
 	r.processedToolCallIDs = make(map[string]bool)
 	r.llmCallCount = 0
 
-	// new channels for the run
 	r.eventQueue = make(chan event.Event, 100)
 	r.actionQueue = make(chan action, 100)
 
-	// goroutine to read the action queue and process actions.
-	// it will terminate when the action queue is closed and the agent is finished.
 	go r.processLoop()
 	r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
 }
@@ -234,12 +221,9 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			},
 			"required": []string{"input"},
 		},
-		Validate: func(run *AgentRun, args map[string]interface{}) (event.ValidationResult, error) {
-			return event.ValidationResult{Values: args}, nil
-		},
-		NewExecute: func(run *AgentRun, validationResult event.ValidationResult) (*ai.ToolResult, error) {
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			input := ""
-			if v, ok := validationResult.Values.(map[string]any)["input"].(string); ok {
+			if v, ok := args["input"].(string); ok {
 				input = v
 			}
 			subRun, err := NewAgentRun(name, description, message, r.agentContext.ExecutionEnvironment().RootDir)
@@ -251,7 +235,6 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			subRun.trace = r.trace
 			subRun.Logger = r.Logger.With("sub-agent", name)
 			subRun.parentRun = r
-			// Inherit Stream setting from parent
 			if r.streaming {
 				subRun.SetStreaming(true)
 			}
@@ -259,7 +242,6 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			subRun.Run(r.ctx, input)
 			content, err := subRun.Wait(0)
 
-			// Record sub-agent errors to trace
 			if r.enableTrace && err != nil {
 				r.trace.RecordError(fmt.Errorf("sub-agent %s error: %v", name, err))
 			}
@@ -291,7 +273,6 @@ func (r *AgentRun) Wait(d time.Duration) (string, error) {
 	for evt := range r.eventQueue {
 		switch event := evt.(type) {
 		case *event.ContentEvent:
-			// only append content that is for the same run ID so you don't append sub-agent content to the parent agent
 			if r.ID() == event.RunID {
 				content += event.Content
 			}
@@ -302,21 +283,11 @@ func (r *AgentRun) Wait(d time.Duration) (string, error) {
 	return content, err
 }
 
-func (r *AgentRun) Approve(approvalID string, approved bool) {
-	r.queueAction(&approvalAction{ApprovalID: approvalID, Approved: approved})
-}
-
 func (r *AgentRun) Next() <-chan event.Event {
 	return r.eventQueue
 }
 
-// keep it a variable to make it easier to test
-var tickerInterval = time.Second * 30
-
 func (r *AgentRun) processLoop() {
-	ticker := time.NewTicker(tickerInterval)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case action, ok := <-r.actionQueue:
@@ -335,17 +306,12 @@ func (r *AgentRun) processLoop() {
 			case *toolResponseAction:
 				r.runToolResponseAction(act.request, act.response)
 
-			case *approvalAction:
-				r.runApprovalAction(act)
-
 			case *toolCallAction:
 				r.runToolCallAction(act)
 
 			default:
 				panic(fmt.Sprintf("unknown action: %T", act))
 			}
-		case <-ticker.C:
-			r.checkApprovalTimeouts()
 
 		case <-r.ctx.Done():
 			r.runStopAction(&stopAction{Error: fmt.Errorf("run context cancelled")})
@@ -370,15 +336,12 @@ func (r *AgentRun) runStopAction(act *stopAction) {
 }
 
 func (r *AgentRun) queueEvent(event event.Event) {
-	// if this is a sub-agent, queue the event to the parent agent
 	if r.parentRun != nil {
 		r.parentRun.queueEvent(event)
 	}
 	select {
 	case r.eventQueue <- event:
-		// queued
 	default:
-		// queue full, drop or handle overflow
 		r.Logger.Error("event queue is full. dropping event", "event", event)
 	}
 }
@@ -386,9 +349,7 @@ func (r *AgentRun) queueEvent(event event.Event) {
 func (r *AgentRun) queueAction(action action) {
 	select {
 	case r.actionQueue <- action:
-		// queued
 	default:
-		// queue full, drop or handle overflow
 		r.Logger.Error("action queue is full. dropping action", "action", action)
 	}
 }

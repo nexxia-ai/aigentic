@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
 )
 
@@ -53,18 +52,18 @@ func (l *loggerInterceptor) AfterCall(agentRun *run.AgentRun, request []ai.Messa
 	return response, nil
 }
 
-func (l *loggerInterceptor) BeforeToolCall(agentRun *run.AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult) (event.ValidationResult, error) {
+func (l *loggerInterceptor) BeforeToolCall(agentRun *run.AgentRun, toolName string, toolCallID string, args map[string]any) (map[string]any, error) {
 	timerKey := toolCallID
 	l.mu.Lock()
 	l.toolTimers[timerKey] = time.Now()
 	l.mu.Unlock()
 
-	agentRun.Logger.Debug("calling tool", "tool", toolName, "tool_call_id", toolCallID, "args", validationResult)
+	agentRun.Logger.Debug("calling tool", "tool", toolName, "tool_call_id", toolCallID, "args", args)
 
-	return validationResult, nil
+	return args, nil
 }
 
-func (l *loggerInterceptor) AfterToolCall(agentRun *run.AgentRun, toolName string, toolCallID string, validationResult event.ValidationResult, result *ai.ToolResult) (*ai.ToolResult, error) {
+func (l *loggerInterceptor) AfterToolCall(agentRun *run.AgentRun, toolName string, toolCallID string, args map[string]any, result *ai.ToolResult) (*ai.ToolResult, error) {
 	timerKey := toolCallID
 	l.mu.Lock()
 	startTime, exists := l.toolTimers[timerKey]

@@ -24,13 +24,12 @@ The declarative approach means you focus on agent configuration and event handli
 
 - **🤖 Simple Agent Creation** - Declarative agent configuration
 - **🔄 Streaming Responses** - Real-time content generation with chunked delivery
-- **🛠️ Tool Integration** - Custom tools (including MCP) with validation and approval workflows
+- **🛠️ Tool Integration** - Custom tools (including MCP) with type-safe schemas
 - **📄 Document Support** - Multi-modal document processing (PDF, images, text)
 - **👥 Multi-Agent Teams** - Coordinated agent collaboration
 - **💾 Persistent Memory** - Context retention across agent runs
 - **🔍 Built-in Tracing** - Comprehensive execution monitoring
 - **⚡ Event-Driven** - Real-time progress updates and user interaction
-- **🔒 Human-in-the-Loop** - Approval workflows for sensitive operations
 - **🎯 Provider Agnostic** - Support for OpenAI, Ollama, Google Gemini, and others
 
 ---
@@ -195,80 +194,6 @@ func main() {
 **Run this example:**
 ```bash
 go run github.com/nexxia-ai/aigentic-examples/tools@latest
-```
-
-### Human-in-the-Loop Approval
-
-[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/approval)
-
-To enable approval for tools, create the tool with `run.NewTool()` and set `RequireApproval: true`. This will generate an `ApprovalEvent` in the event stream.
-
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	"github.com/nexxia-ai/aigentic"
-	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/run"
-	_ "github.com/nexxia-ai/aigentic-openai"
-)
-
-func createSendEmailTool() run.AgentTool {
-	type SendEmailInput struct {
-		To      string `json:"to" description:"Email recipient address"`
-		Subject string `json:"subject" description:"Email subject line"`
-		Body    string `json:"body" description:"Email body content"`
-	}
-
-	emailTool := run.NewTool(
-		"send_email",
-		"Sends an email to a recipient with subject and body. Requires approval before sending.",
-		func(run *run.AgentRun, input SendEmailInput) (string, error) {
-			return fmt.Sprintf("Email sent to %s", input.To), nil
-		},
-	)
-	emailTool.RequireApproval = true
-	return emailTool
-}
-
-func main() {
-	model, err := ai.New("GPT-4o Mini", "your-api-key")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	agent := aigentic.Agent{
-		Model:        model,
-		Name:         "EmailAgent",
-		Instructions: "Use the send_email tool when asked to send emails.",
-		AgentTools:   []run.AgentTool{createSendEmailTool()},
-		Stream:       true,
-	}
-
-	run, err := agent.Start("Send an email to john@example.com")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for event := range run.Next() {
-		switch e := event.(type) {
-		case *aigentic.ContentEvent:
-			fmt.Print(e.Content)
-		case *aigentic.ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
-		case *aigentic.ErrorEvent:
-			fmt.Printf("\n❌ Error: %v\n", e.Err)
-		}
-	}
-}
-```
-
-**Run this example:**
-```bash
-go run github.com/nexxia-ai/aigentic-examples/approval@latest
 ```
 
 ### Document Usage
@@ -512,8 +437,6 @@ func main() {
 			fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
 		case *aigentic.ToolEvent:
 			fmt.Printf("\n🔧 Tool executed: %s\n", e.ToolName)
-		case *aigentic.ApprovalEvent:
-			run.Approve(e.ApprovalID, true)
 		case *aigentic.ErrorEvent:
 			fmt.Printf("\n❌ Error: %v\n", e.Err)
 		}

@@ -21,8 +21,6 @@ type IntegrationTestSuite struct {
 	SkipTests []string
 }
 
-// TODO: fix this - this is a hack and does not test the real tool
-// newMemoryTool creates a memory tool for testing without importing tools package to avoid import cycles
 func newMemoryTool() run.AgentTool {
 	data := make(map[string]string)
 	var mutex sync.RWMutex
@@ -56,8 +54,7 @@ func newMemoryTool() run.AgentTool {
 			},
 			"required": []string{"memory_name", "memory_content"},
 		},
-		NewExecute: func(agentRun *run.AgentRun, result event.ValidationResult) (*ai.ToolResult, error) {
-			args := result.Values.(map[string]interface{})
+		Execute: func(agentRun *run.AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
 			name := args["memory_name"].(string)
 			content := args["memory_content"].(string)
 
@@ -83,7 +80,6 @@ func newMemoryTool() run.AgentTool {
 
 // RunIntegrationTestSuite runs all standard integration tests against a model implementation
 func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
-	// Helper function to check if a test should be skipped
 	shouldSkipTest := func(testName string) bool {
 		for _, skipTest := range suite.SkipTests {
 			if skipTest == testName {
@@ -250,7 +246,6 @@ func NewCreateCompanyTool() run.AgentTool {
 		"create_company",
 		"Create a new company by name. Returns 'COMPANY_ID: <id>; NAME: <name>'",
 		func(agentRun *run.AgentRun, input CreateCompanyInput) (string, error) {
-			// Deterministic ID derived from name for test stability
 			id := "COMP-NEW-001"
 			if strings.EqualFold(strings.TrimSpace(input.Name), "Contoso") {
 				id = "COMP-CONTOSO-001"
@@ -324,7 +319,6 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.agent.Documents = tt.attachments
-			// Convert ai.Tools to AgentTools
 			for _, tool := range tt.tools {
 				tt.agent.AgentTools = append(tt.agent.AgentTools, run.WrapTool(tool))
 			}
@@ -339,8 +333,6 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 				case *event.ContentEvent:
 					chunks = append(chunks, e.Content)
 				case *event.ToolEvent:
-				case *event.ApprovalEvent:
-					agentRun.Approve(e.ApprovalID, true)
 				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
@@ -354,8 +346,6 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 }
 
 func TestAgentRun(t *testing.T, model *ai.Model) {
-	// Sessions no longer have Trace field
-
 	newAgent := func() Agent {
 		return Agent{
 			Model:        model,
@@ -398,7 +388,6 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			agent := newAgent()
-			// Convert ai.Tools to AgentTools
 			for _, tool := range test.tools {
 				agent.AgentTools = append(agent.AgentTools, run.WrapTool(tool))
 			}
@@ -413,8 +402,6 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 				case *event.ContentEvent:
 					chunks = append(chunks, e.Content)
 				case *event.ToolEvent:
-				case *event.ApprovalEvent:
-					agentRun.Approve(e.ApprovalID, true)
 				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
@@ -428,15 +415,12 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 }
 
 func TestToolIntegration(t *testing.T, model *ai.Model) {
-	// Sessions no longer have Trace field
-
 	newAgent := func() Agent {
 		return Agent{
 			Name:         "test-agent",
 			Model:        model,
 			Description:  "You are a helpful assistant that provides clear and concise answers.",
 			Instructions: "Always explain your reasoning and provide examples when possible.",
-			// LogLevel:     slog.LevelDebug,
 		}
 	}
 
@@ -463,7 +447,6 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			// Convert ai.Tools to AgentTools
 			for _, tool := range test.tools {
 				test.agent.AgentTools = append(test.agent.AgentTools, run.WrapTool(tool))
 			}
@@ -478,8 +461,6 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 				case *event.ContentEvent:
 					chunks = append(chunks, e.Content)
 				case *event.ToolEvent:
-				case *event.ApprovalEvent:
-					agentRun.Approve(e.ApprovalID, true)
 				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
@@ -493,7 +474,6 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 }
 
 func TestTeamCoordination(t *testing.T, model *ai.Model) {
-	// Subagents
 	lookup := Agent{
 		Model:        model,
 		Name:         "lookup",
@@ -528,9 +508,8 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 		Instructions: "Call exactly one tool at a time and wait for the response before the next call. " +
 			"Use the save_memory tool to persist important context between tool calls, especially after getting company information and getting invoice information. " +
 			"Do not add commentary.",
-		Agents: []Agent{lookup, companyCreator, invoiceCreator},
+		Agents:      []Agent{lookup, companyCreator, invoiceCreator},
 		EnableTrace: true,
-		// LogLevel: slog.LevelDebug,
 	}
 
 	type testCase struct {
@@ -581,15 +560,12 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 					chunks = append(chunks, e.Content)
 				case *event.ToolEvent:
 					toolOrder = append(toolOrder, e.ToolName)
-				case *event.ApprovalEvent:
-					agentRun.Approve(e.ApprovalID, true)
 				case *event.ErrorEvent:
 					t.Fatalf("Agent error: %v", e.Err)
 				}
 			}
 			finalContent := strings.Join(chunks, "")
 
-			// Validate final content
 			assert.NotEmpty(t, finalContent)
 			assert.Contains(t, finalContent, "COMPANY_ID:")
 			assert.Contains(t, finalContent, "NAME:")
@@ -600,7 +576,6 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 			assert.Contains(t, finalContent, tc.expectInvoiceID)
 			assert.Contains(t, finalContent, tc.amount)
 
-			// Ensure orchestration used tools and subagents in expected order
 			indexOf := func(name string) int {
 				for i, n := range toolOrder {
 					if n == name {
@@ -610,11 +585,9 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 				return -1
 			}
 
-			// Coordinator should call lookup subagent first
 			lookupIdx := indexOf("lookup")
 			assert.NotEqual(t, -1, lookupIdx, "lookup subagent should be called")
 
-			// It should create the company only in the non-existing path
 			createCompanyIdx := indexOf("company_creator")
 			if tc.expectCallsCreate {
 				assert.NotEqual(t, -1, createCompanyIdx, "company_creator should be called when company is not found")
@@ -631,7 +604,6 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 				assert.Greater(t, invoiceIdx, lookupIdx, "invoice should be created after lookup result")
 			}
 
-			// Implicit memory usage: ensure the coordinator used save_memory at least once during the workflow
 			saveIdx := indexOf("save_memory")
 			if saveIdx == -1 {
 				t.Log("Warning: save_memory was not called during the workflow. This may indicate the coordinator is not persisting context between steps.")
@@ -643,7 +615,6 @@ func TestTeamCoordination(t *testing.T, model *ai.Model) {
 }
 
 func TestFileAttachments(t *testing.T, model *ai.Model) {
-	// Define test cases
 	testCases := []struct {
 		name        string
 		attachments []*document.Document
@@ -728,8 +699,8 @@ func TestMultiAgentChain(t *testing.T, model *ai.Model) {
 		You must call all the experts in order.
 		Do no make up information. Use only the names provided by the agents.
 		Return the final names as received from the last expert. do not add any additional text or commentary.`,
-		Model:  model,
-		Agents: experts,
+		Model:       model,
+		Agents:      experts,
 		EnableTrace: true,
 	}
 
@@ -764,7 +735,6 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		EnableTrace:  true,
 	}
 
-	// Define multiple sequential runs
 	runs := []struct {
 		name        string
 		message     string
@@ -787,7 +757,6 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		},
 	}
 
-	// Start all runs first (parallel execution)
 	var agentRuns []*run.AgentRun
 	for i, testRun := range runs {
 		t.Logf("Starting run %d: %s", i+1, testRun.name)
@@ -800,25 +769,18 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 		agentRuns = append(agentRuns, agentRun)
 	}
 
-	// Now wait for all runs to complete (parallel waiting)
 	responses := make([]string, len(agentRuns))
 	for i, agentRun := range agentRuns {
-		// t.Logf("Waiting for run %d to complete", i+1)
-
 		response, err := agentRun.Wait(0)
 		if err != nil {
 			t.Fatalf("Wait for run %d failed: %v", i+1, err)
 		}
 
 		responses[i] = response
-		// t.Logf("Run %d completed with response: %s", i+1, response)
 	}
 
-	// Verify all responses
 	assert.Len(t, responses, len(runs), "Should have responses for all runs")
 
-	// Check that tool calls were made when expected
-	// Find the response that contains the tool call result
 	foundToolCall := false
 	toolCallRunIndex := -1
 	for i, response := range responses {
@@ -830,23 +792,15 @@ func TestConcurrentRuns(t *testing.T, model *ai.Model) {
 	}
 	assert.True(t, foundToolCall, "Should have found a response with tool call result")
 
-	// Log which run actually got the tool call response for debugging
 	if toolCallRunIndex >= 0 {
-		// t.Logf("Tool call response found in run %d: '%s' (expected tool call: %v)",
-		// toolCallRunIndex+1, runs[toolCallRunIndex].name, runs[toolCallRunIndex].expectsTool)
 	}
 
-	// For now, just verify that we found a tool call response, regardless of which run it was in
-	// This is a more lenient check that accounts for potential race conditions in parallel execution
-
-	// Verify no errors occurred
 	for i, response := range responses {
 		assert.NotEmpty(t, response, "Run %d should have non-empty response", i+1)
 		assert.NotContains(t, response, "Error:", "Run %d should not contain error", i+1)
 	}
 
 	assert.Equal(t, counter, 1, "Should have made 1 tool call")
-	// t.Logf("All %d parallel runs completed successfully", len(runs))
 }
 
 func TestBasicStreaming(t *testing.T, model *ai.Model) {
@@ -870,8 +824,6 @@ func TestBasicStreaming(t *testing.T, model *ai.Model) {
 		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
 		case *event.ToolEvent:
-		case *event.ApprovalEvent:
-			agentRun.Approve(e.ApprovalID, true)
 		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -906,8 +858,6 @@ func TestStreamingContentOnly(t *testing.T, model *ai.Model) {
 		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
 		case *event.ToolEvent:
-		case *event.ApprovalEvent:
-			agentRun.Approve(e.ApprovalID, true)
 		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -941,8 +891,6 @@ func TestStreamingWithCitySummary(t *testing.T, model *ai.Model) {
 		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
 		case *event.ToolEvent:
-		case *event.ApprovalEvent:
-			agentRun.Approve(e.ApprovalID, true)
 		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -978,8 +926,6 @@ func TestStreamingWithTools(t *testing.T, model *ai.Model) {
 		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
 		case *event.ToolEvent:
-		case *event.ApprovalEvent:
-			agentRun.Approve(e.ApprovalID, true)
 		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -1017,8 +963,6 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 			chunks = append(chunks, e.Content)
 		case *event.ToolEvent:
 			toolCalls++
-		case *event.ApprovalEvent:
-			agentRun.Approve(e.ApprovalID, true)
 		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -1035,7 +979,6 @@ func TestStreamingToolLookup(t *testing.T, model *ai.Model) {
 func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 
 	counter := 0
-	// Sub-agents
 	lookupCompany := Agent{
 		Model:        model,
 		Name:         "lookup_company",
@@ -1052,7 +995,6 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		AgentTools:   []run.AgentTool{NewSecretSupplierTool()},
 	}
 
-	// Coordinator executes the plan, saves each result to memory, then replies with full memory content
 	coordinator := Agent{
 		Model:       model,
 		Name:        "coordinator",
@@ -1066,8 +1008,8 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 			"6) When saving memory, include all previous memory content plus the new result\n" +
 			"7) After all tasks are complete, return only the final memory content (no commentary)\n" +
 			"CRITICAL: Execute step 1, then step 2, then step 3, etc. - NEVER execute multiple steps simultaneously.",
-		AgentTools: []run.AgentTool{newMemoryTool()},
-		Agents:     []Agent{lookupCompany, lookupSupplier},
+		AgentTools:  []run.AgentTool{newMemoryTool()},
+		Agents:      []Agent{lookupCompany, lookupSupplier},
 		EnableTrace: true,
 	}
 
@@ -1094,7 +1036,7 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 		case *event.ContentEvent:
 			chunks = append(chunks, e.Content)
 		case *event.ToolEvent:
-			args := e.ValidationResult.Values.(map[string]any)
+			args := e.Args
 			toolOrder = append(toolOrder, e.ToolName)
 			if e.ToolName == "update_memory" {
 				saveIdxs = append(saveIdxs, len(toolOrder)-1)
@@ -1110,8 +1052,6 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 					supplierToolInput = v
 				}
 			}
-		case *event.ApprovalEvent:
-			agentRun.Approve(e.ApprovalID, true)
 		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
@@ -1122,7 +1062,6 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	assert.Contains(t, strings.ToLower(finalContent), "nexxia", "memory should include company result")
 	assert.Contains(t, strings.ToLower(finalContent), "phoenix", "memory should include supplier result")
 
-	// Ensure orchestration used subagents and memory saves in order
 	indexOf := func(name string) int {
 		for i, n := range toolOrder {
 			if n == name {
@@ -1137,7 +1076,6 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	assert.NotEqual(t, -1, supplierIdx, "lookup_company_supplier subagent should be called")
 	assert.Greater(t, len(saveIdxs), 1, "update_memory should be called at least twice")
 
-	// Validate inputs used to call subagents
 	assert.Contains(t, strings.ToLower(companyToolInput), "look up company 150")
 	assert.Contains(t, strings.ToLower(supplierToolInput), "look up supplier 200")
 

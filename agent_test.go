@@ -453,8 +453,6 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 			}
 		case *event.ToolEvent:
 			toolCalls = append(toolCalls, e.ToolName)
-		case *event.ApprovalEvent:
-			ar.Approve(e.ApprovalID, true)
 		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}

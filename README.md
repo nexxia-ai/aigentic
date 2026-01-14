@@ -523,8 +523,6 @@ agent := aigentic.Agent{
 	Model: model,
 	AgentTools: []run.AgentTool{
 		tools.NewMemoryTool(),
-		tools.NewReadFileTool(),
-		tools.NewWriteFileTool(),
 	},
 }
 ```

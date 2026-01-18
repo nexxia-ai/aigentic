@@ -145,7 +145,7 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 		if mimeType == "" {
 			mimeType = "unknown"
 		}
-		promptBuf.WriteString(fmt.Sprintf("- ID: %s, Filename: %s, Type: %s\n", doc.ID(), doc.Filename, mimeType))
+		promptBuf.WriteString(fmt.Sprintf("- FQN: %s, Filename: %s, Type: %s\n", doc.ID(), doc.Filename, mimeType))
 	}
 
 	userMsg := ai.UserMessage{Role: ai.UserRole, Content: promptBuf.String()}

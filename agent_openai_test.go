@@ -22,7 +22,7 @@ func init() {
 func TestOpenAI_AgentSuite(t *testing.T) {
 	RunIntegrationTestSuite(t, IntegrationTestSuite{
 		NewModel: func() *ai.Model {
-			return openai.NewModel("gpt-4o-mini", os.Getenv("OPENAI_API_KEY"))
+			return openai.NewModel("gpt-5-mini", os.Getenv("OPENAI_API_KEY"))
 		},
 		Name: "OpenAI",
 		SkipTests: []string{
@@ -45,7 +45,7 @@ func TestOpenAI_OpenRouter(t *testing.T) {
 func TestOpenAI_Helicone(t *testing.T) {
 	RunIntegrationTestSuite(t, IntegrationTestSuite{
 		NewModel: func() *ai.Model {
-			return openai.NewModel("gpt-4o-mini", os.Getenv("HELICONE_API_KEY"), openai.HeliconeBaseURL)
+			return openai.NewModel("gpt-5-mini", os.Getenv("HELICONE_API_KEY"), openai.HeliconeBaseURL)
 		},
 		Name: "OpenRouter",
 		SkipTests: []string{
@@ -55,12 +55,12 @@ func TestOpenAI_Helicone(t *testing.T) {
 }
 
 func TestOpenAI_BasicAgent(t *testing.T) {
-	model := openai.NewModel("gpt-4o-mini", os.Getenv("OPENAI_API_KEY"))
+	model := openai.NewModel("gpt-5-mini", os.Getenv("OPENAI_API_KEY"))
 	TestBasicAgent(t, model)
 }
 
 func TestOpenAI_TeamCoordination(t *testing.T) {
-	model := openai.NewModel("gpt-4o-mini", os.Getenv("OPENAI_API_KEY"))
+	model := openai.NewModel("gpt-5-mini", os.Getenv("OPENAI_API_KEY"))
 	TestTeamCoordination(t, model)
 }
 
@@ -71,7 +71,7 @@ func TestOpenAI_Agent_WithFileID(t *testing.T) {
 		t.Fatal("Skipping OpenAI integration test: OPENAI_API_KEY not set")
 	}
 
-	model := openai.NewModel("o4-mini", "")
+	model := openai.NewModel("gpt-5-mini", "")
 
 	// Create a document reference for the file ID
 	fileDoc := document.NewInMemoryDocument("file-WjBr55R67mVmhXCsvKZ6Zs", "document.pdf", nil, nil)

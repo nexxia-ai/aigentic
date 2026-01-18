@@ -53,10 +53,34 @@ func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.
 			switch msg := message.(type) {
 			case ai.UserMessage:
 				fmt.Fprintf(w, "⬆️  %s:\n", role)
-				tr.logMessageContentToWriter(w, "content", msg.Content)
+				if len(msg.Parts) > 0 {
+					for i, part := range msg.Parts {
+						fmt.Fprintf(w, " part[%d]: type=%s", i, part.Type)
+						if part.Type == ai.ContentPartText {
+							tr.logMessageContentToWriter(w, " text", part.Text)
+						} else if part.Name != "" {
+							fmt.Fprintf(w, " name=%s", part.Name)
+						}
+						fmt.Fprintf(w, "\n")
+					}
+				} else {
+					tr.logMessageContentToWriter(w, "content", msg.Content)
+				}
 			case ai.SystemMessage:
 				fmt.Fprintf(w, "⬆️  %s:\n", role)
-				tr.logMessageContentToWriter(w, "content", msg.Content)
+				if len(msg.Parts) > 0 {
+					for i, part := range msg.Parts {
+						fmt.Fprintf(w, " part[%d]: type=%s", i, part.Type)
+						if part.Type == ai.ContentPartText {
+							tr.logMessageContentToWriter(w, " text", part.Text)
+						} else if part.Name != "" {
+							fmt.Fprintf(w, " name=%s", part.Name)
+						}
+						fmt.Fprintf(w, "\n")
+					}
+				} else {
+					tr.logMessageContentToWriter(w, "content", msg.Content)
+				}
 			case ai.AIMessage:
 				fmt.Fprintf(w, "⬆️  assistant: role=%s\n", msg.Role)
 				tr.logAIMessageToWriter(w, msg)
@@ -64,46 +88,6 @@ func (tr *TraceRun) BeforeCall(run *AgentRun, messages []ai.Message, tools []ai.
 				fmt.Fprintf(w, "⬆️  %s:\n", role)
 				fmt.Fprintf(w, " tool_call_id: %s\n", msg.ToolCallID)
 				tr.logMessageContentToWriter(w, "content", msg.Content)
-			case ai.ResourceMessage:
-				fmt.Fprintf(w, "⬆️  %s:\n", role)
-				var isFileID bool
-				var contentLen int
-				var contentPreview string
-
-				if body, ok := msg.Body.([]byte); ok && body != nil {
-					isFileID = false
-					contentLen = len(body)
-					if contentLen > 0 {
-						previewLen := 64
-						if contentLen < previewLen {
-							previewLen = contentLen
-						}
-						contentPreview = string(body[:previewLen])
-					}
-				} else {
-					isFileID = true
-					contentLen = len(msg.Name)
-				}
-
-				if isFileID {
-					fmt.Fprintf(w, " resource: %s (file ID reference)\n", msg.Name)
-				} else {
-					fmt.Fprintf(w, " resource: %s (content length: %d)\n", msg.Name, contentLen)
-				}
-
-				if msg.URI != "" {
-					fmt.Fprintf(w, " uri: %s\n", msg.URI)
-				}
-				if msg.MIMEType != "" {
-					fmt.Fprintf(w, " mime_type: %s\n", msg.MIMEType)
-				}
-				if msg.Description != "" {
-					fmt.Fprintf(w, " description: %s\n", msg.Description)
-				}
-
-				if contentPreview != "" {
-					tr.logMessageContentToWriter(w, "content_preview", contentPreview)
-				}
 			default:
 				_, content := message.Value()
 				tr.logMessageContentToWriter(w, "content", content)

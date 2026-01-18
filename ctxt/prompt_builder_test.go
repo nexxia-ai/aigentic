@@ -541,13 +541,17 @@ func TestBuildPrompt(t *testing.T) {
 			validate: func(t *testing.T, msgs []ai.Message) {
 				resourceFound := false
 				for _, msg := range msgs {
-					if rm, ok := msg.(ai.ResourceMessage); ok {
-						resourceFound = true
-						assert.Equal(t, "turn.pdf", rm.Name)
-						assert.Equal(t, ai.UserRole, rm.Role)
+					if um, ok := msg.(ai.UserMessage); ok && len(um.Parts) > 0 {
+						for _, part := range um.Parts {
+							if part.Name == "turn.pdf" {
+								resourceFound = true
+								assert.Equal(t, ai.UserRole, um.Role)
+								break
+							}
+						}
 					}
 				}
-				assert.True(t, resourceFound, "Should contain resource message")
+				assert.True(t, resourceFound, "Should contain resource message with content part")
 			},
 		},
 		{
@@ -670,8 +674,6 @@ func getMessageTypes(msgs []ai.Message) []string {
 			types[i] = "assistant"
 		case ai.ToolMessage:
 			types[i] = "tool"
-		case ai.ResourceMessage:
-			types[i] = "resource"
 		default:
 			role, _ := msg.Value()
 			types[i] = string(role) + "?"
@@ -743,7 +745,7 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 	historyUserFound := false
 	historyAssistantFound := false
 	currentUserFound := false
-	resourceMsgs := []ai.ResourceMessage{}
+	resourcePartsFound := 0
 	toolMsgFound := false
 
 	for _, msg := range msgs {
@@ -760,14 +762,13 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 			} else if strings.Contains(um.Content, "Current message") {
 				currentUserFound = true
 			}
+			if len(um.Parts) > 0 {
+				resourcePartsFound += len(um.Parts)
+			}
 		}
 
 		if am, ok := msg.(ai.AIMessage); ok && strings.Contains(am.Content, "Response") {
 			historyAssistantFound = true
-		}
-
-		if rm, ok := msg.(ai.ResourceMessage); ok {
-			resourceMsgs = append(resourceMsgs, rm)
 		}
 
 		if tm, ok := msg.(ai.ToolMessage); ok && tm.Content == "Tool result" {
@@ -779,7 +780,7 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 	assert.True(t, historyUserFound, "Should have history user message")
 	assert.True(t, historyAssistantFound, "Should have history assistant message")
 	assert.True(t, currentUserFound, "Should have current user message")
-	assert.GreaterOrEqual(t, len(resourceMsgs), 1, "Should have at least one resource message")
+	assert.GreaterOrEqual(t, resourcePartsFound, 1, "Should have at least one resource content part")
 	assert.True(t, toolMsgFound, "Should have tool message")
 }
 
@@ -836,33 +837,42 @@ func TestBuildPromptDocumentReferences(t *testing.T) {
 	require.NoError(t, err)
 
 	docsMsgFound := false
-	resourceMsgs := []ai.ResourceMessage{}
+	resourcePartsFound := 0
 
 	for _, msg := range msgs {
 		if msg == nil {
 			continue
 		}
-		if um, ok := msg.(ai.UserMessage); ok && strings.Contains(um.Content, "The following documents are available") {
-			docsMsgFound = true
-			assert.Contains(t, um.Content, "ref1.pdf")
-			assert.Contains(t, um.Content, "ref2.txt")
-		}
-		if rm, ok := msg.(ai.ResourceMessage); ok {
-			resourceMsgs = append(resourceMsgs, rm)
+		if um, ok := msg.(ai.UserMessage); ok {
+			if strings.Contains(um.Content, "The following documents are available") {
+				docsMsgFound = true
+				assert.Contains(t, um.Content, "ref1.pdf")
+				assert.Contains(t, um.Content, "ref2.txt")
+			}
+			if len(um.Parts) > 0 {
+				resourcePartsFound += len(um.Parts)
+			}
 		}
 	}
 
 	assert.True(t, docsMsgFound, "Should have documents message")
-	assert.GreaterOrEqual(t, len(resourceMsgs), 1, "Should have at least one resource message (document reference)")
+	assert.GreaterOrEqual(t, resourcePartsFound, 1, "Should have at least one resource content part (document reference)")
 
 	refFound := false
-	for _, rm := range resourceMsgs {
-		if rm.URI != "" {
-			refFound = true
-			assert.Contains(t, rm.URI, "file://")
+	for _, msg := range msgs {
+		if um, ok := msg.(ai.UserMessage); ok && len(um.Parts) > 0 {
+			for _, part := range um.Parts {
+				if part.FileID != "" || part.URI != "" {
+					refFound = true
+					if part.URI != "" {
+						assert.Contains(t, part.URI, "file://")
+					}
+					break
+				}
+			}
 		}
 	}
-	assert.True(t, refFound, "Should have at least one document reference with URI")
+	assert.True(t, refFound, "Should have at least one document reference with FileID or URI")
 }
 
 func TestBuildPromptEmptyUserMessage(t *testing.T) {

@@ -114,12 +114,11 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 	type Alias Turn
 
 	type messageJSON struct {
-		Type            string              `json:"type"`
-		UserMessage     *ai.UserMessage     `json:"user_message,omitempty"`
-		AIMessage       *ai.AIMessage       `json:"ai_message,omitempty"`
-		ToolMessage     *ai.ToolMessage     `json:"tool_message,omitempty"`
-		SystemMessage   *ai.SystemMessage   `json:"system_message,omitempty"`
-		ResourceMessage *ai.ResourceMessage `json:"resource_message,omitempty"`
+		Type          string            `json:"type"`
+		UserMessage   *ai.UserMessage   `json:"user_message,omitempty"`
+		AIMessage     *ai.AIMessage     `json:"ai_message,omitempty"`
+		ToolMessage   *ai.ToolMessage   `json:"tool_message,omitempty"`
+		SystemMessage *ai.SystemMessage `json:"system_message,omitempty"`
 	}
 
 	messageToJSON := func(msg ai.Message) *messageJSON {
@@ -140,9 +139,6 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		case ai.SystemMessage:
 			mj.Type = "system_message"
 			mj.SystemMessage = &m
-		case ai.ResourceMessage:
-			mj.Type = "resource_message"
-			mj.ResourceMessage = &m
 		default:
 			return nil
 		}
@@ -212,12 +208,11 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 	type Alias Turn
 
 	type messageJSON struct {
-		Type            string              `json:"type"`
-		UserMessage     *ai.UserMessage     `json:"user_message,omitempty"`
-		AIMessage       *ai.AIMessage       `json:"ai_message,omitempty"`
-		ToolMessage     *ai.ToolMessage     `json:"tool_message,omitempty"`
-		SystemMessage   *ai.SystemMessage   `json:"system_message,omitempty"`
-		ResourceMessage *ai.ResourceMessage `json:"resource_message,omitempty"`
+		Type          string            `json:"type"`
+		UserMessage   *ai.UserMessage   `json:"user_message,omitempty"`
+		AIMessage     *ai.AIMessage     `json:"ai_message,omitempty"`
+		ToolMessage   *ai.ToolMessage   `json:"tool_message,omitempty"`
+		SystemMessage *ai.SystemMessage `json:"system_message,omitempty"`
 	}
 
 	jsonToMessage := func(mj *messageJSON) ai.Message {
@@ -240,10 +235,6 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		case "system_message":
 			if mj.SystemMessage != nil {
 				return *mj.SystemMessage
-			}
-		case "resource_message":
-			if mj.ResourceMessage != nil {
-				return *mj.ResourceMessage
 			}
 		}
 		return nil

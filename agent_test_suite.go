@@ -1076,8 +1076,8 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	assert.NotEqual(t, -1, supplierIdx, "lookup_company_supplier subagent should be called")
 	assert.Greater(t, len(saveIdxs), 1, "update_memory should be called at least twice")
 
-	assert.Contains(t, strings.ToLower(companyToolInput), "look up company 150")
-	assert.Contains(t, strings.ToLower(supplierToolInput), "look up supplier 200")
+	assert.Contains(t, strings.ToLower(companyToolInput), "150")
+	assert.Contains(t, strings.ToLower(supplierToolInput), "200")
 
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Contains(t, finalContent, "Phoenix")

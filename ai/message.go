@@ -20,8 +20,30 @@ var (
 	_ Message = AIMessage{}
 	_ Message = ToolMessage{}
 	_ Message = SystemMessage{}
-	_ Message = ResourceMessage{}
 )
+
+type ContentPartType string
+
+const (
+	ContentPartText      ContentPartType = "text"
+	ContentPartImage     ContentPartType = "image"
+	ContentPartImageURL  ContentPartType = "image_url"
+	ContentPartAudio     ContentPartType = "audio"
+	ContentPartVideo     ContentPartType = "video"
+	ContentPartFile      ContentPartType = "file"
+	ContentPartInputFile ContentPartType = "input_file"
+)
+
+type ContentPart struct {
+	Type     ContentPartType `json:"type"`
+	Text     string          `json:"text,omitempty"`
+	MimeType string          `json:"mime_type,omitempty"`
+	Data     []byte          `json:"data,omitempty"`
+	URI      string          `json:"uri,omitempty"`
+	FileID   string          `json:"file_id,omitempty"`
+	Name     string          `json:"name,omitempty"`
+	Detail   string          `json:"detail,omitempty"`
+}
 
 type ToolCall struct {
 	ID     string `json:"id"`
@@ -34,6 +56,7 @@ type ToolCall struct {
 type AIMessage struct {
 	Role      MessageRole    `json:"role"`
 	Content   string         `json:"content,omitempty"`
+	Parts     []ContentPart  `json:"parts,omitempty"`
 	Think     string         `json:"think,omitempty"`
 	ToolCalls []ToolCall     `json:"tool_calls,omitempty"`
 	Extra     map[string]any `json:"extra,omitempty"`
@@ -41,16 +64,37 @@ type AIMessage struct {
 }
 
 func (m AIMessage) Value() (MessageRole, string) {
-	return m.Role, m.Content
+	if m.Content != "" {
+		return m.Role, m.Content
+	}
+	if len(m.Parts) > 0 {
+		for _, part := range m.Parts {
+			if part.Type == ContentPartText && part.Text != "" {
+				return m.Role, part.Text
+			}
+		}
+	}
+	return m.Role, ""
 }
 
 type UserMessage struct {
-	Role    MessageRole `json:"role"`
-	Content string      `json:"content"`
+	Role    MessageRole   `json:"role"`
+	Content string        `json:"content,omitempty"`
+	Parts   []ContentPart `json:"parts,omitempty"`
 }
 
 func (m UserMessage) Value() (MessageRole, string) {
-	return m.Role, m.Content
+	if m.Content != "" {
+		return m.Role, m.Content
+	}
+	if len(m.Parts) > 0 {
+		for _, part := range m.Parts {
+			if part.Type == ContentPartText && part.Text != "" {
+				return m.Role, part.Text
+			}
+		}
+	}
+	return m.Role, ""
 }
 
 type ToolMessage struct {
@@ -65,27 +109,23 @@ func (m ToolMessage) Value() (MessageRole, string) {
 }
 
 type SystemMessage struct {
-	Role    MessageRole `json:"role"`
-	Content string      `json:"content"`
+	Role    MessageRole   `json:"role"`
+	Content string        `json:"content,omitempty"`
+	Parts   []ContentPart `json:"parts,omitempty"`
 }
 
 func (m SystemMessage) Value() (MessageRole, string) {
-	return m.Role, m.Content
-}
-
-type ResourceMessage struct {
-	Role        MessageRole    `json:"role"`
-	URI         string         `json:"uri"`                   // The URI of this resource.
-	Name        string         `json:"name"`                  // A human-readable name for this resource.
-	Description string         `json:"description,omitempty"` // A description of what this resource represents.
-	MIMEType    string         `json:"mimeType,omitempty"`    // The MIME type of this resource, if known.
-	Body        any            `json:"body"`                  // The body of the resource.
-	Type        string         `json:"type"`                  // The type of the resource. "text", "image", "resource"
-	Attributes  map[string]any `json:"attributes,omitempty"`
-}
-
-func (m ResourceMessage) Value() (MessageRole, string) {
-	return m.Role, m.Name
+	if m.Content != "" {
+		return m.Role, m.Content
+	}
+	if len(m.Parts) > 0 {
+		for _, part := range m.Parts {
+			if part.Type == ContentPartText && part.Text != "" {
+				return m.Role, part.Text
+			}
+		}
+	}
+	return m.Role, ""
 }
 
 // Response represents the model's response

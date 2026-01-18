@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
+	_ "github.com/nexxia-ai/aigentic/ai/openai"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/run"
 )

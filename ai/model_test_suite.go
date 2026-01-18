@@ -181,10 +181,12 @@ func TestProcessImage(t *testing.T, model *Model) {
 				Content: "Extract the text from this image and return the word SUCCESS if it worked followed by the extracted text verbatim" +
 					"Return the word FAILED followed by your explanation if you could not extract the text" +
 					"Do not make up information. If you cannot read the image, return FAILED followed by your explanation."},
-			ResourceMessage{Role: UserRole, Name: "test.png", MIMEType: "image/png", Body: func() []byte {
-				data, _ := testData.ReadFile("testdata/test.png")
-				return data
-			}()},
+			UserMessage{Role: UserRole, Parts: []ContentPart{
+				{Type: ContentPartImage, Name: "test.png", MimeType: "image/png", Data: func() []byte {
+					data, _ := testData.ReadFile("testdata/test.png")
+					return data
+				}()},
+			}},
 		},
 		tools: []Tool{},
 	}
@@ -206,10 +208,12 @@ func TestProcessAttachments(t *testing.T, model *Model) {
 		ctx: context.Background(),
 		messages: []Message{
 			UserMessage{Role: UserRole, Content: "Read the content of this text file and return the content of the file verbatim. do not add any other text"},
-			ResourceMessage{Role: UserRole, Name: "sample.txt", MIMEType: "text/plain", Type: "text", Body: func() []byte {
-				data, _ := testData.ReadFile("testdata/sample.txt")
-				return data
-			}()},
+			UserMessage{Role: UserRole, Parts: []ContentPart{
+				{Type: ContentPartText, Name: "sample.txt", MimeType: "text/plain", Text: func() string {
+					data, _ := testData.ReadFile("testdata/sample.txt")
+					return string(data)
+				}()},
+			}},
 		},
 		tools: []Tool{},
 	}

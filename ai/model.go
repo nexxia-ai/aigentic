@@ -44,11 +44,21 @@ func (e StatusError) Error() string {
 	return fmt.Sprintf("status: %s, code: %d, error: %s", e.Status, e.StatusCode, e.ErrorMessage)
 }
 
+type API string
+
+const (
+	APIResponses API = "responses"
+	APIChat      API = "chat"
+)
+
 // Model represents a generic model container that uses closures for provider-specific logic
 type Model struct {
 	ModelName string
 	APIKey    string
 	BaseURL   string
+
+	// API selection: "responses" (default) or "chat"
+	API API
 
 	// callFunc is the implementation for each provider
 	callFunc          func(ctx context.Context, model *Model, messages []Message, tools []Tool) (AIMessage, error)
@@ -242,6 +252,11 @@ func (m *Model) WithPresencePenalty(penalty float64) *Model {
 // WithStopSequences sets the stop sequences for the model and returns the model for chaining
 func (m *Model) WithStopSequences(sequences []string) *Model {
 	m.StopSequences = &sequences
+	return m
+}
+
+func (m *Model) WithAPI(api API) *Model {
+	m.API = api
 	return m
 }
 

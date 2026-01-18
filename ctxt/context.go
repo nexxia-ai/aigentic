@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -109,25 +110,93 @@ func (r *AgentContext) insertDocuments(docs []*document.Document, docRefs []*doc
 			continue
 		}
 
-		attachmentMsg := ai.ResourceMessage{
-			Role: ai.UserRole,
-			URI:  "",
-			Name: doc.Filename,
-			Body: content,
-			Type: document.DeriveTypeFromMime(doc.MimeType),
+		var partType ai.ContentPartType
+		var part ai.ContentPart
+
+		switch {
+		case strings.HasPrefix(doc.MimeType, "image/"):
+			partType = ai.ContentPartImage
+			part = ai.ContentPart{
+				Type:     partType,
+				MimeType: doc.MimeType,
+				Data:     content,
+				Name:     doc.Filename,
+			}
+		case strings.HasPrefix(doc.MimeType, "audio/"):
+			partType = ai.ContentPartAudio
+			part = ai.ContentPart{
+				Type:     partType,
+				MimeType: doc.MimeType,
+				Data:     content,
+				Name:     doc.Filename,
+			}
+		case strings.HasPrefix(doc.MimeType, "video/"):
+			partType = ai.ContentPartVideo
+			part = ai.ContentPart{
+				Type:     partType,
+				MimeType: doc.MimeType,
+				Data:     content,
+				Name:     doc.Filename,
+			}
+		case strings.HasPrefix(doc.MimeType, "application/"):
+			partType = ai.ContentPartFile
+			part = ai.ContentPart{
+				Type:     partType,
+				MimeType: doc.MimeType,
+				Data:     content,
+				Name:     doc.Filename,
+			}
+		default:
+			partType = ai.ContentPartText
+			part = ai.ContentPart{
+				Type:     partType,
+				Text:     string(content),
+				MimeType: doc.MimeType,
+				Name:     doc.Filename,
+			}
+		}
+
+		attachmentMsg := ai.UserMessage{
+			Role:  ai.UserRole,
+			Parts: []ai.ContentPart{part},
 		}
 		msgs = append(msgs, attachmentMsg)
 	}
 
 	for _, docRef := range docRefs {
 		fileID := docRef.ID()
+		var partType ai.ContentPartType
+		var part ai.ContentPart
 
-		refMsg := ai.ResourceMessage{
-			Role: ai.UserRole,
-			URI:  fmt.Sprintf("file://%s", fileID),
-			Name: docRef.Filename,
-			Body: nil,
-			Type: document.DeriveTypeFromMime(docRef.MimeType),
+		switch {
+		case strings.HasPrefix(docRef.MimeType, "image/"):
+			partType = ai.ContentPartImageURL
+		case strings.HasPrefix(docRef.MimeType, "audio/"):
+			partType = ai.ContentPartAudio
+		case strings.HasPrefix(docRef.MimeType, "video/"):
+			partType = ai.ContentPartVideo
+		default:
+			partType = ai.ContentPartInputFile
+		}
+
+		if partType == ai.ContentPartInputFile {
+			part = ai.ContentPart{
+				Type:   partType,
+				FileID: fileID,
+				Name:   docRef.Filename,
+			}
+		} else {
+			part = ai.ContentPart{
+				Type:     partType,
+				URI:      fmt.Sprintf("file://%s", fileID),
+				Name:     docRef.Filename,
+				MimeType: docRef.MimeType,
+			}
+		}
+
+		refMsg := ai.UserMessage{
+			Role:  ai.UserRole,
+			Parts: []ai.ContentPart{part},
 		}
 		msgs = append(msgs, refMsg)
 	}
@@ -186,27 +255,27 @@ func (r *AgentContext) GetDocumentByID(id string) *document.Document {
 func (r *AgentContext) AddMemory(id, description, content string) *AgentContext {
 	r.mutex.Lock()
 
-		now := time.Now()
-		for i := range r.memories {
-			if r.memories[i].ID == id {
-				r.memories[i].Description = description
-				r.memories[i].Content = content
-				r.memories[i].Timestamp = now
-				r.mutex.Unlock()
-				r.save()
-				return r
-			}
+	now := time.Now()
+	for i := range r.memories {
+		if r.memories[i].ID == id {
+			r.memories[i].Description = description
+			r.memories[i].Content = content
+			r.memories[i].Timestamp = now
+			r.mutex.Unlock()
+			r.save()
+			return r
 		}
+	}
 
-		r.memories = append(r.memories, MemoryEntry{
-			ID:          id,
-			Description: description,
-			Content:     content,
-			Timestamp:   now,
-		})
-		r.mutex.Unlock()
-		r.save()
-		return r
+	r.memories = append(r.memories, MemoryEntry{
+		ID:          id,
+		Description: description,
+		Content:     content,
+		Timestamp:   now,
+	})
+	r.mutex.Unlock()
+	r.save()
+	return r
 }
 
 func (r *AgentContext) RemoveMemory(id string) error {
@@ -357,14 +426,14 @@ func (r *AgentContext) ClearAll() *AgentContext {
 }
 
 type contextData struct {
-	ID                string       `json:"id"`
-	Description       string       `json:"description"`
-	Instructions      string       `json:"instructions"`
-	Name              string       `json:"name"`
-	Summary           string       `json:"summary"`
-	OutputInstructions string      `json:"output_instructions"`
-	Memories          []MemoryEntry `json:"memories"`
-	TurnCounter       int          `json:"turn_counter"`
+	ID                 string        `json:"id"`
+	Description        string        `json:"description"`
+	Instructions       string        `json:"instructions"`
+	Name               string        `json:"name"`
+	Summary            string        `json:"summary"`
+	OutputInstructions string        `json:"output_instructions"`
+	Memories           []MemoryEntry `json:"memories"`
+	TurnCounter        int           `json:"turn_counter"`
 }
 
 func (r *AgentContext) save() error {

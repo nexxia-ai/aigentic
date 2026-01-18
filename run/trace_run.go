@@ -159,16 +159,16 @@ func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID str
 		fmt.Fprintf(w, " result: %s\n", response)
 		fmt.Fprintf(w, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
 
-		argsJSON, _ := json.Marshal(args)
-		fmt.Fprintf(w, "🛠️️  %s tool response:\n", run.AgentName())
-		fmt.Fprintf(w, "   • %s(%s)\n", toolName, string(argsJSON))
+		// argsJSON, _ := json.Marshal(args)
+		// fmt.Fprintf(w, "🛠️️  %s tool response:\n", run.AgentName())
+		// fmt.Fprintf(w, "   • %s(%s)\n", toolName, string(argsJSON))
 
-		lines := strings.Split(response, "\n")
-		for _, line := range lines {
-			if line != "" {
-				fmt.Fprintf(w, "     %s\n", line)
-			}
-		}
+		// lines := strings.Split(response, "\n")
+		// for _, line := range lines {
+		// 	if line != "" {
+		// 		fmt.Fprintf(w, "     %s\n", line)
+		// 	}
+		// }
 	})
 
 	return result, nil

@@ -67,7 +67,7 @@ You have access to the following tools:
 {{end}}`
 
 const DefaultUserTemplate = `
-{{if .HasMessage}}Please answer the following request or task:
+{{if .HasMessage}}
 {{.Message}} 
 {{end}}
 
@@ -181,15 +181,15 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		msgs = append(msgs, sysMsg)
 	}
 
-	docsMsg, _ := createDocsMsg(r)
-	if docsMsg != nil {
-		msgs = append(msgs, docsMsg)
-	}
-
 	// Add history messages before user message
 	if includeHistory && r.conversationHistory != nil {
 		historyMessages := r.conversationHistory.GetMessages()
 		msgs = append(msgs, historyMessages...)
+	}
+
+	docsMsg, _ := createDocsMsg(r)
+	if docsMsg != nil {
+		msgs = append(msgs, docsMsg)
 	}
 
 	// Add user message before documents

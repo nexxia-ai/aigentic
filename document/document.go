@@ -47,6 +47,10 @@ func (d *Document) ID() string {
 	return d.id
 }
 
+func (d *Document) SetID(id string) {
+	d.id = id
+}
+
 func (d *Document) Reader() (io.ReadCloser, error) {
 	if d.store == nil {
 		return nil, fmt.Errorf("document has no backing store")

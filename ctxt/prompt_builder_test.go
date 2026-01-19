@@ -263,10 +263,10 @@ func TestCreateDocsMsg(t *testing.T) {
 			},
 			expectedContains: []string{
 				"The following documents are available",
-				"ID: doc1",
+				"FQN: uploads/test1.pdf",
 				"Filename: test1.pdf",
 				"Type: application/pdf",
-				"ID: doc2",
+				"FQN: uploads/test2.txt",
 				"Filename: test2.txt",
 			},
 			shouldBeNil: false,
@@ -280,7 +280,7 @@ func TestCreateDocsMsg(t *testing.T) {
 			},
 			expectedContains: []string{
 				"The following documents are available",
-				"ID: doc1",
+				"FQN: doc1",
 				"Filename: ref1.pdf",
 			},
 			shouldBeNil: false,
@@ -296,7 +296,7 @@ func TestCreateDocsMsg(t *testing.T) {
 			},
 			expectedContains: []string{
 				"The following documents are available",
-				"doc1",
+				"uploads/test1.pdf",
 				"test1.pdf",
 				"doc2",
 				"ref1.txt",
@@ -310,7 +310,12 @@ func TestCreateDocsMsg(t *testing.T) {
 				ac.AddDocument(doc)
 				return ac
 			},
-			shouldBeNil: true,
+			expectedContains: []string{
+				"The following documents are available",
+				"FQN: uploads/doc1",
+				"Filename: doc1",
+			},
+			shouldBeNil: false,
 		},
 		{
 			name: "with nil document",
@@ -329,7 +334,7 @@ func TestCreateDocsMsg(t *testing.T) {
 				return ac
 			},
 			expectedContains: []string{
-				"Type: unknown",
+				"Type: application/octet-stream",
 			},
 			shouldBeNil: false,
 		},

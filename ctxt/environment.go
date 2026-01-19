@@ -16,7 +16,7 @@ type ExecutionEnvironment struct {
 	LLMDir     string
 	PrivateDir string
 	MemoryDir  string
-	FilesDir   string
+	UploadDir  string
 	OutputDir  string
 	HistoryDir string
 	TurnDir    string
@@ -34,7 +34,7 @@ func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, er
 		LLMDir:     llmDir,
 		PrivateDir: privateDir,
 		MemoryDir:  filepath.Join(privateDir, "memory"),
-		FilesDir:   filepath.Join(llmDir, "files"),
+		UploadDir:  filepath.Join(llmDir, "uploads"),
 		OutputDir:  filepath.Join(llmDir, "output"),
 		HistoryDir: filepath.Join(privateDir, "history"),
 		TurnDir:    filepath.Join(privateDir, "turns"),
@@ -51,7 +51,7 @@ func (e *ExecutionEnvironment) init() error {
 		e.LLMDir,
 		e.PrivateDir,
 		e.MemoryDir,
-		e.FilesDir,
+		e.UploadDir,
 		e.OutputDir,
 		e.HistoryDir,
 		e.TurnDir,
@@ -89,7 +89,7 @@ func (e *ExecutionEnvironment) EnvVars() map[string]string {
 		"AGENT_LLM_DIR":     e.LLMDir,
 		"AGENT_PRIVATE_DIR": e.PrivateDir,
 		"AGENT_MEMORY_DIR":  e.MemoryDir,
-		"AGENT_FILES_DIR":   e.FilesDir,
+		"AGENT_UPLOAD_DIR":  e.UploadDir,
 		"AGENT_OUTPUT_DIR":  e.OutputDir,
 		"AGENT_HISTORY_DIR": e.HistoryDir,
 		"AGENT_TURN_DIR":    e.TurnDir,
@@ -115,7 +115,7 @@ func loadExecutionEnvironment(sessionDir string) (*ExecutionEnvironment, error) 
 		LLMDir:     llmDir,
 		PrivateDir: privateDir,
 		MemoryDir:  filepath.Join(privateDir, "memory"),
-		FilesDir:   filepath.Join(llmDir, "files"),
+		UploadDir:  filepath.Join(llmDir, "uploads"),
 		OutputDir:  filepath.Join(llmDir, "output"),
 		HistoryDir: filepath.Join(privateDir, "history"),
 		TurnDir:    filepath.Join(privateDir, "turns"),

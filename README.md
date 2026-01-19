@@ -200,7 +200,7 @@ go run github.com/nexxia-ai/aigentic-examples/tools@latest
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/documents)
 
-Native document support. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents.
+Native document support. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents. Documents passed via `Agent.Documents` are stored in the run filesystem under `llm/uploads`.
 
 
 ```go
@@ -490,9 +490,13 @@ The execution environment creates the following directory structure under a base
 ```
 {baseDir}/
   └── agent-{runID}/
-      ├── memory/     # Memory files automatically loaded into prompts
-      ├── files/      # General file storage
-      └── output/     # Agent output files
+      ├── llm/
+      │   ├── uploads/  # Documents uploaded for the run
+      │   └── output/   # Agent output files
+      └── _private/
+          ├── memory/   # Memory files automatically loaded into prompts
+          ├── history/
+          └── turns/
 ```
 
 ### MCP (Model Context Protocol) Integration

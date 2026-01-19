@@ -3,7 +3,7 @@
 ## Package API Notes
 - Create models with `ai.New(<model identifier>, apiKey)` after importing provider modules (e.g., `_ "github.com/nexxia-ai/aigentic-openai"`); identifiers are listed via `ai.Models()`.
 - Agent tools use the `run.AgentTool` type and `run.NewTool` helper; built-in tools in `tools/` return `run.AgentTool`.
-- Documents come from the `document` package and are passed as `[]*document.Document` via `Agent.Documents` or `Agent.DocumentReferences`.
+- Documents come from the `document` package and are passed as `[]*document.Document` via `Agent.Documents` or `Agent.DocumentReferences`. `Agent.Documents` are stored in the run filesystem under `llm/uploads`.
 
 ## Project Structure & Module Organization
 - Root Go module: `aigentic` (see `go.mod`).
@@ -40,7 +40,7 @@ The root `aigentic` package (`agent.go`) provides the declarative `Agent` type t
 The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context management and execution environment for agents:
 
 - **AgentContext** (`context.go`) - Manages agent state including memories, documents, conversation history, and execution environment
-- **ExecutionEnvironment** (`environment.go`) - Provides structured directory layout for agent execution with `memory/`, `files/`, and `output/` directories. Memory files are automatically loaded into prompts.
+- **ExecutionEnvironment** (`environment.go`) - Provides structured directory layout for agent execution with `memory/`, `uploads/`, and `output/` directories. Memory files are automatically loaded into prompts.
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **ConversationTurn** (`conversation_turn.go`) - Represents individual conversation turns
 - **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context, memories, documents, and memory files
@@ -55,7 +55,7 @@ The `document` package (`github.com/nexxia-ai/aigentic/document`) provides docum
 - **Store** (`store.go`) - Interface for document storage with `Save()`, `Load()`, `List()`, and `Delete()` operations.
 - **LocalStore** (`local_store.go`) - File system-based implementation of Store that persists documents and metadata to disk. Supports lazy loading of document content.
 
-Documents can be attached to agents via the `Agent.Documents` and `Agent.DocumentReferences` fields, and are automatically included in the agent's context when building prompts.
+Documents can be attached to agents via the `Agent.Documents` and `Agent.DocumentReferences` fields. `Agent.Documents` are stored in the run filesystem, and prompts list documents from the `llm` directory. Document references are still resolved via their backing store.
 
 ## Build, Test, and Development Commands
 - Build library: `go build ./...` — compile all packages.

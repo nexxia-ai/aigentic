@@ -118,8 +118,12 @@ func (a Agent) New() (*run.AgentRun, error) {
 		ar.AddSubAgent(agent.Name, agent.Description, agent.Instructions, agent.Model, agent.AgentTools)
 	}
 
-	ar.AgentContext().SetDocuments(a.Documents)
-	ar.AgentContext().SetDocumentReferences(a.DocumentReferences)
+	for _, doc := range a.Documents {
+		ar.AgentContext().AddDocument(doc)
+	}
+	for _, docRef := range a.DocumentReferences {
+		ar.AgentContext().AddDocumentReference(docRef)
+	}
 	ar.IncludeHistory(a.IncludeHistory)
 	return ar, nil
 }

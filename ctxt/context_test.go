@@ -165,7 +165,7 @@ func TestRemoveDocumentByID(t *testing.T) {
 		AddDocument(doc1).
 		AddDocument(doc2)
 
-	err := ctx.RemoveDocumentByID("doc1")
+	err := ctx.RemoveDocumentByID("test1.pdf")
 	if err != nil {
 		t.Errorf("RemoveDocumentByID() error = %v", err)
 	}
@@ -174,8 +174,8 @@ func TestRemoveDocumentByID(t *testing.T) {
 	if len(docs) != 1 {
 		t.Errorf("expected 1 document, got %d", len(docs))
 	}
-	if len(docs) > 0 && docs[0].ID() != "doc2" {
-		t.Errorf("expected remaining document to be doc2, got %s", docs[0].ID())
+	if len(docs) > 0 && docs[0].ID() != "uploads/test2.pdf" {
+		t.Errorf("expected remaining document to be uploads/test2.pdf, got %s", docs[0].ID())
 	}
 
 	err = ctx.RemoveDocumentByID("nonexistent")
@@ -372,8 +372,8 @@ func TestClearMethods(t *testing.T) {
 		{
 			name: "clear documents",
 			setup: func(ctx *AgentContext) {
-				ctx.AddDocument(document.NewInMemoryDocument("doc1", "test.pdf", []byte("c"), nil))
-				ctx.AddDocument(document.NewInMemoryDocument("doc2", "test.pdf", []byte("c"), nil))
+				ctx.AddDocument(document.NewInMemoryDocument("doc1", "test1.pdf", []byte("c"), nil))
+				ctx.AddDocument(document.NewInMemoryDocument("doc2", "test2.pdf", []byte("c"), nil))
 			},
 			clear:     func(ctx *AgentContext) { ctx.ClearDocuments() },
 			check:     func(ctx *AgentContext) int { return len(ctx.GetDocuments()) },

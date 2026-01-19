@@ -1,11 +1,15 @@
 package ctxt
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"text/template"
@@ -26,7 +30,6 @@ type AgentContext struct {
 
 	mutex               sync.RWMutex
 	memories            []MemoryEntry
-	documents           []*document.Document
 	documentReferences  []*document.Document
 	conversationHistory *ConversationHistory
 	outputInstructions  string
@@ -41,7 +44,6 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 		description:        description,
 		instructions:       instructions,
 		memories:           make([]MemoryEntry, 0),
-		documents:          make([]*document.Document, 0),
 		documentReferences: make([]*document.Document, 0),
 	}
 
@@ -204,11 +206,62 @@ func (r *AgentContext) insertDocuments(docs []*document.Document, docRefs []*doc
 	return msgs
 }
 
+func (r *AgentContext) uploadStore() (*document.LocalStore, error) {
+	if r.execEnv == nil {
+		return nil, fmt.Errorf("execution environment not set")
+	}
+	store := document.NewLocalStore(r.execEnv.UploadDir)
+	storeID := store.ID()
+	if _, exists := document.GetStore(storeID); !exists {
+		if err := document.RegisterStore(store); err != nil {
+			return nil, err
+		}
+	}
+	return store, nil
+}
+
+func (r *AgentContext) llmStore() (*document.LocalStore, error) {
+	if r.execEnv == nil {
+		return nil, fmt.Errorf("execution environment not set")
+	}
+	store := document.NewLocalStore(r.execEnv.LLMDir)
+	storeID := store.ID()
+	if _, exists := document.GetStore(storeID); !exists {
+		if err := document.RegisterStore(store); err != nil {
+			return nil, err
+		}
+	}
+	return store, nil
+}
+
 func (r *AgentContext) AddDocument(doc *document.Document) *AgentContext {
 	if doc == nil {
 		return r
 	}
-	r.documents = append(r.documents, doc)
+	store, err := r.uploadStore()
+	if err != nil {
+		slog.Error("failed to resolve upload store", "error", err)
+		return r
+	}
+	content, err := doc.Bytes()
+	if err != nil {
+		slog.Error("failed to read document content", "error", err)
+		return r
+	}
+	filename := doc.Filename
+	if filename == "" {
+		filename = filepath.Base(doc.FilePath)
+	}
+	if filename == "" || filename == "." || filename == string(os.PathSeparator) || filename == "/" {
+		filename = doc.ID()
+	}
+	if filename == "" {
+		return r
+	}
+	_, err = document.Create(context.Background(), store.ID(), filename, bytes.NewReader(content))
+	if err != nil {
+		slog.Error("failed to store document", "error", err, "filename", filename)
+	}
 	return r
 }
 
@@ -224,9 +277,21 @@ func (r *AgentContext) RemoveDocument(doc *document.Document) error {
 	if doc == nil {
 		return fmt.Errorf("document cannot be nil")
 	}
-	for i := range r.documents {
-		if r.documents[i].ID() == doc.ID() {
-			r.documents = append(r.documents[:i], r.documents[i+1:]...)
+	candidates := []string{}
+	if doc.ID() != "" {
+		candidates = append(candidates, doc.ID())
+	}
+	if doc.Filename != "" {
+		candidates = append(candidates, doc.Filename)
+	}
+	if doc.FilePath != "" {
+		base := filepath.Base(doc.FilePath)
+		if base != "" {
+			candidates = append(candidates, base)
+		}
+	}
+	for _, id := range candidates {
+		if err := r.RemoveDocumentByID(id); err == nil {
 			return nil
 		}
 	}
@@ -234,22 +299,49 @@ func (r *AgentContext) RemoveDocument(doc *document.Document) error {
 }
 
 func (r *AgentContext) RemoveDocumentByID(id string) error {
-	for i := range r.documents {
-		if r.documents[i].ID() == id {
-			r.documents = append(r.documents[:i], r.documents[i+1:]...)
-			return nil
+	if id == "" {
+		return fmt.Errorf("document id cannot be empty")
+	}
+	id = filepath.ToSlash(id)
+	id = strings.TrimPrefix(id, "uploads/")
+	store, err := r.uploadStore()
+	if err != nil {
+		return err
+	}
+	ids, err := store.List(context.Background())
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, existingID := range ids {
+		if existingID == id {
+			found = true
+			break
 		}
 	}
-	return fmt.Errorf("document not found: %s", id)
+	if !found {
+		return fmt.Errorf("document not found: %s", id)
+	}
+	if err := document.Delete(context.Background(), store.ID(), id); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *AgentContext) GetDocumentByID(id string) *document.Document {
-	for _, doc := range r.documents {
-		if doc.ID() == id {
-			return doc
-		}
+	if id == "" {
+		return nil
 	}
-	return nil
+	id = filepath.ToSlash(id)
+	store, err := r.llmStore()
+	if err != nil {
+		return nil
+	}
+	doc, err := document.Open(context.Background(), store.ID(), id)
+	if err != nil {
+		return nil
+	}
+	return doc
 }
 
 func (r *AgentContext) AddMemory(id, description, content string) *AgentContext {
@@ -302,16 +394,6 @@ func (r *AgentContext) GetMemories() []MemoryEntry {
 	return result
 }
 
-func (r *AgentContext) SetDocuments(docs []*document.Document) *AgentContext {
-	r.documents = docs
-	return r
-}
-
-func (r *AgentContext) SetDocumentReferences(docRefs []*document.Document) *AgentContext {
-	r.documentReferences = docRefs
-	return r
-}
-
 func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *AgentContext {
 	if history == nil {
 		history = NewConversationHistory(r.execEnv)
@@ -321,7 +403,43 @@ func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *Age
 }
 
 func (r *AgentContext) GetDocuments() []*document.Document {
-	return r.documents
+	if r.execEnv == nil {
+		return []*document.Document{}
+	}
+	store, err := r.llmStore()
+	if err != nil {
+		return []*document.Document{}
+	}
+	var paths []string
+	_ = filepath.WalkDir(r.execEnv.LLMDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(r.execEnv.LLMDir, path)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." || rel == "" {
+			return nil
+		}
+		paths = append(paths, rel)
+		return nil
+	})
+	sort.Strings(paths)
+	docs := make([]*document.Document, 0, len(paths))
+	for _, rel := range paths {
+		doc, err := document.Open(context.Background(), store.ID(), rel)
+		if err != nil {
+			continue
+		}
+		doc.SetID(rel)
+		docs = append(docs, doc)
+	}
+	return docs
 }
 
 func (r *AgentContext) GetDocumentReferences() []*document.Document {
@@ -393,7 +511,17 @@ func (r *AgentContext) Turn() *Turn {
 }
 
 func (r *AgentContext) ClearDocuments() *AgentContext {
-	r.documents = make([]*document.Document, 0)
+	store, err := r.uploadStore()
+	if err != nil {
+		return r
+	}
+	ids, err := store.List(context.Background())
+	if err != nil {
+		return r
+	}
+	for _, id := range ids {
+		_ = document.Delete(context.Background(), store.ID(), id)
+	}
 	return r
 }
 

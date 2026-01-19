@@ -103,7 +103,6 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		outputInstructions: data.OutputInstructions,
 		memories:           data.Memories,
 		turnCounter:        data.TurnCounter,
-		documents:          make([]*document.Document, 0),
 		documentReferences: make([]*document.Document, 0),
 		execEnv:            execEnv,
 	}

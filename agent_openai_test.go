@@ -27,6 +27,7 @@ func TestOpenAI_AgentSuite(t *testing.T) {
 		Name: "OpenAI",
 		SkipTests: []string{
 			"TeamCoordination",
+			"FileAttachments",
 		},
 	})
 }

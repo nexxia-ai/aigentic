@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/document"
 )
@@ -25,7 +26,8 @@ type ExecutionEnvironment struct {
 func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, error) {
 	baseDir, _ = filepath.Abs(baseDir)
 
-	rootDir := filepath.Join(baseDir, fmt.Sprintf("agent-%s", agentID))
+	timestamp := time.Now().Format("060102150405")
+	rootDir := filepath.Join(baseDir, fmt.Sprintf("%s-%s", timestamp, agentID))
 	llmDir := filepath.Join(rootDir, "llm")
 	privateDir := filepath.Join(rootDir, "_private")
 

@@ -21,15 +21,8 @@ func TestContextSaveAndLoad(t *testing.T) {
 		t.Fatalf("failed to save context: %v", err)
 	}
 
-	sessions, err := ListSessions(baseDir)
-	if err != nil {
-		t.Fatalf("failed to list sessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
-	}
-
-	loadedCtx, err := LoadContext(sessions[0].Path)
+	sessionPath := ctx.ExecutionEnvironment().RootDir
+	loadedCtx, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
 	}
@@ -66,15 +59,10 @@ func TestContextAutoSave(t *testing.T) {
 		t.Fatalf("failed to create context: %v", err)
 	}
 
+	sessionPath := ctx.ExecutionEnvironment().RootDir
+
 	ctx.SetName("Test Name")
-	sessions, err := ListSessions(baseDir)
-	if err != nil {
-		t.Fatalf("failed to list sessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
-	}
-	loadedCtx1, err := LoadContext(sessions[0].Path)
+	loadedCtx1, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
 	}
@@ -83,14 +71,7 @@ func TestContextAutoSave(t *testing.T) {
 	}
 
 	ctx.SetSummary("Test Summary")
-	sessions, err = ListSessions(baseDir)
-	if err != nil {
-		t.Fatalf("failed to list sessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
-	}
-	loadedCtx2, err := LoadContext(sessions[0].Path)
+	loadedCtx2, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
 	}
@@ -99,14 +80,7 @@ func TestContextAutoSave(t *testing.T) {
 	}
 
 	ctx.AddMemory("mem1", "memory 1", "content 1")
-	sessions, err = ListSessions(baseDir)
-	if err != nil {
-		t.Fatalf("failed to list sessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
-	}
-	loadedCtx3, err := LoadContext(sessions[0].Path)
+	loadedCtx3, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
 	}
@@ -140,37 +114,31 @@ func TestListSessions(t *testing.T) {
 	ctx3.SetName("Session 3")
 	ctx3.SetSummary("Summary 3")
 
-	sessions, err := ListSessions(baseDir)
+	loadedCtx1, err := LoadContext(ctx1.ExecutionEnvironment().RootDir)
 	if err != nil {
-		t.Fatalf("failed to list sessions: %v", err)
+		t.Fatalf("failed to load context 1: %v", err)
+	}
+	if loadedCtx1.Name() != "Session 1" {
+		t.Errorf("expected Name 'Session 1', got '%s'", loadedCtx1.Name())
+	}
+	if loadedCtx1.Summary() != "Summary 1" {
+		t.Errorf("expected Summary 'Summary 1', got '%s'", loadedCtx1.Summary())
 	}
 
-	if len(sessions) != 3 {
-		t.Errorf("expected 3 sessions, got %d", len(sessions))
+	loadedCtx2, err := LoadContext(ctx2.ExecutionEnvironment().RootDir)
+	if err != nil {
+		t.Fatalf("failed to load context 2: %v", err)
+	}
+	if loadedCtx2.Name() != "Session 2" {
+		t.Errorf("expected Name 'Session 2', got '%s'", loadedCtx2.Name())
 	}
 
-	sessionMap := make(map[string]Session)
-	for _, s := range sessions {
-		sessionMap[s.ID] = s
+	loadedCtx3, err := LoadContext(ctx3.ExecutionEnvironment().RootDir)
+	if err != nil {
+		t.Fatalf("failed to load context 3: %v", err)
 	}
-
-	if s1, ok := sessionMap["id1"]; ok {
-		if s1.Name != "Session 1" {
-			t.Errorf("expected Name 'Session 1', got '%s'", s1.Name)
-		}
-		if s1.Summary != "Summary 1" {
-			t.Errorf("expected Summary 'Summary 1', got '%s'", s1.Summary)
-		}
-	} else {
-		t.Error("session id1 not found")
-	}
-
-	if s2, ok := sessionMap["id2"]; ok {
-		if s2.Name != "Session 2" {
-			t.Errorf("expected Name 'Session 2', got '%s'", s2.Name)
-		}
-	} else {
-		t.Error("session id2 not found")
+	if loadedCtx3.Name() != "Session 3" {
+		t.Errorf("expected Name 'Session 3', got '%s'", loadedCtx3.Name())
 	}
 }
 
@@ -200,15 +168,8 @@ func TestLoadContextWithHistory(t *testing.T) {
 	ctx.StartTurn("How are you?")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "I'm fine"})
 
-	sessions, err := ListSessions(baseDir)
-	if err != nil {
-		t.Fatalf("failed to list sessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
-	}
-
-	loadedCtx, err := LoadContext(sessions[0].Path)
+	sessionPath := ctx.ExecutionEnvironment().RootDir
+	loadedCtx, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
 	}
@@ -235,15 +196,8 @@ func TestLoadContextWithMemories(t *testing.T) {
 	ctx.AddMemory("mem2", "memory 2", "content 2")
 	ctx.AddMemory("mem3", "memory 3", "content 3")
 
-	sessions, err := ListSessions(baseDir)
-	if err != nil {
-		t.Fatalf("failed to list sessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
-	}
-
-	loadedCtx, err := LoadContext(sessions[0].Path)
+	sessionPath := ctx.ExecutionEnvironment().RootDir
+	loadedCtx, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
 	}

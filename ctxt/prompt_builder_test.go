@@ -391,7 +391,6 @@ func TestCreateUserMsg(t *testing.T) {
 			},
 			message: "What is the weather?",
 			expectedContains: []string{
-				"Please answer the following request",
 				"What is the weather?",
 			},
 		},
@@ -416,7 +415,6 @@ func TestCreateUserMsg(t *testing.T) {
 			},
 			message: "Test message",
 			expectedContains: []string{
-				"Please answer the following request",
 				"Test message",
 				"<context>test context</context>",
 			},

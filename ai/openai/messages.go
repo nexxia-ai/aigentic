@@ -361,18 +361,7 @@ func fromResponsesOutput(resp *responses.Response) ai.AIMessage {
 	var toolCalls []ai.ToolCall
 	if len(resp.Output) > 0 {
 		for _, outputItem := range resp.Output {
-			if outputItem.Type == "message" && outputItem.Role == "assistant" {
-				if outputItem.Content != nil {
-					for _, contentItem := range outputItem.Content {
-						if contentItem.Type == "output_text" && contentItem.Text != "" {
-							if aiMsg.Content != "" {
-								aiMsg.Content += "\n"
-							}
-							aiMsg.Content += contentItem.Text
-						}
-					}
-				}
-			} else if outputItem.Type == "function_call" {
+			if outputItem.Type == "function_call" {
 				toolCalls = append(toolCalls, ai.ToolCall{
 					ID:   outputItem.CallID,
 					Type: "function",

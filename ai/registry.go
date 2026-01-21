@@ -24,6 +24,7 @@ type ModelInfo struct {
 	Model      string
 	BaseURL    string
 	Family     string
+	APIKeyName string
 	NewModel   ModelFactoryFunc
 }
 
@@ -52,6 +53,9 @@ func RegisterModel(info ModelInfo) error {
 	}
 	if info.NewModel == nil {
 		return fmt.Errorf("NewModel function cannot be nil")
+	}
+	if info.APIKeyName == "" {
+		return fmt.Errorf("API key name cannot be empty")
 	}
 
 	defaultRegistry.mu.Lock()
@@ -92,4 +96,14 @@ func Models() []ModelInfo {
 	}
 
 	return result
+}
+
+func GetModelInfo(identifier string) (ModelInfo, error) {
+	defaultRegistry.mu.RLock()
+	defer defaultRegistry.mu.RUnlock()
+	info, exists := defaultRegistry.models[identifier]
+	if !exists {
+		return ModelInfo{}, fmt.Errorf("%w: %s", ErrModelNotFound, identifier)
+	}
+	return info, nil
 }

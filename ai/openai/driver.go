@@ -30,20 +30,21 @@ func registerStandardModels() {
 		model      string
 		family     string
 		baseURL    string
+		aPIKeyName string
 	}{
-		{"GPT 4o", "openai", "gpt-4o", "gpt", ""},
-		{"GPT 5", "openai", "gpt-5", "gpt", ""},
-		{"GPT 5 Mini", "openai", "gpt-5-mini", "gpt", ""},
-		{"GPT 5 Nano", "openai", "gpt-5-nano-2025-08-07", "gpt", ""},
-		{"GPT 5.2", "openai", "gpt-5.2-2025-12-11", "gpt", ""},
-		{"Qwen 30B (openrouter)", "openrouter", "qwen/qwen3-30b-a3b-instruct-2507", "qwen", OpenRouterBaseURL},
-		{"Qwen 235B (openrouter)", "openrouter", "qwen/qwen3-235b-a22b-thinking-2507", "qwen", OpenRouterBaseURL},
-		{"Qwen Max (openrouter)", "openrouter", "qwen/qwen3-max", "qwen", OpenRouterBaseURL},
-		{"GLM 4.6 (openrouter)", "openrouter", "z-ai/glm-4.6", "glm", OpenRouterBaseURL},
-		{"GLM 4.7 (openrouter)", "openrouter", "z-ai/glm-4.6", "glm", OpenRouterBaseURL},
-		{"DeepSeek V3.1 Terminus (openrouter)", "openrouter", "deepseek/deepseek-v3.1-terminus", "deepseek", OpenRouterBaseURL},
-		{"DeepSeek Chat V3.1 (openrouter)", "openrouter", "deepseek/deepseek-chat-v3.1", "deepseek", OpenRouterBaseURL},
-		{"Grok Code Fast 1 (openrouter)", "openrouter", "x-ai/grok-code-fast-1", "grok", OpenRouterBaseURL},
+		{"GPT 4o", "openai", "gpt-4o", "gpt", "", "OPENAI_API_KEY"},
+		{"GPT 5", "openai", "gpt-5", "gpt", "", "OPENAI_API_KEY"},
+		{"GPT 5 Mini", "openai", "gpt-5-mini", "gpt", "", "OPENAI_API_KEY"},
+		{"GPT 5 Nano", "openai", "gpt-5-nano-2025-08-07", "gpt", "", "OPENAI_API_KEY"},
+		{"GPT 5.2", "openai", "gpt-5.2-2025-12-11", "gpt", "", "OPENAI_API_KEY"},
+		{"Qwen 30B (openrouter)", "openrouter", "qwen/qwen3-30b-a3b-instruct-2507", "qwen", OpenRouterBaseURL, "OPENROUTER_API_KEY"},
+		{"Qwen 235B (openrouter)", "openrouter", "qwen/qwen3-235b-a22b-thinking-2507", "qwen", OpenRouterBaseURL, "OPENROUTER_API_KEY"},
+		{"Qwen Max (openrouter)", "openrouter", "qwen/qwen3-max", "qwen", OpenRouterBaseURL, "OPENROUTER_API_KEY"},
+		{"GLM 4.6 (openrouter)", "openrouter", "z-ai/glm-4.6", "glm", OpenRouterBaseURL, "OPENROUTER_API_KEY"},
+		{"GLM 4.7 (openrouter)", "openrouter", "z-ai/glm-4.6", "glm", OpenRouterBaseURL, "OPENROUTER_API_KEY"},
+		{"DeepSeek V3.1 Terminus (openrouter)", "openrouter", "deepseek/deepseek-v3.1-terminus", "deepseek", OpenRouterBaseURL, "OPENROUTER_API_KEY"},
+		{"DeepSeek Chat V3.1 (openrouter)", "openrouter", "deepseek/deepseek-chat-v3.1", "deepseek", OpenRouterBaseURL, "OPENROUTER_API_KEY"},
+		{"Grok Code Fast 1 (openrouter)", "openrouter", "x-ai/grok-code-fast-1", "grok", OpenRouterBaseURL, "OPENROUTER_API_KEY"},
 	}
 
 	for _, m := range models {
@@ -60,6 +61,7 @@ func registerStandardModels() {
 			NewModel: func(modelName, apiKey string, baseURLs ...string) *ai.Model {
 				return NewModel(modelName, apiKey, baseURLs...)
 			},
+			APIKeyName: m.aPIKeyName,
 		})
 	}
 }

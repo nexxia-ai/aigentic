@@ -30,6 +30,7 @@ func TestNew_WithModelInfoModel_ShouldWork(t *testing.T) {
 		Model:      testModel,
 		Identifier: "Test Model",
 		BaseURL:    "https://api.test.com",
+		APIKeyName: "TEST_API_KEY",
 		NewModel:   mockFactory,
 	}
 
@@ -91,6 +92,7 @@ func TestNew_WithModelInfoModelName_ShouldFail(t *testing.T) {
 		Model:      testModel,
 		Identifier: "Bug Model",
 		BaseURL:    "https://api.bug.com",
+		APIKeyName: "BUG_API_KEY",
 		NewModel:   mockFactory,
 	}
 
@@ -145,6 +147,7 @@ func TestNew_WithFullIdentifier_ShouldWork(t *testing.T) {
 		Model:      testModel,
 		Identifier: "Another Model",
 		BaseURL:    "https://api.another.com",
+		APIKeyName: "ANOTHER_API_KEY",
 		NewModel:   mockFactory,
 	}
 
@@ -190,6 +193,7 @@ func TestModelInfo_CompleteWorkflow(t *testing.T) {
 		Identifier: "Workflow Model",
 		BaseURL:    "https://api.workflow.com",
 		Family:     "test",
+		APIKeyName: "WORKFLOW_API_KEY",
 		NewModel:   mockFactory,
 	}
 

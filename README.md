@@ -30,7 +30,7 @@ The declarative approach means you focus on agent configuration and event handli
 - **💾 Persistent Memory** - Context retention across agent runs
 - **🔍 Built-in Tracing** - Comprehensive execution monitoring
 - **⚡ Event-Driven** - Real-time progress updates and user interaction
-- **🎯 Provider Agnostic** - Support for OpenAI, Ollama, Google Gemini, and others
+- **🎯 Provider Agnostic** - Support for multiple AI providers
 
 ---
 
@@ -51,7 +51,6 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 func main() {
@@ -96,7 +95,6 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 func main() {
@@ -152,7 +150,6 @@ import (
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/run"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 func createCalculatorTool() run.AgentTool {
@@ -213,7 +210,6 @@ import (
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 func main() {
@@ -269,7 +265,6 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 func main() {
@@ -333,7 +328,6 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/run"
 	"github.com/nexxia-ai/aigentic/tools"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 func main() {
@@ -408,7 +402,6 @@ import (
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/run"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 func main() {
@@ -456,7 +449,6 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 model, err := ai.New("GPT-4o Mini", "your-api-key")
@@ -515,7 +507,6 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/run"
 	"github.com/nexxia-ai/aigentic/tools"
-	_ "github.com/nexxia-ai/aigentic-openai"
 )
 
 model, err := ai.New("GPT-4o Mini", "your-api-key")
@@ -539,14 +530,11 @@ Create custom tools using `run.NewTool()` for type-safe tool definitions with au
 
 ```bash
 go get github.com/nexxia-ai/aigentic
-go get github.com/nexxia-ai/aigentic-openai
-go get github.com/nexxia-ai/aigentic-ollama
-go get github.com/nexxia-ai/aigentic-google
 ```
 
 ## Provider Setup
 
-Providers register themselves with the `ai` registry when imported (a blank import is fine). Use `ai.Models()` to inspect available identifiers, then create a model with `ai.New(identifier, apiKey)`.
+Providers register themselves with the `ai` registry when imported. Use `ai.New(identifier, apiKey)` to create models.
 
 ### OpenAI
 ```go
@@ -561,28 +549,6 @@ model, err := ai.New("GPT-4o Mini", "your-api-key")
 if err != nil {
 	log.Fatal(err)
 }
-```
-
-### Ollama (Local)
-```go
-import (
-	"log"
-
-	"github.com/nexxia-ai/aigentic/ai"
-	_ "github.com/nexxia-ai/aigentic-ollama"
-)
-
-model, err := ai.New("Qwen3 4B", "")
-if err != nil {
-	log.Fatal(err)
-}
-```
-
-### Google Gemini
-```go
-import gemini "github.com/nexxia-ai/aigentic-google"
-
-model := gemini.NewGeminiModel("gemini-pro", "your-api-key")
 ```
 
 ### Model Configuration

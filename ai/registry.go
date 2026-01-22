@@ -66,6 +66,8 @@ func RegisterModel(info ModelInfo) error {
 	}
 
 	defaultRegistry.models[info.Identifier] = info
+
+	slog.Info("registered model", "identifier", info.Identifier, "provider", info.Provider, "model", info.Model)
 	return nil
 }
 
@@ -102,8 +104,13 @@ func GetModelInfo(identifier string) (ModelInfo, error) {
 	defaultRegistry.mu.RLock()
 	defer defaultRegistry.mu.RUnlock()
 	info, exists := defaultRegistry.models[identifier]
-	if !exists {
-		return ModelInfo{}, fmt.Errorf("%w: %s", ErrModelNotFound, identifier)
+	if exists {
+		return info, nil
 	}
-	return info, nil
+	for _, info := range defaultRegistry.models {
+		if info.Model == identifier {
+			return info, nil
+		}
+	}
+	return ModelInfo{}, fmt.Errorf("%w: %s", ErrModelNotFound, identifier)
 }

@@ -15,7 +15,6 @@ func TestContextSaveAndLoad(t *testing.T) {
 	}
 	ctx.SetName("Test Session")
 	ctx.SetSummary("Test summary")
-	ctx.AddMemory("mem1", "memory 1", "content 1")
 
 	if err := ctx.save(); err != nil {
 		t.Fatalf("failed to save context: %v", err)
@@ -41,14 +40,6 @@ func TestContextSaveAndLoad(t *testing.T) {
 	}
 	if loadedCtx.instructions != "test instructions" {
 		t.Errorf("expected instructions 'test instructions', got '%s'", loadedCtx.instructions)
-	}
-
-	memories := loadedCtx.GetMemories()
-	if len(memories) != 1 {
-		t.Errorf("expected 1 memory, got %d", len(memories))
-	}
-	if len(memories) > 0 && memories[0].ID != "mem1" {
-		t.Errorf("expected memory ID 'mem1', got '%s'", memories[0].ID)
 	}
 }
 
@@ -77,16 +68,6 @@ func TestContextAutoSave(t *testing.T) {
 	}
 	if loadedCtx2.Summary() != "Test Summary" {
 		t.Errorf("expected Summary 'Test Summary', got '%s'", loadedCtx2.Summary())
-	}
-
-	ctx.AddMemory("mem1", "memory 1", "content 1")
-	loadedCtx3, err := LoadContext(sessionPath)
-	if err != nil {
-		t.Fatalf("failed to load context: %v", err)
-	}
-	memories := loadedCtx3.GetMemories()
-	if len(memories) != 1 {
-		t.Errorf("expected 1 memory, got %d", len(memories))
 	}
 }
 
@@ -182,45 +163,6 @@ func TestLoadContextWithHistory(t *testing.T) {
 	turns := history.GetTurns()
 	if len(turns) != 2 {
 		t.Errorf("expected 2 turns, got %d", len(turns))
-	}
-}
-
-func TestLoadContextWithMemories(t *testing.T) {
-	baseDir := t.TempDir()
-	ctx, err := New("test-id", "test description", "test instructions", baseDir)
-	if err != nil {
-		t.Fatalf("failed to create context: %v", err)
-	}
-
-	ctx.AddMemory("mem1", "memory 1", "content 1")
-	ctx.AddMemory("mem2", "memory 2", "content 2")
-	ctx.AddMemory("mem3", "memory 3", "content 3")
-
-	sessionPath := ctx.ExecutionEnvironment().RootDir
-	loadedCtx, err := LoadContext(sessionPath)
-	if err != nil {
-		t.Fatalf("failed to load context: %v", err)
-	}
-
-	memories := loadedCtx.GetMemories()
-	if len(memories) != 3 {
-		t.Errorf("expected 3 memories, got %d", len(memories))
-	}
-
-	memoryMap := make(map[string]MemoryEntry)
-	for _, m := range memories {
-		memoryMap[m.ID] = m
-	}
-
-	if mem1, ok := memoryMap["mem1"]; ok {
-		if mem1.Description != "memory 1" {
-			t.Errorf("expected description 'memory 1', got '%s'", mem1.Description)
-		}
-		if mem1.Content != "content 1" {
-			t.Errorf("expected content 'content 1', got '%s'", mem1.Content)
-		}
-	} else {
-		t.Error("memory mem1 not found")
 	}
 }
 

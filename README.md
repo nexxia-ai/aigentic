@@ -27,7 +27,6 @@ The declarative approach means you focus on agent configuration and event handli
 - **🛠️ Tool Integration** - Custom tools (including MCP) with type-safe schemas
 - **📄 Document Support** - Multi-modal document processing (PDF, images, text)
 - **👥 Multi-Agent Teams** - Coordinated agent collaboration
-- **💾 Persistent Memory** - Context retention across agent runs
 - **🔍 Built-in Tracing** - Comprehensive execution monitoring
 - **⚡ Event-Driven** - Real-time progress updates and user interaction
 - **🎯 Provider Agnostic** - Support for multiple AI providers
@@ -312,60 +311,7 @@ go run github.com/nexxia-ai/aigentic-examples/multi-agent@latest
 
 ## Advanced Features
 
-**→ [Explore all examples](https://github.com/nexxia-ai/aigentic-examples)** for MCP integration, memory systems, document processing, and production-ready patterns.
-
-### Memory
-
-[📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/memory)
-
-Enable memory tools for persistent context across agent runs:
-
-```go
-import (
-	"log"
-
-	"github.com/nexxia-ai/aigentic"
-	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/run"
-	"github.com/nexxia-ai/aigentic/tools"
-)
-
-func main() {
-	model, err := ai.New("GPT-4o Mini", "your-api-key")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	agent := aigentic.Agent{
-		Model:        model,
-		Name:         "PersonalAssistant",
-		Description:  "A personal assistant that remembers user preferences",
-		Instructions: "Remember user preferences and context using the memory tools.",
-		AgentTools:   []run.AgentTool{tools.NewMemoryTool()},
-	}
-
-	agent.Execute("My name is John and I'm a software engineer")
-	agent.Execute("What did I tell you about my profession?")
-}
-```
-
-The memory system provides a single tool that the agent can use:
-- `update_memory` - Store or update memory entries. Set both description and content to empty strings to delete.
-
-**How Memory Works:**
-- Memories persist across multiple agent runs with the same agent instance
-- All memories are automatically injected into the system prompt for every LLM call
-- The agent can use `update_memory` to store information with an ID, description, and content
-- To update an existing memory, call `update_memory` with the same ID
-- To delete a memory, call `update_memory` with empty description and content strings
-- Memories maintain insertion order and are always available to the LLM in the system prompt
-
-The LLM automatically decides when to use the memory tool based on your instructions.
-
-**Run this example:**
-```bash
-go run github.com/nexxia-ai/aigentic-examples/memory@latest
-```
+**→ [Explore all examples](https://github.com/nexxia-ai/aigentic-examples)** for MCP integration, document processing, and production-ready patterns.
 
 ### Conversation History
 
@@ -470,7 +416,7 @@ if err != nil {
 
 ### Execution Environment
 
-Each agent run creates an `ExecutionEnvironment` that provides a structured directory layout for agent execution. The environment is automatically created when an agent run starts and provides directories for organizing files, memory data, and outputs.
+Each agent run creates an `ExecutionEnvironment` that provides a structured directory layout for agent execution. The environment is automatically created when an agent run starts and provides directories for organizing files and outputs.
 
 The execution environment is automatically created when an agent run starts. If no base directory is specified, it defaults to the system temporary directory.
 

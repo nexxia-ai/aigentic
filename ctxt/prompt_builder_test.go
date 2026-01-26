@@ -35,7 +35,6 @@ func TestCreateSystemMsg(t *testing.T) {
 				"<role>",
 				"<instructions>",
 				"<tools>",
-				"<memories>",
 				"<document",
 			},
 		},
@@ -94,23 +93,6 @@ func TestCreateSystemMsg(t *testing.T) {
 			},
 		},
 		{
-			name: "with memories",
-			setup: func(ac *AgentContext) *AgentContext {
-				ac.AddMemory("mem1", "Memory 1", "Content 1")
-				ac.AddMemory("mem2", "Memory 2", "Content 2")
-				return ac
-			},
-			tools: nil,
-			expectedContains: []string{
-				"<memories>",
-				`<memory id="mem1" description="Memory 1">`,
-				"Content 1",
-				`<memory id="mem2" description="Memory 2">`,
-				"Content 2",
-				"</memories>",
-			},
-		},
-		{
 			name: "with system tags",
 			setup: func(ac *AgentContext) *AgentContext {
 				ac.Turn().InjectSystemTag("tag1", "tag content 1")
@@ -129,7 +111,6 @@ func TestCreateSystemMsg(t *testing.T) {
 				ac.SetDescription("Test Role")
 				ac.SetInstructions("Test Instructions")
 				ac.SetOutputInstructions("Test Output")
-				ac.AddMemory("mem1", "Memory 1", "Content 1")
 				ac.Turn().InjectSystemTag("tag1", "tag content")
 				return ac
 			},
@@ -145,8 +126,6 @@ func TestCreateSystemMsg(t *testing.T) {
 				"Test Output",
 				"<tools>",
 				"tool1",
-				"<memories>",
-				"mem1",
 				"<tag1>tag content</tag1>",
 			},
 		},
@@ -590,7 +569,6 @@ func TestBuildPrompt(t *testing.T) {
 			setup: func(ac *AgentContext) *AgentContext {
 				ac.SetDescription("Test Role")
 				ac.SetInstructions("Test Instructions")
-				ac.AddMemory("mem1", "Memory 1", "Content 1")
 
 				doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
 				ac.AddDocument(doc1)
@@ -614,7 +592,6 @@ func TestBuildPrompt(t *testing.T) {
 				sysMsg := msgs[0].(ai.SystemMessage)
 				assert.Contains(t, sysMsg.Content, "Test Role")
 				assert.Contains(t, sysMsg.Content, "Test Instructions")
-				assert.Contains(t, sysMsg.Content, "mem1")
 				assert.Contains(t, sysMsg.Content, "tool1")
 
 				var userMsgFound bool
@@ -811,7 +788,6 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 
 	_ = memDoc
 
-	ac.AddMemory("mem1", "Test Memory", "Memory content")
 	ac.StartTurn("Test message")
 
 	msgs, err := ac.BuildPrompt(nil, false)
@@ -820,8 +796,6 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 	sysMsg := msgs[0].(ai.SystemMessage)
 	assert.Contains(t, sysMsg.Content, "<document name=\"memory.txt\">")
 	assert.Contains(t, sysMsg.Content, "Memory content")
-	assert.Contains(t, sysMsg.Content, "<memories>")
-	assert.Contains(t, sysMsg.Content, "mem1")
 }
 
 func TestBuildPromptDocumentReferences(t *testing.T) {

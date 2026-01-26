@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
@@ -342,56 +341,6 @@ func (r *AgentContext) GetDocumentByID(id string) *document.Document {
 		return nil
 	}
 	return doc
-}
-
-func (r *AgentContext) AddMemory(id, description, content string) *AgentContext {
-	r.mutex.Lock()
-
-	now := time.Now()
-	for i := range r.memories {
-		if r.memories[i].ID == id {
-			r.memories[i].Description = description
-			r.memories[i].Content = content
-			r.memories[i].Timestamp = now
-			r.mutex.Unlock()
-			r.save()
-			return r
-		}
-	}
-
-	r.memories = append(r.memories, MemoryEntry{
-		ID:          id,
-		Description: description,
-		Content:     content,
-		Timestamp:   now,
-	})
-	r.mutex.Unlock()
-	r.save()
-	return r
-}
-
-func (r *AgentContext) RemoveMemory(id string) error {
-	r.mutex.Lock()
-
-	for i := range r.memories {
-		if r.memories[i].ID == id {
-			r.memories = append(r.memories[:i], r.memories[i+1:]...)
-			r.mutex.Unlock()
-			r.save()
-			return nil
-		}
-	}
-	r.mutex.Unlock()
-	return fmt.Errorf("memory not found: %s", id)
-}
-
-func (r *AgentContext) GetMemories() []MemoryEntry {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	result := make([]MemoryEntry, len(r.memories))
-	copy(result, r.memories)
-	return result
 }
 
 func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *AgentContext {

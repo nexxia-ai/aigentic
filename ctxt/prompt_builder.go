@@ -43,16 +43,6 @@ You have access to the following tools:
 </tools>
 {{end}}
 
-{{if .Memories}}
-<memories>
-{{range .Memories}}
-<memory id="{{.ID}}" description="{{.Description}}">
-{{.Content}}
-</memory>
-{{end}}
-</memories>
-{{end}}
-
 {{if .Documents}}
 {{range .Documents}}
 <document name="{{.Filename}}">
@@ -79,9 +69,6 @@ const DefaultUserTemplate = `
 `
 
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
-	memories := ac.GetMemories()
-	var filteredMemories []MemoryEntry
-	filteredMemories = append(filteredMemories, memories...)
 
 	// Load memory files from execution environment
 	memoryDocs := make([]*document.Document, 0)
@@ -98,7 +85,6 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		"Role":               ac.description,
 		"Instructions":       ac.instructions,
 		"Tools":              tools,
-		"Memories":           filteredMemories,
 		"Documents":          memoryDocs,
 		"OutputInstructions": ac.outputInstructions,
 		"SystemTags":         ac.Turn().systemTags,

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
@@ -191,8 +190,7 @@ func TestChainableMethods(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst").
 		SetOutputInstructions("Use JSON").
 		AddDocument(doc1).
-		AddDocument(doc2).
-		AddMemory("key1", "desc1", "content1")
+		AddDocument(doc2)
 
 	if ctx.outputInstructions != "Use JSON" {
 		t.Errorf("expected output instructions 'Use JSON', got '%s'", ctx.outputInstructions)
@@ -201,163 +199,6 @@ func TestChainableMethods(t *testing.T) {
 	docCount := len(ctx.GetDocuments())
 	if docCount != 2 {
 		t.Errorf("expected 2 documents, got %d", docCount)
-	}
-
-	memCount := len(ctx.GetMemories())
-	if memCount != 1 {
-		t.Errorf("expected 1 memory, got %d", memCount)
-	}
-}
-
-func TestAddMemory(t *testing.T) {
-	tests := []struct {
-		name      string
-		memories  []struct{ id, desc, content string }
-		wantCount int
-	}{
-		{
-			name: "add single memory",
-			memories: []struct{ id, desc, content string }{
-				{"key1", "desc1", "content1"},
-			},
-			wantCount: 1,
-		},
-		{
-			name: "add multiple memories",
-			memories: []struct{ id, desc, content string }{
-				{"key1", "desc1", "content1"},
-				{"key2", "desc2", "content2"},
-				{"key3", "desc3", "content3"},
-			},
-			wantCount: 3,
-		},
-		{
-			name: "update existing memory",
-			memories: []struct{ id, desc, content string }{
-				{"key1", "desc1", "content1"},
-				{"key1", "desc2", "content2"},
-			},
-			wantCount: 1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := createTestContext(t, "id", "desc", "inst")
-			for _, mem := range tt.memories {
-				ctx.AddMemory(mem.id, mem.desc, mem.content)
-			}
-
-			got := len(ctx.GetMemories())
-			if got != tt.wantCount {
-				t.Errorf("expected %d memories, got %d", tt.wantCount, got)
-			}
-
-			if tt.name == "update existing memory" && got == 1 {
-				mem := ctx.GetMemories()[0]
-				if mem.Description != "desc2" {
-					t.Errorf("expected updated description 'desc2', got '%s'", mem.Description)
-				}
-				if mem.Content != "content2" {
-					t.Errorf("expected updated content 'content2', got '%s'", mem.Content)
-				}
-			}
-		})
-	}
-}
-
-func TestRemoveMemory(t *testing.T) {
-	ctx := createTestContext(t, "id", "desc", "inst").
-		AddMemory("m1", "d1", "c1").
-		AddMemory("m2", "d2", "c2")
-
-	err := ctx.RemoveMemory("m1")
-	if err != nil {
-		t.Errorf("RemoveMemory() error = %v", err)
-	}
-
-	mems := ctx.GetMemories()
-	if len(mems) != 1 {
-		t.Errorf("expected 1 memory, got %d", len(mems))
-	}
-
-	err = ctx.RemoveMemory("nonexistent")
-	if err == nil {
-		t.Error("expected error when removing non-existent memory")
-	}
-}
-
-func TestMemoryFilters(t *testing.T) {
-	ctx := createTestContext(t, "id", "desc", "inst").
-		AddMemory("m1", "d1", "c1").
-		AddMemory("m2", "d2", "c2").
-		AddMemory("m3", "d3", "c3")
-
-	time.Sleep(10 * time.Millisecond)
-
-	tests := []struct {
-		name      string
-		filter    func() []MemoryEntry
-		wantCount int
-	}{
-		{
-			name:      "all memories",
-			filter:    func() []MemoryEntry { return ctx.GetMemories() },
-			wantCount: 3,
-		},
-		{
-			name: "filter by runID",
-			filter: func() []MemoryEntry {
-				return filter(ctx.GetMemories(), func(m MemoryEntry) bool {
-					return m.RunID == ""
-				})
-			},
-			wantCount: 3,
-		},
-		{
-			name: "filter by age",
-			filter: func() []MemoryEntry {
-				return filter(ctx.GetMemories(), func(m MemoryEntry) bool {
-					return time.Since(m.Timestamp) <= 1*time.Second
-				})
-			},
-			wantCount: 3,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.filter()
-			if len(result) != tt.wantCount {
-				t.Errorf("expected %d memories, got %d", tt.wantCount, len(result))
-			}
-		})
-	}
-}
-
-func TestMemoryFindByID(t *testing.T) {
-	ctx := createTestContext(t, "id", "desc", "inst").
-		AddMemory("m1", "desc1", "content1").
-		AddMemory("m2", "desc2", "content2")
-
-	mem := find(ctx.GetMemories(), func(m MemoryEntry) bool {
-		return m.ID == "m1"
-	})
-	if mem == nil {
-		t.Fatal("expected to find memory m1")
-	}
-	if mem.ID != "m1" {
-		t.Errorf("expected memory ID 'm1', got '%s'", mem.ID)
-	}
-	if mem.Description != "desc1" {
-		t.Errorf("expected description 'desc1', got '%s'", mem.Description)
-	}
-
-	mem = find(ctx.GetMemories(), func(m MemoryEntry) bool {
-		return m.ID == "nonexistent"
-	})
-	if mem != nil {
-		t.Error("expected nil for non-existent memory")
 	}
 }
 
@@ -377,16 +218,6 @@ func TestClearMethods(t *testing.T) {
 			},
 			clear:     func(ctx *AgentContext) { ctx.ClearDocuments() },
 			check:     func(ctx *AgentContext) int { return len(ctx.GetDocuments()) },
-			wantCount: 0,
-		},
-		{
-			name: "clear memories",
-			setup: func(ctx *AgentContext) {
-				ctx.AddMemory("k1", "d1", "c1")
-				ctx.AddMemory("k2", "d2", "c2")
-			},
-			clear:     func(ctx *AgentContext) { ctx.ClearMemories() },
-			check:     func(ctx *AgentContext) int { return len(ctx.GetMemories()) },
 			wantCount: 0,
 		},
 		{
@@ -418,8 +249,7 @@ func TestClearAll(t *testing.T) {
 	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil)
 
 	ctx := createTestContext(t, "id", "desc", "inst").
-		AddDocument(doc).
-		AddMemory("m1", "d1", "c1")
+		AddDocument(doc)
 
 	ctx.GetHistory().appendTurn(Turn{})
 
@@ -427,9 +257,6 @@ func TestClearAll(t *testing.T) {
 
 	if len(ctx.GetDocuments()) != 0 {
 		t.Errorf("expected 0 documents after ClearAll, got %d", len(ctx.GetDocuments()))
-	}
-	if len(ctx.GetMemories()) != 0 {
-		t.Errorf("expected 0 memories after ClearAll, got %d", len(ctx.GetMemories()))
 	}
 	if ctx.GetHistory().Len() != 0 {
 		t.Errorf("expected 0 history turns after ClearAll, got %d", ctx.GetHistory().Len())

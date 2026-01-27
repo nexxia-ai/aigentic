@@ -103,6 +103,7 @@ func (tr *TraceRun) AfterCall(run *AgentRun, request []ai.Message, response ai.A
 	tr.writeToFile(func(w io.Writer) {
 		fmt.Fprintf(w, "⬇️  assistant: role=%s\n", response.Role)
 		tr.logAIMessageToWriter(w, response)
+		tr.logUsageToWriter(w, response.Response.Usage)
 		fmt.Fprintf(w, "==== [%s] End %s\n\n", time.Now().Format("15:04:05"), run.AgentName())
 	})
 
@@ -197,6 +198,48 @@ func (tr *TraceRun) logAIMessageToWriter(w io.Writer, msg ai.AIMessage) {
 			fmt.Fprintf(w, "   tool_call_id: %s\n", tc.ID)
 			fmt.Fprintf(w, "   tool_name: %s\n", tc.Name)
 			fmt.Fprintf(w, "   tool_args: %s\n", tc.Args)
+		}
+	}
+}
+
+func (tr *TraceRun) logUsageToWriter(w io.Writer, usage ai.Usage) {
+	if usage.TotalTokens == 0 {
+		return
+	}
+
+	fmt.Fprintf(w, " Usage:\n")
+	fmt.Fprintf(w, "   Prompt Tokens: %d\n", usage.PromptTokens)
+	fmt.Fprintf(w, "   Completion Tokens: %d\n", usage.CompletionTokens)
+	fmt.Fprintf(w, "   Total Tokens: %d\n", usage.TotalTokens)
+
+	if usage.PromptTokensDetails.CachedTokens > 0 || usage.PromptTokensDetails.AudioTokens > 0 {
+		fmt.Fprintf(w, "   Prompt Details:\n")
+		if usage.PromptTokensDetails.CachedTokens > 0 {
+			fmt.Fprintf(w, "     Cached Tokens: %d (%.1f%%)\n",
+				usage.PromptTokensDetails.CachedTokens,
+				100.0*float64(usage.PromptTokensDetails.CachedTokens)/float64(usage.PromptTokens))
+		}
+		if usage.PromptTokensDetails.AudioTokens > 0 {
+			fmt.Fprintf(w, "     Audio Tokens: %d\n", usage.PromptTokensDetails.AudioTokens)
+		}
+	}
+
+	if usage.CompletionTokensDetails.ReasoningTokens > 0 ||
+		usage.CompletionTokensDetails.AudioTokens > 0 ||
+		usage.CompletionTokensDetails.AcceptedPredictionTokens > 0 ||
+		usage.CompletionTokensDetails.RejectedPredictionTokens > 0 {
+		fmt.Fprintf(w, "   Completion Details:\n")
+		if usage.CompletionTokensDetails.ReasoningTokens > 0 {
+			fmt.Fprintf(w, "     Reasoning Tokens: %d\n", usage.CompletionTokensDetails.ReasoningTokens)
+		}
+		if usage.CompletionTokensDetails.AudioTokens > 0 {
+			fmt.Fprintf(w, "     Audio Tokens: %d\n", usage.CompletionTokensDetails.AudioTokens)
+		}
+		if usage.CompletionTokensDetails.AcceptedPredictionTokens > 0 {
+			fmt.Fprintf(w, "     Accepted Prediction Tokens: %d\n", usage.CompletionTokensDetails.AcceptedPredictionTokens)
+		}
+		if usage.CompletionTokensDetails.RejectedPredictionTokens > 0 {
+			fmt.Fprintf(w, "     Rejected Prediction Tokens: %d\n", usage.CompletionTokensDetails.RejectedPredictionTokens)
 		}
 	}
 }

@@ -94,6 +94,7 @@ func streamResponsesAPI(ctx context.Context, client openai.Client, model *ai.Mod
 	var responseID string
 	var responseCreated int64
 	var responseModel string
+	var responseUsage responses.ResponseUsage
 	parser := &streamingThinkParser{}
 
 	for stream.Next() {
@@ -150,6 +151,7 @@ func streamResponsesAPI(ctx context.Context, client openai.Client, model *ai.Mod
 			responseID = evt.Response.ID
 			responseCreated = int64(evt.Response.CreatedAt)
 			responseModel = string(evt.Response.Model)
+			responseUsage = evt.Response.Usage
 			// Extract tool calls from completed response
 			if len(evt.Response.Output) > 0 {
 				for _, outputItem := range evt.Response.Output {
@@ -192,11 +194,19 @@ func streamResponsesAPI(ctx context.Context, client openai.Client, model *ai.Mod
 	finalMessage.ToolCalls = finalToolCalls
 
 	if responseID != "" {
+		usage := ai.Usage{
+			PromptTokens:     int(responseUsage.InputTokens),
+			CompletionTokens: int(responseUsage.OutputTokens),
+			TotalTokens:      int(responseUsage.TotalTokens),
+		}
+		usage.PromptTokensDetails.CachedTokens = int(responseUsage.InputTokensDetails.CachedTokens)
+		usage.CompletionTokensDetails.ReasoningTokens = int(responseUsage.OutputTokensDetails.ReasoningTokens)
 		finalMessage.Response = ai.Response{
 			ID:      responseID,
 			Object:  "response",
 			Created: responseCreated,
 			Model:   responseModel,
+			Usage:   usage,
 		}
 	}
 

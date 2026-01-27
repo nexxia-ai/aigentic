@@ -373,16 +373,19 @@ func fromResponsesOutput(resp *responses.Response) ai.AIMessage {
 	}
 	aiMsg.ToolCalls = toolCalls
 
+	usage := ai.Usage{
+		PromptTokens:     int(resp.Usage.InputTokens),
+		CompletionTokens: int(resp.Usage.OutputTokens),
+		TotalTokens:      int(resp.Usage.TotalTokens),
+	}
+	usage.PromptTokensDetails.CachedTokens = int(resp.Usage.InputTokensDetails.CachedTokens)
+	usage.CompletionTokensDetails.ReasoningTokens = int(resp.Usage.OutputTokensDetails.ReasoningTokens)
 	aiMsg.Response = ai.Response{
 		ID:      resp.ID,
 		Object:  "response",
 		Created: int64(resp.CreatedAt),
 		Model:   string(resp.Model),
-		Usage: ai.Usage{
-			PromptTokens:     int(resp.Usage.InputTokens),
-			CompletionTokens: int(resp.Usage.OutputTokens),
-			TotalTokens:      int(resp.Usage.TotalTokens),
-		},
+		Usage:   usage,
 	}
 
 	return aiMsg

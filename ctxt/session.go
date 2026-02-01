@@ -94,6 +94,8 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		return nil, fmt.Errorf("failed to decode context: %w", err)
 	}
 
+	execEnv.MemoryDir = data.MemoryDir
+
 	ctx := &AgentContext{
 		id:                 data.ID,
 		description:        data.Description,

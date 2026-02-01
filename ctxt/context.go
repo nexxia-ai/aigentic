@@ -588,6 +588,7 @@ type contextData struct {
 	OutputInstructions string        `json:"output_instructions"`
 	Memories           []MemoryEntry `json:"memories"`
 	TurnCounter        int           `json:"turn_counter"`
+	MemoryDir          string        `json:"memory_dir"`
 }
 
 func (r *AgentContext) save() error {
@@ -609,6 +610,7 @@ func (r *AgentContext) save() error {
 		OutputInstructions: r.outputInstructions,
 		Memories:           memories,
 		TurnCounter:        r.turnCounter,
+		MemoryDir:          r.execEnv.MemoryDir,
 	}
 
 	contextFile := filepath.Join(r.execEnv.PrivateDir, "context.json")

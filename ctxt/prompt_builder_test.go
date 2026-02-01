@@ -3,6 +3,7 @@ package ctxt
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -180,6 +181,7 @@ func TestCreateSystemMsgWithMemoryFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	ac, err := New("test-id", "", "", tempDir)
 	require.NoError(t, err)
+	require.NoError(t, ac.ExecutionEnvironment().SetMemoryDir(filepath.Join(ac.ExecutionEnvironment().LLMDir, "memory")))
 
 	store := document.NewLocalStore(ac.ExecutionEnvironment().MemoryDir)
 	storeID := store.ID()
@@ -215,6 +217,20 @@ func TestCreateSystemMsgWithMemoryFiles(t *testing.T) {
 	assert.Contains(t, content, "Memory file 1 content")
 	assert.Contains(t, content, "<document name=\"memory2.txt\">")
 	assert.Contains(t, content, "Memory file 2 content")
+}
+
+func TestCreateSystemMsgWithEmptyMemoryDir_NoMemoryFilesInPrompt(t *testing.T) {
+	withTempWorkingDirPB(t)
+	tempDir := t.TempDir()
+	ac, err := New("test-id", "", "", tempDir)
+	require.NoError(t, err)
+	require.Empty(t, ac.ExecutionEnvironment().MemoryDir, "MemoryDir should be empty by default")
+	msg, err := createSystemMsg(ac, nil)
+	require.NoError(t, err)
+	require.NotNil(t, msg)
+	sysMsg, ok := msg.(ai.SystemMessage)
+	require.True(t, ok)
+	assert.NotContains(t, sysMsg.Content, "<document name=", "system message should not contain memory documents when MemoryDir is empty")
 }
 
 func TestCreateDocsMsg(t *testing.T) {
@@ -770,6 +786,7 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	ac, err := New("test-id", "", "", tempDir)
 	require.NoError(t, err)
+	require.NoError(t, ac.ExecutionEnvironment().SetMemoryDir(filepath.Join(ac.ExecutionEnvironment().LLMDir, "memory")))
 
 	store := document.NewLocalStore(ac.ExecutionEnvironment().MemoryDir)
 	storeID := store.ID()

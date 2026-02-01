@@ -339,6 +339,9 @@ func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test context: %v", err)
 	}
+	if err := ctx.ExecutionEnvironment().SetMemoryDir(filepath.Join(ctx.ExecutionEnvironment().LLMDir, "memory")); err != nil {
+		t.Fatalf("SetMemoryDir: %v", err)
+	}
 
 	memoryFileContent := "memory file content for testing"
 	memoryFileName := "memory_test.txt"

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/document"
@@ -34,7 +35,7 @@ func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, er
 		RootDir:    rootDir,
 		LLMDir:     llmDir,
 		PrivateDir: privateDir,
-		MemoryDir:  filepath.Join(privateDir, "memory"),
+		MemoryDir:  "",
 		UploadDir:  filepath.Join(llmDir, "uploads"),
 		OutputDir:  filepath.Join(llmDir, "output"),
 		TurnDir:    filepath.Join(privateDir, "turns"),
@@ -45,15 +46,44 @@ func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, er
 	return e, nil
 }
 
+func (e *ExecutionEnvironment) SetMemoryDir(dir string) error {
+	if dir == "" {
+		e.MemoryDir = ""
+		return nil
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("memory dir: %w", err)
+	}
+	absLLM, err := filepath.Abs(e.LLMDir)
+	if err != nil {
+		return fmt.Errorf("llm dir: %w", err)
+	}
+	rel, err := filepath.Rel(absLLM, absDir)
+	if err != nil {
+		return fmt.Errorf("memory dir not under LLM dir: %w", err)
+	}
+	if strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("memory dir must be under LLM dir: %s", dir)
+	}
+	e.MemoryDir = absDir
+	if err := os.MkdirAll(e.MemoryDir, 0755); err != nil {
+		return fmt.Errorf("failed to create memory dir %s: %w", e.MemoryDir, err)
+	}
+	return nil
+}
+
 func (e *ExecutionEnvironment) init() error {
 	dirs := []string{
 		e.RootDir,
 		e.LLMDir,
 		e.PrivateDir,
-		e.MemoryDir,
 		e.UploadDir,
 		e.OutputDir,
 		e.TurnDir,
+	}
+	if e.MemoryDir != "" {
+		dirs = append(dirs, e.MemoryDir)
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -64,10 +94,12 @@ func (e *ExecutionEnvironment) init() error {
 }
 
 func (e *ExecutionEnvironment) MemoryFiles() ([]*document.Document, error) {
+	if e.MemoryDir == "" {
+		return nil, nil
+	}
 	s := document.NewLocalStore(e.MemoryDir)
 	storeID := s.ID()
 
-	// Try to get existing store first
 	_, exists := document.GetStore(storeID)
 	if !exists {
 		if err := document.RegisterStore(s); err != nil {
@@ -83,15 +115,18 @@ func (e *ExecutionEnvironment) EnvVars() map[string]string {
 	if e == nil {
 		return make(map[string]string)
 	}
-	return map[string]string{
+	m := map[string]string{
 		"AGENT_ROOT_DIR":    e.RootDir,
 		"AGENT_LLM_DIR":     e.LLMDir,
 		"AGENT_PRIVATE_DIR": e.PrivateDir,
-		"AGENT_MEMORY_DIR":  e.MemoryDir,
 		"AGENT_UPLOAD_DIR":  e.UploadDir,
 		"AGENT_OUTPUT_DIR":  e.OutputDir,
 		"AGENT_TURN_DIR":    e.TurnDir,
 	}
+	if e.MemoryDir != "" {
+		m["AGENT_MEMORY_DIR"] = e.MemoryDir
+	}
+	return m
 }
 
 func (e *ExecutionEnvironment) MemoryStoreName() string {
@@ -112,7 +147,7 @@ func loadExecutionEnvironment(sessionDir string) (*ExecutionEnvironment, error) 
 		RootDir:    rootDir,
 		LLMDir:     llmDir,
 		PrivateDir: privateDir,
-		MemoryDir:  filepath.Join(privateDir, "memory"),
+		MemoryDir:  "",
 		UploadDir:  filepath.Join(llmDir, "uploads"),
 		OutputDir:  filepath.Join(llmDir, "output"),
 		TurnDir:    filepath.Join(privateDir, "turns"),

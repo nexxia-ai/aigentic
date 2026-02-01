@@ -171,4 +171,3 @@ func (h *ConversationHistory) ExcludeHidden() []Turn {
 	}
 	return result
 }
-

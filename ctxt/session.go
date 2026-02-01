@@ -107,6 +107,7 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		execEnv:            execEnv,
 	}
 
+	loadRunMeta(ctx, execEnv.PrivateDir)
 	ctx.conversationHistory = NewConversationHistory(ctx.execEnv)
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)

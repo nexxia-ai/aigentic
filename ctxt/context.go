@@ -13,10 +13,17 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
 )
+
+type runMetaData struct {
+	AgentName string    `json:"agent_name"`
+	PackageID string    `json:"package_id"`
+	StartedAt time.Time `json:"started_at"`
+}
 
 type AgentContext struct {
 	id             string
@@ -24,6 +31,7 @@ type AgentContext struct {
 	instructions   string
 	name           string
 	summary        string
+	runMeta        *runMetaData
 	SystemTemplate *template.Template
 	UserTemplate   *template.Template
 
@@ -38,12 +46,14 @@ type AgentContext struct {
 }
 
 func New(id, description, instructions string, basePath string) (*AgentContext, error) {
+	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
 		id:                 id,
 		description:        description,
 		instructions:       instructions,
 		memories:           make([]MemoryEntry, 0),
 		documentReferences: make([]*document.Document, 0),
+		runMeta:            m,
 	}
 
 	if basePath == "" {
@@ -407,6 +417,73 @@ func (r *AgentContext) Name() string {
 	return r.name
 }
 
+func (r *AgentContext) SetMeta(agentName, packageID string) {
+	r.runMeta.AgentName = agentName
+	r.runMeta.PackageID = packageID
+	r.saveRunMeta()
+}
+
+func (r *AgentContext) SetRunMeta(agentName, packageID string) {
+	if r.runMeta == nil {
+		r.runMeta = &runMetaData{StartedAt: time.Now()}
+	}
+	r.SetMeta(agentName, packageID)
+}
+
+func (r *AgentContext) RunAgentName() string {
+	if r.runMeta != nil {
+		return r.runMeta.AgentName
+	}
+	return ""
+}
+
+func (r *AgentContext) RunPackageID() string {
+	if r.runMeta != nil {
+		return r.runMeta.PackageID
+	}
+	return ""
+}
+
+func (r *AgentContext) RunStartedAt() time.Time {
+	if r.runMeta != nil {
+		return r.runMeta.StartedAt
+	}
+	return time.Time{}
+}
+
+func (r *AgentContext) saveRunMeta() {
+	if r.execEnv == nil || r.runMeta == nil {
+		return
+	}
+	path := filepath.Join(r.execEnv.PrivateDir, "run_meta.json")
+	data, err := json.MarshalIndent(r.runMeta, "", "  ")
+	if err != nil {
+		slog.Error("failed to marshal run metadata", "error", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		slog.Error("failed to write run metadata", "path", path, "error", err)
+	}
+}
+
+func loadRunMeta(ctx *AgentContext, privateDir string) {
+	path := filepath.Join(privateDir, "run_meta.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		slog.Warn("failed to read run metadata", "path", path, "error", err)
+		return
+	}
+	var meta runMetaData
+	if err := json.Unmarshal(data, &meta); err != nil {
+		slog.Warn("failed to parse run metadata", "path", path, "error", err)
+		return
+	}
+	ctx.runMeta = &meta
+}
+
 func (r *AgentContext) Summary() string {
 	return r.summary
 }
@@ -549,5 +626,6 @@ func (r *AgentContext) save() error {
 		return fmt.Errorf("failed to encode context: %w", err)
 	}
 
+	r.saveRunMeta()
 	return nil
 }

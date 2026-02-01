@@ -280,3 +280,86 @@ func TestLoadContextNonExistent(t *testing.T) {
 		t.Error("expected error for non-existent directory")
 	}
 }
+
+func TestLoadContextRestoresMetadata(t *testing.T) {
+	baseDir := t.TempDir()
+	ctx, err := New("meta-test", "desc", "inst", baseDir)
+	if err != nil {
+		t.Fatalf("failed to create context: %v", err)
+	}
+
+	ctx.SetMeta("executive-assistant", "executive-assistant-1.0.0")
+	if err := ctx.save(); err != nil {
+		t.Fatalf("failed to save: %v", err)
+	}
+
+	sessionPath := ctx.ExecutionEnvironment().RootDir
+	loaded, err := LoadContext(sessionPath)
+	if err != nil {
+		t.Fatalf("failed to load context: %v", err)
+	}
+
+	if got := loaded.RunAgentName(); got != "executive-assistant" {
+		t.Errorf("RunAgentName: expected %q, got %q", "executive-assistant", got)
+	}
+	if got := loaded.RunPackageID(); got != "executive-assistant-1.0.0" {
+		t.Errorf("RunPackageID: expected %q, got %q", "executive-assistant-1.0.0", got)
+	}
+	if loaded.RunStartedAt().IsZero() {
+		t.Error("RunStartedAt: expected non-zero timestamp")
+	}
+}
+
+func TestLoadContextMetadataWithHistory(t *testing.T) {
+	baseDir := t.TempDir()
+	ctx, err := New("meta-history", "desc", "inst", baseDir)
+	if err != nil {
+		t.Fatalf("failed to create context: %v", err)
+	}
+
+	ctx.SetMeta("support-agent", "support-agent-1.0.0")
+	ctx.StartTurn("Hello")
+	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Hi"})
+
+	sessionPath := ctx.ExecutionEnvironment().RootDir
+	loaded, err := LoadContext(sessionPath)
+	if err != nil {
+		t.Fatalf("failed to load context: %v", err)
+	}
+
+	if got := loaded.RunAgentName(); got != "support-agent" {
+		t.Errorf("RunAgentName after reload: expected %q, got %q", "support-agent", got)
+	}
+	if got := loaded.RunPackageID(); got != "support-agent-1.0.0" {
+		t.Errorf("RunPackageID after reload: expected %q, got %q", "support-agent-1.0.0", got)
+	}
+	if loaded.GetHistory().Len() != 1 {
+		t.Errorf("expected 1 turn in history, got %d", loaded.GetHistory().Len())
+	}
+}
+
+func TestLoadContextNoRunMeta(t *testing.T) {
+	baseDir := t.TempDir()
+	ctx, err := New("legacy-no-meta", "desc", "inst", baseDir)
+	if err != nil {
+		t.Fatalf("failed to create context: %v", err)
+	}
+
+	ctx.runMeta = nil
+	if err := ctx.save(); err != nil {
+		t.Fatalf("failed to save: %v", err)
+	}
+
+	sessionPath := ctx.ExecutionEnvironment().RootDir
+	loaded, err := LoadContext(sessionPath)
+	if err != nil {
+		t.Fatalf("failed to load context: %v", err)
+	}
+
+	if got := loaded.RunAgentName(); got != "" {
+		t.Errorf("RunAgentName (legacy): expected empty, got %q", got)
+	}
+	if got := loaded.RunPackageID(); got != "" {
+		t.Errorf("RunPackageID (legacy): expected empty, got %q", got)
+	}
+}

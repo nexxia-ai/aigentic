@@ -17,10 +17,9 @@ type ExecutionEnvironment struct {
 	LLMDir     string
 	PrivateDir string
 	MemoryDir  string
-	UploadDir  string
-	OutputDir  string
-	HistoryDir string
-	TurnDir    string
+	UploadDir string
+	OutputDir string
+	TurnDir   string
 }
 
 func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, error) {
@@ -36,10 +35,9 @@ func NewExecutionEnvironment(baseDir, agentID string) (*ExecutionEnvironment, er
 		LLMDir:     llmDir,
 		PrivateDir: privateDir,
 		MemoryDir:  filepath.Join(privateDir, "memory"),
-		UploadDir:  filepath.Join(llmDir, "uploads"),
-		OutputDir:  filepath.Join(llmDir, "output"),
-		HistoryDir: filepath.Join(privateDir, "history"),
-		TurnDir:    filepath.Join(privateDir, "turns"),
+		UploadDir: filepath.Join(llmDir, "uploads"),
+		OutputDir: filepath.Join(llmDir, "output"),
+		TurnDir:   filepath.Join(privateDir, "turns"),
 	}
 	if err := e.init(); err != nil {
 		return nil, err
@@ -55,7 +53,6 @@ func (e *ExecutionEnvironment) init() error {
 		e.MemoryDir,
 		e.UploadDir,
 		e.OutputDir,
-		e.HistoryDir,
 		e.TurnDir,
 	}
 	for _, dir := range dirs {
@@ -93,8 +90,7 @@ func (e *ExecutionEnvironment) EnvVars() map[string]string {
 		"AGENT_MEMORY_DIR":  e.MemoryDir,
 		"AGENT_UPLOAD_DIR":  e.UploadDir,
 		"AGENT_OUTPUT_DIR":  e.OutputDir,
-		"AGENT_HISTORY_DIR": e.HistoryDir,
-		"AGENT_TURN_DIR":    e.TurnDir,
+		"AGENT_TURN_DIR": e.TurnDir,
 	}
 }
 
@@ -117,10 +113,9 @@ func loadExecutionEnvironment(sessionDir string) (*ExecutionEnvironment, error) 
 		LLMDir:     llmDir,
 		PrivateDir: privateDir,
 		MemoryDir:  filepath.Join(privateDir, "memory"),
-		UploadDir:  filepath.Join(llmDir, "uploads"),
-		OutputDir:  filepath.Join(llmDir, "output"),
-		HistoryDir: filepath.Join(privateDir, "history"),
-		TurnDir:    filepath.Join(privateDir, "turns"),
+		UploadDir: filepath.Join(llmDir, "uploads"),
+		OutputDir: filepath.Join(llmDir, "output"),
+		TurnDir:   filepath.Join(privateDir, "turns"),
 	}
 
 	return e, nil

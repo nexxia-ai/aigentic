@@ -3,6 +3,8 @@ package ctxt
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -73,6 +75,39 @@ func (t *Turn) AddDocument(toolID string, doc *document.Document) error {
 
 func (t *Turn) Dir() string {
 	return filepath.Join(t.agentContext.ExecutionEnvironment().TurnDir, t.TurnID)
+}
+
+func (t *Turn) saveToFile() {
+	if t.agentContext == nil {
+		return
+	}
+	dir := t.Dir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		slog.Error("failed to create turn directory", "dir", dir, "error", err)
+		return
+	}
+	path := filepath.Join(dir, "turn.json")
+	data, err := json.MarshalIndent(t, "", "  ")
+	if err != nil {
+		slog.Error("failed to marshal turn", "turnId", t.TurnID, "error", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		slog.Error("failed to write turn file", "path", path, "error", err)
+	}
+}
+
+func (t *Turn) loadFromFile(turnJSONPath string) error {
+	data, err := os.ReadFile(turnJSONPath)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, t); err != nil {
+		return err
+	}
+	turnDir := filepath.Dir(turnJSONPath)
+	t.TraceFile = filepath.Join(turnDir, "trace.txt")
+	return nil
 }
 
 func (t *Turn) DeleteDocument(doc *document.Document) error {

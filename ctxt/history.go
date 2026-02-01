@@ -1,12 +1,11 @@
 package ctxt
 
 import (
-	"bufio"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -24,11 +23,45 @@ func NewConversationHistory(execEnv *ExecutionEnvironment) *ConversationHistory 
 		execEnv: execEnv,
 	}
 	if execEnv != nil {
-		if err := h.LoadFromFile(); err != nil {
-			slog.Warn("failed to load history from file", "error", err)
-		}
+		turns := loadTurnsFromDir(execEnv.TurnDir)
+		h.mutex.Lock()
+		h.turns = turns
+		h.mutex.Unlock()
 	}
 	return h
+}
+
+func loadTurnsFromDir(turnDir string) []Turn {
+	entries, err := os.ReadDir(turnDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		slog.Warn("failed to read turns directory", "dir", turnDir, "error", err)
+		return nil
+	}
+	var turnDirs []string
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), "turn-") {
+			turnDirs = append(turnDirs, e.Name())
+		}
+	}
+	sort.Strings(turnDirs)
+
+	var turns []Turn
+	for _, name := range turnDirs {
+		path := filepath.Join(turnDir, name, "turn.json")
+		var turn Turn
+		if err := turn.loadFromFile(path); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			slog.Warn("failed to load turn file", "path", path, "error", err)
+			continue
+		}
+		turns = append(turns, turn)
+	}
+	return turns
 }
 
 func (h *ConversationHistory) GetMessages() []ai.Message {
@@ -41,7 +74,11 @@ func (h *ConversationHistory) GetMessages() []ai.Message {
 		if turn.Hidden {
 			continue
 		}
-		messages = append(messages, turn.Request)
+		if turn.Request != nil {
+			messages = append(messages, turn.Request)
+		} else if turn.UserMessage != "" {
+			messages = append(messages, ai.UserMessage{Role: ai.UserRole, Content: turn.UserMessage})
+		}
 		if turn.Reply != nil {
 			messages = append(messages, turn.Reply)
 		}
@@ -55,76 +92,8 @@ func (h *ConversationHistory) appendTurn(turn Turn) {
 	h.mutex.Unlock()
 
 	if h.execEnv != nil {
-		h.appendTurnToFile(turn)
+		turn.saveToFile()
 	}
-}
-
-func (h *ConversationHistory) appendTurnToFile(turn Turn) {
-
-	historyFile := filepath.Join(h.execEnv.HistoryDir, "history.json")
-
-	if err := os.MkdirAll(h.execEnv.HistoryDir, 0755); err != nil {
-		slog.Error("failed to ensure history directory exists", "error", err)
-		return
-	}
-
-	file, err := os.OpenFile(historyFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		slog.Error("failed to open history file for appending", "error", err)
-		return
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	if err := encoder.Encode(turn); err != nil {
-		slog.Error("failed to encode turn to history file", "error", err)
-		return
-	}
-
-	if err := file.Sync(); err != nil {
-		slog.Error("failed to sync history file", "error", err)
-	}
-}
-
-func (h *ConversationHistory) LoadFromFile() error {
-	if h.execEnv == nil {
-		return nil
-	}
-
-	historyFile := filepath.Join(h.execEnv.HistoryDir, "history.json")
-	file, err := os.Open(historyFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to open history file: %w", err)
-	}
-	defer file.Close()
-
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-
-		var turn Turn
-		if err := json.Unmarshal(line, &turn); err != nil {
-			slog.Warn("failed to parse turn from history file", "error", err, "line", string(line))
-			continue
-		}
-
-		h.turns = append(h.turns, turn)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to read history file: %w", err)
-	}
-
-	return nil
 }
 
 func (h *ConversationHistory) Clear() {
@@ -202,3 +171,4 @@ func (h *ConversationHistory) ExcludeHidden() []Turn {
 	}
 	return result
 }
+

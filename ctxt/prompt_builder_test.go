@@ -213,9 +213,11 @@ func TestCreateSystemMsgWithMemoryFiles(t *testing.T) {
 	require.True(t, ok)
 	content := sysMsg.Content
 
-	assert.Contains(t, content, "<document name=\"memory1.txt\">")
+	memoryRelPath := "." + string(filepath.Separator) + filepath.Join("memory", "memory1.txt")
+	assert.Contains(t, content, "<document name=\""+memoryRelPath+"\">")
 	assert.Contains(t, content, "Memory file 1 content")
-	assert.Contains(t, content, "<document name=\"memory2.txt\">")
+	memoryRelPath2 := "." + string(filepath.Separator) + filepath.Join("memory", "memory2.txt")
+	assert.Contains(t, content, "<document name=\""+memoryRelPath2+"\">")
 	assert.Contains(t, content, "Memory file 2 content")
 }
 
@@ -811,7 +813,8 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	sysMsg := msgs[0].(ai.SystemMessage)
-	assert.Contains(t, sysMsg.Content, "<document name=\"memory.txt\">")
+	memoryRelPath := "." + string(filepath.Separator) + filepath.Join("memory", "memory.txt")
+	assert.Contains(t, sysMsg.Content, "<document name=\""+memoryRelPath+"\">")
 	assert.Contains(t, sysMsg.Content, "Memory content")
 }
 

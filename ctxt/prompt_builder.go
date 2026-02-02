@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"path/filepath"
+	"strings"
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
@@ -70,9 +72,9 @@ const DefaultUserTemplate = `
 
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 
-	// Load memory files from execution environment
+	ee := ac.ExecutionEnvironment()
 	memoryDocs := make([]*document.Document, 0)
-	if ee := ac.ExecutionEnvironment(); ee != nil {
+	if ee != nil {
 		docs, err := ee.MemoryFiles()
 		if err != nil {
 			slog.Error("failed to load memory files", "error", err)
@@ -81,11 +83,41 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		}
 	}
 
+	docsForTemplate := make([]struct {
+		Filename string
+		Text     string
+	}, 0, len(memoryDocs))
+	for _, doc := range memoryDocs {
+		relPath := doc.FilePath
+		if ee != nil && ee.MemoryDir != "" && ee.LLMDir != "" {
+			absLLM, errLLM := filepath.Abs(ee.LLMDir)
+			absMem, errMem := filepath.Abs(ee.MemoryDir)
+			if errLLM == nil && errMem == nil {
+				fullPath := filepath.Join(absMem, doc.FilePath)
+				if r, err := filepath.Rel(absLLM, fullPath); err == nil {
+					joined := filepath.Join(".", r)
+					prefix := "." + string(filepath.Separator)
+					if !strings.HasPrefix(joined, prefix) {
+						joined = prefix + joined
+					}
+					relPath = joined
+				}
+			}
+		}
+		docsForTemplate = append(docsForTemplate, struct {
+			Filename string
+			Text     string
+		}{
+			Filename: relPath,
+			Text:     doc.Text(),
+		})
+	}
+
 	systemVars := map[string]any{
 		"Role":               ac.description,
 		"Instructions":       ac.instructions,
 		"Tools":              tools,
-		"Documents":          memoryDocs,
+		"Documents":          docsForTemplate,
 		"OutputInstructions": ac.outputInstructions,
 		"SystemTags":         ac.Turn().systemTags,
 	}

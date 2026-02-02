@@ -137,6 +137,7 @@ func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*Agen
 	}
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel}))
+	run.SetEnableTrace(ctx.EnableTrace())
 	return run, nil
 }
 

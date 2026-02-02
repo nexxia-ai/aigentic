@@ -43,6 +43,7 @@ type AgentContext struct {
 	currentTurn         *Turn
 	execEnv             *ExecutionEnvironment
 	turnCounter         int
+	enableTrace         bool
 }
 
 func New(id, description, instructions string, basePath string) (*AgentContext, error) {
@@ -451,6 +452,16 @@ func (r *AgentContext) RunStartedAt() time.Time {
 	return time.Time{}
 }
 
+func (r *AgentContext) SetEnableTrace(enable bool) *AgentContext {
+	r.enableTrace = enable
+	r.save()
+	return r
+}
+
+func (r *AgentContext) EnableTrace() bool {
+	return r.enableTrace
+}
+
 func (r *AgentContext) saveRunMeta() {
 	if r.execEnv == nil || r.runMeta == nil {
 		return
@@ -589,6 +600,7 @@ type contextData struct {
 	Memories           []MemoryEntry `json:"memories"`
 	TurnCounter        int           `json:"turn_counter"`
 	MemoryDir          string        `json:"memory_dir"`
+	EnableTrace        bool          `json:"enable_trace"`
 }
 
 func (r *AgentContext) save() error {
@@ -611,6 +623,7 @@ func (r *AgentContext) save() error {
 		Memories:           memories,
 		TurnCounter:        r.turnCounter,
 		MemoryDir:          r.execEnv.MemoryDir,
+		EnableTrace:        r.enableTrace,
 	}
 
 	contextFile := filepath.Join(r.execEnv.PrivateDir, "context.json")

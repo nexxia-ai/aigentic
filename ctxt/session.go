@@ -107,6 +107,7 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		turnCounter:        data.TurnCounter,
 		documentReferences: make([]*document.Document, 0),
 		execEnv:            execEnv,
+		enableTrace:        data.EnableTrace,
 	}
 
 	loadRunMeta(ctx, execEnv.PrivateDir)

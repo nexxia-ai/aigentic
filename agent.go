@@ -109,6 +109,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetMaxLLMCalls(a.MaxLLMCalls)
 
 	ar.SetEnableTrace(a.EnableTrace)
+	ar.AgentContext().SetEnableTrace(a.EnableTrace)
 	ar.SetTools(a.AgentTools)
 	ar.SetRetrievers(a.Retrievers)
 	ar.SetStreaming(a.Stream)

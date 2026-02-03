@@ -66,12 +66,15 @@ func toChatUserMessage(msg ai.UserMessage) (openai.ChatCompletionMessageParamUni
 					URL: imageURL,
 				}))
 			case ai.ContentPartFile, ai.ContentPartInputFile:
-				if part.FileID == "" {
-					return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("file part missing file_id")
+				fileParam := openai.ChatCompletionContentPartFileFileParam{}
+				if part.FileID != "" {
+					fileParam.FileID = openai.Opt(part.FileID)
 				}
-				parts = append(parts, openai.FileContentPart(openai.ChatCompletionContentPartFileFileParam{
-					FileID: openai.Opt(part.FileID),
-				}))
+				if len(part.Data) > 0 {
+					fileData := base64.StdEncoding.EncodeToString(part.Data)
+					fileParam.FileData = openai.Opt(fileData)
+				}
+				parts = append(parts, openai.FileContentPart(fileParam))
 			}
 		}
 		return openai.ChatCompletionMessageParamUnion{
@@ -264,13 +267,16 @@ func toResponsesUserItem(msg ai.UserMessage) (responses.ResponseInputItemUnionPa
 			case ai.ContentPartVideo:
 				return responses.ResponseInputItemUnionParam{}, fmt.Errorf("video content parts not yet supported in Responses API input")
 			case ai.ContentPartFile, ai.ContentPartInputFile:
-				if part.FileID == "" {
-					return responses.ResponseInputItemUnionParam{}, fmt.Errorf("file part missing file_id")
+				fileParam := responses.ResponseInputFileParam{}
+				if part.FileID != "" {
+					fileParam.FileID = openai.Opt(part.FileID)
+				}
+				if len(part.Data) > 0 {
+					fileData := base64.StdEncoding.EncodeToString(part.Data)
+					fileParam.FileData = openai.Opt(fileData)
 				}
 				parts = append(parts, responses.ResponseInputContentUnionParam{
-					OfInputFile: &responses.ResponseInputFileParam{
-						FileID: openai.Opt(part.FileID),
-					},
+					OfInputFile: &fileParam,
 				})
 			}
 		}

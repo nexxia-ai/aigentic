@@ -48,38 +48,44 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestAddDocument(t *testing.T) {
+func TestUploadDocument(t *testing.T) {
 	tests := []struct {
-		name      string
-		docs      []*document.Document
+		name    string
+		uploads []struct {
+			path    string
+			content []byte
+		}
 		wantCount int
 	}{
 		{
-			name:      "add single document",
-			docs:      []*document.Document{document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil)},
+			name: "add single document",
+			uploads: []struct {
+				path    string
+				content []byte
+			}{{"uploads/test.pdf", []byte("content")}},
 			wantCount: 1,
 		},
 		{
 			name: "add multiple documents",
-			docs: []*document.Document{
-				document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil),
-				document.NewInMemoryDocument("doc2", "test2.txt", []byte("content2"), nil),
-				document.NewInMemoryDocument("doc3", "test3.png", []byte("content3"), nil),
+			uploads: []struct {
+				path    string
+				content []byte
+			}{
+				{"uploads/test1.pdf", []byte("content1")},
+				{"uploads/test2.txt", []byte("content2")},
+				{"uploads/test3.png", []byte("content3")},
 			},
 			wantCount: 3,
-		},
-		{
-			name:      "add nil document",
-			docs:      []*document.Document{nil},
-			wantCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createTestContext(t, "id", "desc", "inst")
-			for _, doc := range tt.docs {
-				ctx.AddDocument(doc)
+			for _, u := range tt.uploads {
+				if err := ctx.UploadDocument(u.path, u.content); err != nil {
+					t.Fatalf("UploadDocument: %v", err)
+				}
 			}
 
 			got := len(ctx.GetDocuments())
@@ -92,45 +98,42 @@ func TestAddDocument(t *testing.T) {
 
 func TestRemoveDocument(t *testing.T) {
 	tests := []struct {
-		name      string
-		setup     []*document.Document
-		remove    *document.Document
+		name  string
+		setup []struct {
+			path    string
+			content []byte
+		}
+		remove    string
 		wantErr   bool
 		wantCount int
 	}{
 		{
 			name: "remove existing document",
-			setup: []*document.Document{
-				document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil),
-			},
-			remove:    document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil),
+			setup: []struct {
+				path    string
+				content []byte
+			}{{"uploads/test.pdf", []byte("content")}},
+			remove:    "uploads/test.pdf",
 			wantErr:   false,
 			wantCount: 0,
 		},
 		{
 			name: "remove non-existing document",
-			setup: []*document.Document{
-				document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil),
-			},
-			remove:    document.NewInMemoryDocument("doc2", "other.pdf", []byte("content"), nil),
+			setup: []struct {
+				path    string
+				content []byte
+			}{{"uploads/test.pdf", []byte("content")}},
+			remove:    "uploads/other.pdf",
 			wantErr:   true,
 			wantCount: 1,
 		},
 		{
-			name:      "remove nil document",
-			setup:     []*document.Document{},
-			remove:    nil,
-			wantErr:   true,
-			wantCount: 0,
-		},
-		{
 			name: "remove from middle",
-			setup: []*document.Document{
-				document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil),
-				document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil),
-				document.NewInMemoryDocument("doc3", "test3.pdf", []byte("content3"), nil),
-			},
-			remove:    document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil),
+			setup: []struct {
+				path    string
+				content []byte
+			}{{"uploads/test1.pdf", []byte("c1")}, {"uploads/test2.pdf", []byte("c2")}, {"uploads/test3.pdf", []byte("c3")}},
+			remove:    "uploads/test2.pdf",
 			wantErr:   false,
 			wantCount: 2,
 		},
@@ -139,8 +142,10 @@ func TestRemoveDocument(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createTestContext(t, "id", "desc", "inst")
-			for _, doc := range tt.setup {
-				ctx.AddDocument(doc)
+			for _, u := range tt.setup {
+				if err := ctx.UploadDocument(u.path, u.content); err != nil {
+					t.Fatalf("UploadDocument: %v", err)
+				}
 			}
 
 			err := ctx.RemoveDocument(tt.remove)
@@ -156,17 +161,18 @@ func TestRemoveDocument(t *testing.T) {
 	}
 }
 
-func TestRemoveDocumentByID(t *testing.T) {
-	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
-	doc2 := document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil)
+func TestRemoveDocumentByPath(t *testing.T) {
+	ctx := createTestContext(t, "id", "desc", "inst")
+	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1")); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
+	if err := ctx.UploadDocument("uploads/test2.pdf", []byte("content2")); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
 
-	ctx := createTestContext(t, "id", "desc", "inst").
-		AddDocument(doc1).
-		AddDocument(doc2)
-
-	err := ctx.RemoveDocumentByID("test1.pdf")
+	err := ctx.RemoveDocument("uploads/test1.pdf")
 	if err != nil {
-		t.Errorf("RemoveDocumentByID() error = %v", err)
+		t.Errorf("RemoveDocument() error = %v", err)
 	}
 
 	docs := ctx.GetDocuments()
@@ -177,20 +183,21 @@ func TestRemoveDocumentByID(t *testing.T) {
 		t.Errorf("expected remaining document to be uploads/test2.pdf, got %s", docs[0].ID())
 	}
 
-	err = ctx.RemoveDocumentByID("nonexistent")
+	err = ctx.RemoveDocument("uploads/nonexistent")
 	if err == nil {
 		t.Error("expected error when removing non-existent document")
 	}
 }
 
 func TestChainableMethods(t *testing.T) {
-	doc1 := document.NewInMemoryDocument("doc1", "test1.pdf", []byte("content1"), nil)
-	doc2 := document.NewInMemoryDocument("doc2", "test2.pdf", []byte("content2"), nil)
-
-	ctx := createTestContext(t, "id", "desc", "inst").
-		SetOutputInstructions("Use JSON").
-		AddDocument(doc1).
-		AddDocument(doc2)
+	ctx := createTestContext(t, "id", "desc", "inst")
+	ctx.SetOutputInstructions("Use JSON")
+	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1")); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
+	if err := ctx.UploadDocument("uploads/test2.pdf", []byte("content2")); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
 
 	if ctx.outputInstructions != "Use JSON" {
 		t.Errorf("expected output instructions 'Use JSON', got '%s'", ctx.outputInstructions)
@@ -213,8 +220,8 @@ func TestClearMethods(t *testing.T) {
 		{
 			name: "clear documents",
 			setup: func(ctx *AgentContext) {
-				ctx.AddDocument(document.NewInMemoryDocument("doc1", "test1.pdf", []byte("c"), nil))
-				ctx.AddDocument(document.NewInMemoryDocument("doc2", "test2.pdf", []byte("c"), nil))
+				_ = ctx.UploadDocument("uploads/test1.pdf", []byte("c"))
+				_ = ctx.UploadDocument("uploads/test2.pdf", []byte("c"))
 			},
 			clear:     func(ctx *AgentContext) { ctx.ClearDocuments() },
 			check:     func(ctx *AgentContext) int { return len(ctx.GetDocuments()) },
@@ -246,10 +253,10 @@ func TestClearMethods(t *testing.T) {
 }
 
 func TestClearAll(t *testing.T) {
-	doc := document.NewInMemoryDocument("doc1", "test.pdf", []byte("content"), nil)
-
-	ctx := createTestContext(t, "id", "desc", "inst").
-		AddDocument(doc)
+	ctx := createTestContext(t, "id", "desc", "inst")
+	if err := ctx.UploadDocument("uploads/test.pdf", []byte("content")); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
 
 	ctx.GetHistory().appendTurn(Turn{})
 

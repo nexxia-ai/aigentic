@@ -67,11 +67,11 @@ func TestPythonSandbox_SimpleExecution(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "Hello, World!") {
 		t.Errorf("expected output to contain 'Hello, World!', got: %s", output)
 	}
@@ -96,11 +96,11 @@ print(f"Result: {result}")
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "Result: 30") {
 		t.Errorf("expected output to contain 'Result: 30', got: %s", output)
 	}
@@ -119,11 +119,11 @@ func TestPythonSandbox_WithCustomTimeout(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "Starting") {
 		t.Errorf("expected output to contain 'Starting', got: %s", output)
 	}
@@ -141,7 +141,7 @@ func TestPythonSandbox_SyntaxError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "Python execution failed") {
 		t.Errorf("expected error message, got: %s", output)
 	}
@@ -159,7 +159,7 @@ func TestPythonSandbox_RuntimeError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "ZeroDivisionError") && !strings.Contains(output, "Python execution failed") {
 		t.Errorf("expected division error message, got: %s", output)
 	}
@@ -203,11 +203,11 @@ func TestPythonSandbox_NoOutput(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "successfully") {
 		t.Errorf("expected success message for no output, got: %s", output)
 	}
@@ -259,11 +259,11 @@ func TestPythonSandbox_DefaultTimeout(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success with default timeout, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success with default timeout, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "Using default timeout") {
 		t.Errorf("expected output, got: %s", output)
 	}
@@ -282,11 +282,11 @@ func TestPythonSandbox_StderrOutput(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "stdout message") {
 		t.Errorf("expected stdout in output, got: %s", output)
 	}
@@ -319,11 +319,11 @@ print(f"Fibonacci(10) = {result}")
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "55") {
 		t.Errorf("expected Fibonacci result '55', got: %s", output)
 	}
@@ -349,11 +349,11 @@ func TestPythonSandbox_ToolIntegration(t *testing.T) {
 		t.Fatalf("tool.Execute failed: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, "Integration test") {
 		t.Errorf("expected output, got: %s", output)
 	}
@@ -397,11 +397,11 @@ print(f"Python version: {sys.version_info.major}.{sys.version_info.minor}")
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 
-	output := result.Content[0].Content.(string)
+	output := result.Result.Content[0].Content.(string)
 	if !strings.Contains(output, `"test": "value"`) && !strings.Contains(output, `"test":"value"`) {
 		t.Errorf("expected JSON output, got: %s", output)
 	}
@@ -425,7 +425,7 @@ func TestPythonSandbox_ExecutionWithTimeout(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Error {
-		t.Errorf("expected success, got error: %s", result.Content[0].Content)
+	if result.Result.Error {
+		t.Errorf("expected success, got error: %s", result.Result.Content[0].Content)
 	}
 }

@@ -56,12 +56,6 @@ type Agent struct {
 	// You must manage the document sizes so they don't exceed the model's context window.
 	Documents []*document.Document
 
-	// DocumentReferences contains a list of document references to be embedded in the agent's context.
-	// These are used to reference documents that are not embedded in the agent's context.
-	// For example, if you have a document that is too large to embed in the agent's context, you can reference it here.
-	// The document will be fetched from the document store when the agent needs it.
-	DocumentReferences []*document.Document
-
 	EnableTrace bool
 
 	// Interceptors chain allows inspection and modification of model calls
@@ -120,10 +114,21 @@ func (a Agent) New() (*run.AgentRun, error) {
 	}
 
 	for _, doc := range a.Documents {
-		ar.AgentContext().AddDocument(doc)
-	}
-	for _, docRef := range a.DocumentReferences {
-		ar.AgentContext().AddDocumentReference(docRef)
+		content, err := doc.Bytes()
+		if err != nil {
+			slog.Warn("failed to read document for upload", "filename", doc.Filename, "error", err)
+			continue
+		}
+		path := "uploads/" + doc.Filename
+		if path == "uploads/" {
+			path = "uploads/" + filepath.Base(doc.FilePath)
+		}
+		if path == "uploads/" {
+			path = "uploads/" + doc.ID()
+		}
+		if err := ar.AgentContext().UploadDocument(path, content); err != nil {
+			slog.Warn("failed to upload document", "path", path, "error", err)
+		}
 	}
 	ar.IncludeHistory(a.IncludeHistory)
 	return ar, nil

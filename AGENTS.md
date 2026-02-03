@@ -3,7 +3,8 @@
 ## Package API Notes
 - Create models with `ai.New(<model identifier>, apiKey)` after importing provider modules (e.g., `_ "github.com/nexxia-ai/aigentic-openai"`); identifiers are listed via `ai.Models()`.
 - Agent tools use the `run.AgentTool` type and `run.NewTool` helper; built-in tools in `tools/` return `run.AgentTool`.
-- Documents come from the `document` package and are passed as `[]*document.Document` via `Agent.Documents` or `Agent.DocumentReferences`. `Agent.Documents` are stored in the run filesystem under `llm/uploads`.
+- Tools return `*run.ToolCallResult` which includes both the `ai.ToolResult` and optional `FileRefs` (files to be included in the next turn prompt).
+- Documents come from the `document` package and are passed as `[]*document.Document` via `Agent.Documents`. They are stored in the run filesystem under `llm/` (e.g. `llm/uploads`).
 
 ## Project Structure & Module Organization
 - Root Go module: `aigentic` (see `go.mod`).
@@ -22,26 +23,40 @@ The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runti
 
 - **AgentRun** (`run.go`) - Main execution runtime type that orchestrates agent execution, handles LLM calls, tool execution, and event streaming
 - **Events** (`event.go`) - Event types for execution lifecycle: `ContentEvent`, `ToolEvent`, `ThinkingEvent`, `ErrorEvent`, `LLMCallEvent`, `EvalEvent`, etc.
-- **AgentTool** (`agent_tool.go`) - Tool definition type and `NewTool()` helper for creating type-safe tools
-- **AgentContext** (`context.go`) - Context management for agent state, messages, and documents
-- **ContextManager** (`context_manager.go`) - Interface for custom context management implementations
-- **ContextFunction** (`context_function.go`) - Function type for dynamic context injection
-- **ConversationHistory** (`conversation_history.go`) - Conversation tracking across multiple agent runs
-- **ConversationTurn** (`conversation_turn.go`) - Individual conversation turn representation
-- **Interceptor** (`interceptor.go`) - Interface for intercepting and modifying LLM calls
-- **Tracer** (`trace_run.go`) - Tracing support for debugging agent execution
+- **AgentTool** (`agent_tool.go`) - Tool definition type and `NewTool()` helper for creating type-safe tools. Tools execute with signature `func(*AgentRun, map[string]interface{}) (*ToolCallResult, error)`.
+- **ToolCallResult** (`agent_tool.go`) - Return type for tool execution containing both `*ai.ToolResult` (the LLM-visible result) and `[]ctxt.FileRefEntry` (files to register for the next turn). This allows tools to generate files and automatically include them in subsequent prompts.
+- **Interceptor** (`interceptor.go`) - Interface for intercepting and modifying LLM calls and tool executions. The `AfterToolCall` method receives and can modify `*ToolCallResult`.
+- **Tracer** (`trace_run.go`) - Tracing support for debugging agent execution, including file reference tracking
 - **Retriever** (`retriever.go`) - Interface for document retrieval systems
 
 The root `aigentic` package (`agent.go`) provides the declarative `Agent` type that users configure, which internally creates and manages `run.AgentRun` instances for execution.
+
+#### Tool File References
+
+Tools can register files to be included in the next turn's prompt by returning `FileRefs` in `ToolCallResult`:
+
+```go
+return &run.ToolCallResult{
+    Result: &ai.ToolResult{
+        Content: []ai.ToolContent{{Type: "text", Content: "Report generated"}},
+    },
+    FileRefs: []ctxt.FileRefEntry{
+        {Path: "output/report.md", IncludeInPrompt: true},
+    },
+}, nil
+```
+
+When `IncludeInPrompt` is `true`, the file content is automatically injected into the next turn's context, allowing the agent to reference it without explicit file reading.
 
 ### The `ctxt` Package
 
 The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context management and execution environment for agents:
 
-- **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and execution environment
+- **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and execution environment. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
 - **ExecutionEnvironment** (`environment.go`) - Provides structured directory layout for agent execution with `uploads/` and `output/` directories
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
-- **ConversationTurn** (`conversation_turn.go`) - Represents individual conversation turns
+- **Turn** (`turn.go`) - Represents individual conversation turns. Contains `FileRefs []FileRefEntry` to track files registered by tools during the turn.
+- **FileRefEntry** (`turn.go`) - Describes a file reference with `Path` (relative to LLM dir) and `IncludeInPrompt` flag. When `true`, file content is automatically injected into the next turn's prompt.
 - **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context and documents
 
 ### The `document` Package
@@ -54,7 +69,7 @@ The `document` package (`github.com/nexxia-ai/aigentic/document`) provides docum
 - **Store** (`store.go`) - Interface for document storage with `Save()`, `Load()`, `List()`, and `Delete()` operations.
 - **LocalStore** (`local_store.go`) - File system-based implementation of Store that persists documents and metadata to disk. Supports lazy loading of document content.
 
-Documents can be attached to agents via the `Agent.Documents` and `Agent.DocumentReferences` fields. `Agent.Documents` are stored in the run filesystem, and prompts list documents from the `llm` directory. Document references are still resolved via their backing store.
+Documents can be attached to agents via the `Agent.Documents` field. They are stored in the run filesystem under `llm/`, and prompts list documents from that directory.
 
 ## Build, Test, and Development Commands
 - Build library: `go build ./...` — compile all packages.
@@ -69,7 +84,7 @@ Documents can be attached to agents via the `Agent.Documents` and `Agent.Documen
 - Naming: exported identifiers use PascalCase; unexported use camelCase.
 - Files: tests end with `_test.go`; examples may use `example_*.go`.
 - Imports: standard → external → internal; keep groups separated.
-- Prefer small, focused files; keep package boundaries clear. The `run` package depends on `ai` and `document` packages. Lower-level packages (`ai`, `document`, `tools`, `utils`) should not depend on the root `aigentic` package.
+- Prefer small, focused files; keep package boundaries clear. The `run` package depends on `ai`, `ctxt`, and `document` packages. Lower-level packages (`ai`, `document`, `tools`, `utils`) should not depend on the root `aigentic` package or the `run` package.
 
 ## Testing Guidelines
 - Framework: standard `testing` package; use `assert` only where already present.

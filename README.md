@@ -10,13 +10,15 @@ aigentic provides a declarative solution where you declare agents and their capa
 
 aigentic uses a declarative architecture where you define agent configurations as data structures rather than implementing orchestration logic. You specify an agent's role, capabilities, tools, and instructions, then the framework handles the execution pipeline.
 
-The core architecture is event-driven, with agents emitting events during execution that you can consume for real-time monitoring and control. When you declare an agent, the framework creates an execution context that manages LLM interactions, tool calls, and multi-agent coordination.
+The core architecture is event-driven, with agents emitting events during execution that you can consume for real-time monitoring and control. When you declare an agent, the framework creates an execution context that manages LLM interactions, tool calls, file references, and multi-agent coordination.
 
 The event system provides hooks into the execution lifecycle: content generation, thinking processes, tool executions, and error handling. This allows you to build reactive applications that can respond to execution state changes, implement approval workflows, or provide real-time UI updates.
 
+Tools can register files to be automatically included in subsequent prompts using the `ToolCallResult` type. This enables seamless workflows where tools generate documents, reports, or processed files that the agent can immediately reference without explicit loading.
+
 For multi-agent systems, agents can be composed as tools within other agents, enabling hierarchical delegation patterns. The framework automatically handles the routing and coordination between agents, while maintaining the event stream for monitoring and debugging.
 
-The declarative approach means you focus on agent configuration and event handling rather than implementing conversation management, tool orchestration, or LLM integration details.
+The declarative approach means you focus on agent configuration and event handling rather than implementing conversation management, tool orchestration, file handling, or LLM integration details.
 
 ---
 
@@ -137,7 +139,7 @@ go run github.com/nexxia-ai/aigentic-examples/streaming@latest
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/tools)
 
-Use `run.NewTool()` for type-safe tools with automatic JSON schema generation:
+Use `run.NewTool()` for type-safe tools with automatic JSON schema generation. Tools return strings that are automatically converted to the appropriate format:
 
 ```go
 package main
@@ -192,12 +194,69 @@ func main() {
 go run github.com/nexxia-ai/aigentic-examples/tools@latest
 ```
 
+#### Advanced Tools with File References
+
+Tools can register files to be automatically included in the next turn's prompt using `ToolCallResult`:
+
+```go
+import (
+	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/ctxt"
+	"github.com/nexxia-ai/aigentic/run"
+)
+
+func createReportGeneratorTool() run.AgentTool {
+	tool := run.AgentTool{
+		Name:        "generate_report",
+		Description: "Generates a markdown report and makes it available for review",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"title": map[string]interface{}{
+					"type":        "string",
+					"description": "Report title",
+				},
+			},
+			"required": []string{"title"},
+		},
+		Execute: func(run *run.AgentRun, args map[string]interface{}) (*run.ToolCallResult, error) {
+			title := args["title"].(string)
+			
+			// Generate report content
+			reportContent := fmt.Sprintf("# %s\n\nReport content here...", title)
+			
+			// Save to file
+			ctx := run.AgentContext()
+			err := ctx.UploadDocument("output/report.md", []byte(reportContent), true)
+			if err != nil {
+				return nil, err
+			}
+			
+			// Return result with file reference
+			return &run.ToolCallResult{
+				Result: &ai.ToolResult{
+					Content: []ai.ToolContent{{
+						Type:    "text",
+						Content: "Report generated successfully at output/report.md",
+					}},
+				},
+				FileRefs: []ctxt.FileRefEntry{
+					{Path: "output/report.md", IncludeInPrompt: true},
+				},
+			}, nil
+		},
+	}
+	return tool
+}
+```
+
+When `IncludeInPrompt` is `true`, the file content is automatically injected into the next turn's context, allowing the agent to reference it without explicit file reading.
+
 ### Document Usage
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/documents)
 
-Native document support. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents. Documents passed via `Agent.Documents` are stored in the run filesystem under `llm/uploads`.
-
+Native document support with enhanced MIME type detection for text, code, and binary files. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents. Documents passed via `Agent.Documents` are stored in the run filesystem under `llm/uploads`.
 
 ```go
 package main
@@ -235,16 +294,21 @@ func main() {
 }
 ```
 
-If you have several documents, it is best to send the reference only by setting the
-DocumentReferences field instead. This way the LLM will decide what to retrieve and when.
+If you have several documents, pass them via the `Documents` field; they are uploaded to the run filesystem and listed in the prompt for the LLM to reference.
 
 ```go
 agent := aigentic.Agent{
     ...
-    DocumentReferences: []*document.Document{doc},
+    Documents: []*document.Document{doc},
     ...
 }
 ```
+
+The framework automatically detects MIME types for common formats including:
+- **Text files**: `.txt`, `.md`, `.csv`, `.log`
+- **Code files**: `.go`, `.py`, `.js`, `.ts`, `.java`, `.c`, `.cpp`, etc.
+- **Data files**: `.json`, `.yaml`, `.xml`
+- **Binary files**: `.pdf`, images, audio, video
 
 **Run this example:**
 ```bash
@@ -336,7 +400,7 @@ To clear on-disk history between runs, set `BaseDir` on the agent and delete the
 
 ### Event-Driven Architecture
 
-The framework is event-driven, allowing you to react to execution state changes in real-time:
+The framework is event-driven, allowing you to react to execution state changes in real-time. All events are emitted during agent execution, including tool calls and file registrations:
 
 ```go
 package main
@@ -430,12 +494,16 @@ The execution environment creates the following directory structure under a base
   └── agent-{runID}/
       ├── llm/
       │   ├── uploads/  # Documents uploaded for the run
-      │   └── output/   # Agent output files
+      │   └── output/   # Agent output files and tool-generated content
       └── _private/
           ├── memory/   # Memory files automatically loaded into prompts
-          ├── history/
-          └── turns/
+          ├── history/  # Conversation history with file references
+          └── turns/    # Per-turn execution traces
 ```
+
+**File References:**
+
+Tools can register files in the `llm/` directory to be included in subsequent turns. When a tool returns `FileRefs` with `IncludeInPrompt: true`, the framework automatically injects the file content into the next prompt, enabling seamless file-based workflows.
 
 ### MCP (Model Context Protocol) Integration
 
@@ -468,7 +536,7 @@ agent := aigentic.Agent{
 }
 ```
 
-Create custom tools using `run.NewTool()` for type-safe tool definitions with automatic schema generation.
+Create custom tools using `run.NewTool()` for type-safe tool definitions with automatic schema generation. For advanced use cases, tools can return `*run.ToolCallResult` directly to include file references.
 
 ---
 

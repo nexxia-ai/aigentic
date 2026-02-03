@@ -54,14 +54,17 @@ func newMemoryTool() run.AgentTool {
 			},
 			"required": []string{"memory_name", "memory_content"},
 		},
-		Execute: func(agentRun *run.AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(agentRun *run.AgentRun, args map[string]interface{}) (*run.ToolCallResult, error) {
 			name := args["memory_name"].(string)
 			content := args["memory_content"].(string)
 
 			if err := update(name, content); err != nil {
-				return &ai.ToolResult{
-					Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error: %v", err)}},
-					Error:   true,
+				return &run.ToolCallResult{
+					Result: &ai.ToolResult{
+						Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("Error: %v", err)}},
+						Error:   true,
+					},
+					FileRefs: nil,
 				}, nil
 			}
 
@@ -70,9 +73,12 @@ func newMemoryTool() run.AgentTool {
 				msg = fmt.Sprintf("Memory '%s' deleted", name)
 			}
 
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{Type: "text", Content: msg}},
-				Error:   false,
+			return &run.ToolCallResult{
+				Result: &ai.ToolResult{
+					Content: []ai.ToolContent{{Type: "text", Content: msg}},
+					Error:   false,
+				},
+				FileRefs: nil,
 			}, nil
 		},
 	}

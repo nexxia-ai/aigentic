@@ -8,16 +8,22 @@ import (
 	"strings"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/ctxt"
 )
+
+type ToolCallResult struct {
+	Result   *ai.ToolResult
+	FileRefs []ctxt.FileRefEntry
+}
 
 type AgentTool struct {
 	Name        string
 	Description string
 	InputSchema map[string]interface{}
-	Execute     func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error)
+	Execute     func(run *AgentRun, args map[string]interface{}) (*ToolCallResult, error)
 }
 
-func (t *AgentTool) call(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
+func (t *AgentTool) call(run *AgentRun, args map[string]interface{}) (*ToolCallResult, error) {
 	if t.Execute != nil {
 		return t.Execute(run, args)
 	}
@@ -30,7 +36,14 @@ func (t *AgentTool) toTool(run *AgentRun) ai.Tool {
 		Description: t.Description,
 		InputSchema: t.InputSchema,
 		Execute: func(args map[string]interface{}) (*ai.ToolResult, error) {
-			return t.Execute(run, args)
+			result, err := t.Execute(run, args)
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				return nil, nil
+			}
+			return result.Result, nil
 		},
 	}
 }
@@ -40,8 +53,12 @@ func WrapTool(tool ai.Tool) AgentTool {
 		Name:        tool.Name,
 		Description: tool.Description,
 		InputSchema: tool.InputSchema,
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
-			return tool.Execute(args)
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ToolCallResult, error) {
+			result, err := tool.Execute(args)
+			if err != nil {
+				return nil, err
+			}
+			return &ToolCallResult{Result: result, FileRefs: nil}, nil
 		},
 	}
 }
@@ -76,7 +93,7 @@ func NewTool[T any](name, description string, fn func(*AgentRun, T) (string, err
 		Name:        name,
 		Description: description,
 		InputSchema: schema,
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ToolCallResult, error) {
 			if run == nil {
 				return nil, errors.New("AgentRun is nil")
 			}
@@ -96,8 +113,11 @@ func NewTool[T any](name, description string, fn func(*AgentRun, T) (string, err
 				return nil, err
 			}
 
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{Type: "text", Content: result}},
+			return &ToolCallResult{
+				Result: &ai.ToolResult{
+					Content: []ai.ToolContent{{Type: "text", Content: result}},
+				},
+				FileRefs: nil,
 			}, nil
 		},
 	}

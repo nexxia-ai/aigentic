@@ -25,7 +25,7 @@ func (n *noOpTrace) BeforeToolCall(run *AgentRun, toolName string, toolCallID st
 	return args, nil
 }
 
-func (n *noOpTrace) AfterToolCall(run *AgentRun, toolName string, toolCallID string, args map[string]any, result *ai.ToolResult) (*ai.ToolResult, error) {
+func (n *noOpTrace) AfterToolCall(run *AgentRun, toolName string, toolCallID string, args map[string]any, result *ToolCallResult) (*ToolCallResult, error) {
 	return result, nil
 }
 

@@ -2,6 +2,7 @@ package ctxt
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -68,6 +69,11 @@ const DefaultUserTemplate = `
 {{end}}
 {{end}}
 
+{{if .FileRefs}}
+File references for this turn:
+{{range .FileRefs}}  {{.}}
+{{end}}
+{{end}}
 `
 
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
@@ -113,13 +119,17 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		})
 	}
 
+	systemTags := []tag{}
+	if t := ac.Turn(); t != nil {
+		systemTags = t.systemTags
+	}
 	systemVars := map[string]any{
 		"Role":               ac.description,
 		"Instructions":       ac.instructions,
 		"Tools":              tools,
 		"Documents":          docsForTemplate,
 		"OutputInstructions": ac.outputInstructions,
-		"SystemTags":         ac.Turn().systemTags,
+		"SystemTags":         systemTags,
 	}
 
 	var systemBuf bytes.Buffer
@@ -134,26 +144,30 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 
 func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 	docs := ac.GetDocuments()
-	docRefs := ac.GetDocumentReferences()
+	turn := ac.Turn()
+	var fileRefPaths []string
+	if turn != nil {
+		for _, ref := range turn.FileRefs {
+			fileRefPaths = append(fileRefPaths, ref.Path)
+		}
+	}
 
-	if len(docs) == 0 && len(docRefs) == 0 {
+	if len(docs) == 0 && len(fileRefPaths) == 0 {
 		return nil, nil
 	}
+
+	seenPath := make(map[string]bool)
+	norm := func(p string) string { return filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/")) }
 
 	var allDocs []*document.Document
 	for _, doc := range docs {
 		if doc != nil && doc.Filename != "" {
-			allDocs = append(allDocs, doc)
+			id := norm(doc.ID())
+			if id != "" && !seenPath[id] {
+				seenPath[id] = true
+				allDocs = append(allDocs, doc)
+			}
 		}
-	}
-	for _, doc := range docRefs {
-		if doc != nil && doc.Filename != "" {
-			allDocs = append(allDocs, doc)
-		}
-	}
-
-	if len(allDocs) == 0 {
-		return nil, nil
 	}
 
 	var promptBuf bytes.Buffer
@@ -163,7 +177,19 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 		if mimeType == "" {
 			mimeType = "unknown"
 		}
-		promptBuf.WriteString(fmt.Sprintf("- FQN: %s, Filename: %s, Type: %s\n", doc.ID(), doc.Filename, mimeType))
+		promptBuf.WriteString(fmt.Sprintf("  %s, Filename: %s, Type: %s\n", doc.ID(), doc.Filename, mimeType))
+	}
+	for _, path := range fileRefPaths {
+		p := norm(path)
+		if p == "" || seenPath[p] {
+			continue
+		}
+		seenPath[p] = true
+		promptBuf.WriteString(fmt.Sprintf("  %s\n", path))
+	}
+
+	if promptBuf.Len() == 0 {
+		return nil, nil
 	}
 
 	userMsg := ai.UserMessage{Role: ai.UserRole, Content: promptBuf.String()}
@@ -171,19 +197,31 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 }
 
 func createUserMsg(ac *AgentContext, message string) (ai.Message, error) {
-
+	userTags := []tag{}
+	var fileRefPaths []string
+	norm := func(p string) string { return filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/")) }
+	seenPath := make(map[string]bool)
+	if t := ac.Turn(); t != nil {
+		userTags = t.userTags
+		for _, ref := range t.FileRefs {
+			p := norm(ref.Path)
+			if p != "" && !seenPath[p] {
+				seenPath[p] = true
+				fileRefPaths = append(fileRefPaths, ref.Path)
+			}
+		}
+	}
 	userVars := map[string]any{
 		"Message":    message,
 		"HasMessage": message != "",
-		"UserTags":   ac.Turn().userTags,
+		"UserTags":   userTags,
+		"FileRefs":   fileRefPaths,
 	}
 	var userBuf bytes.Buffer
 	if err := ac.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user template: %w", err)
 	}
-
-	userMsg := ai.UserMessage{Role: ai.UserRole, Content: userBuf.String()}
-	return userMsg, nil
+	return ai.UserMessage{Role: ai.UserRole, Content: userBuf.String()}, nil
 }
 
 func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.Message, error) {
@@ -220,10 +258,31 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	}
 
 	// Add documents second (including memory files)
-	msgs = append(msgs, r.insertDocuments(r.Turn().GetDocuments(), r.documentReferences)...)
+	msgs = append(msgs, r.insertDocuments(r.Turn().GetDocuments())...)
+
+	// Add ephemeral document content for FileRefs with IncludeInPrompt
+	for _, ref := range r.currentTurn.FileRefs {
+		if !ref.IncludeInPrompt {
+			continue
+		}
+		doc, err := r.openDocumentByPath(ref.Path)
+		if err != nil {
+			slog.Warn("failed to open file for prompt", "path", ref.Path, "error", err)
+			continue
+		}
+		msgs = append(msgs, r.insertDocuments([]*document.Document{doc})...)
+	}
 
 	// tool messages are last
 	msgs = append(msgs, r.currentTurn.messages...) // tool messages
 
 	return msgs, nil
+}
+
+func (r *AgentContext) openDocumentByPath(path string) (*document.Document, error) {
+	store, err := r.llmStore()
+	if err != nil {
+		return nil, err
+	}
+	return document.Open(context.Background(), store.ID(), path)
 }

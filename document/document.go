@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime"
 	"path/filepath"
 	"strings"
 	"time"
@@ -96,7 +95,7 @@ func NewInMemoryDocument(id, filename string, data []byte, srcDoc *Document) *Do
 }
 
 func NewDocument(store Store, id, filename string, data []byte, srcDoc *Document) *Document {
-	mimeType := mime.TypeByExtension(filepath.Ext(filename))
+	mimeType := detectMimeType(filename)
 
 	docID := id
 	if docID == "" {

@@ -8,8 +8,65 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
+
+// detectMimeType detects the MIME type for a filename, with special handling for common text-based extensions
+func detectMimeType(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+
+	// Handle common text-based extensions explicitly
+	switch ext {
+	case ".md", ".markdown":
+		return "text/markdown"
+	case ".txt":
+		return "text/plain"
+	case ".json":
+		return "application/json"
+	case ".yaml", ".yml":
+		return "application/yaml"
+	case ".xml":
+		return "application/xml"
+	case ".csv":
+		return "text/csv"
+	case ".html", ".htm":
+		return "text/html"
+	case ".css":
+		return "text/css"
+	case ".js", ".mjs":
+		return "application/javascript"
+	case ".ts":
+		return "application/typescript"
+	case ".py":
+		return "text/x-python"
+	case ".go":
+		return "text/x-go"
+	case ".java":
+		return "text/x-java"
+	case ".c":
+		return "text/x-c"
+	case ".cpp", ".cc", ".cxx":
+		return "text/x-c++"
+	case ".h", ".hpp":
+		return "text/x-c-header"
+	case ".sh", ".bash":
+		return "application/x-sh"
+	case ".sql":
+		return "application/sql"
+	case ".log":
+		return "text/plain"
+	}
+
+	// Try standard MIME type detection
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType != "" {
+		return mimeType
+	}
+
+	// Default fallback
+	return "application/octet-stream"
+}
 
 // Upload uploads a file from the filesystem to the specified store and returns a Document.
 func Upload(ctx context.Context, storeName, filePath string) (*Document, error) {
@@ -45,10 +102,7 @@ func Create(ctx context.Context, storeName, filename string, reader io.Reader) (
 		return nil, fmt.Errorf("failed to create document in store: %w", err)
 	}
 
-	mimeType := mime.TypeByExtension(filepath.Ext(filename))
-	if mimeType == "" {
-		mimeType = "application/octet-stream"
-	}
+	mimeType := detectMimeType(filename)
 
 	doc := &Document{
 		id:         docID,
@@ -107,10 +161,7 @@ func Open(ctx context.Context, storeName, id string) (*Document, error) {
 		return nil, fmt.Errorf("failed to read document content: %w", err)
 	}
 
-	mimeType := mime.TypeByExtension(filepath.Ext(id))
-	if mimeType == "" {
-		mimeType = "application/octet-stream"
-	}
+	mimeType := detectMimeType(id)
 
 	doc = &Document{
 		id:         id,

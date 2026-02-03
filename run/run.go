@@ -222,7 +222,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			},
 			"required": []string{"input"},
 		},
-		Execute: func(run *AgentRun, args map[string]interface{}) (*ai.ToolResult, error) {
+		Execute: func(run *AgentRun, args map[string]interface{}) (*ToolCallResult, error) {
 			input := ""
 			if v, ok := args["input"].(string); ok {
 				input = v
@@ -248,20 +248,26 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			}
 
 			if err != nil {
-				return &ai.ToolResult{
-					Content: []ai.ToolContent{{
-						Type:    "text",
-						Content: fmt.Sprintf("Error: %v", err),
-					}},
-					Error: true,
+				return &ToolCallResult{
+					Result: &ai.ToolResult{
+						Content: []ai.ToolContent{{
+							Type:    "text",
+							Content: fmt.Sprintf("Error: %v", err),
+						}},
+						Error: true,
+					},
+					FileRefs: nil,
 				}, nil
 			}
-			return &ai.ToolResult{
-				Content: []ai.ToolContent{{
-					Type:    "text",
-					Content: content,
-				}},
-				Error: false,
+			return &ToolCallResult{
+				Result: &ai.ToolResult{
+					Content: []ai.ToolContent{{
+						Type:    "text",
+						Content: content,
+					}},
+					Error: false,
+				},
+				FileRefs: nil,
 			}, nil
 		},
 	}

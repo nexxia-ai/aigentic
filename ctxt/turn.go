@@ -17,6 +17,12 @@ type documentEntry struct {
 	ToolID   string             `json:"tool_id"`
 }
 
+type FileRefEntry struct {
+	Path            string `json:"path"`
+	FileID          string `json:"file_id,omitempty"`
+	IncludeInPrompt bool   `json:"include_in_prompt"`
+}
+
 type tag struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
@@ -30,6 +36,7 @@ type Turn struct {
 	messages     []ai.Message    `json:"-"`
 	Reply        ai.Message      `json:"-"`
 	Documents    []documentEntry `json:"-"`
+	FileRefs     []FileRefEntry  `json:"file_refs"`
 	TraceFile    string          `json:"trace_file"`
 	Timestamp    time.Time       `json:"timestamp"`
 	AgentName    string          `json:"agent_name"`
@@ -46,6 +53,7 @@ func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) 
 		UserMessage:  userMessage,
 		messages:     make([]ai.Message, 0),
 		Documents:    make([]documentEntry, 0),
+		FileRefs:     make([]FileRefEntry, 0),
 		TraceFile:    "",
 		Timestamp:    time.Now(),
 		AgentName:    agentName,
@@ -337,6 +345,12 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		t.userTags = aux.UserTags
 	} else {
 		t.userTags = make([]tag, 0)
+	}
+
+	if aux.FileRefs != nil {
+		t.FileRefs = aux.FileRefs
+	} else {
+		t.FileRefs = make([]FileRefEntry, 0)
 	}
 
 	return nil

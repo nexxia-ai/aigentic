@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/nexxia-ai/aigentic/document"
 )
 
 type Session struct {
@@ -105,7 +103,6 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		outputInstructions: data.OutputInstructions,
 		memories:           data.Memories,
 		turnCounter:        data.TurnCounter,
-		documentReferences: make([]*document.Document, 0),
 		execEnv:            execEnv,
 		enableTrace:        data.EnableTrace,
 	}

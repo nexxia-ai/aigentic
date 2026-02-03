@@ -121,13 +121,13 @@ func (tr *TraceRun) BeforeToolCall(run *AgentRun, toolName string, toolCallID st
 	return args, nil
 }
 
-func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID string, args map[string]any, result *ai.ToolResult) (*ai.ToolResult, error) {
+func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID string, args map[string]any, result *ToolCallResult) (*ToolCallResult, error) {
 
 	response := ""
-	if result != nil {
-		if len(result.Content) > 0 {
-			parts := make([]string, 0, len(result.Content))
-			for _, item := range result.Content {
+	if result != nil && result.Result != nil {
+		if len(result.Result.Content) > 0 {
+			parts := make([]string, 0, len(result.Result.Content))
+			for _, item := range result.Result.Content {
 				segment := ""
 				switch v := item.Content.(type) {
 				case string:
@@ -151,25 +151,32 @@ func (tr *TraceRun) AfterToolCall(run *AgentRun, toolName string, toolCallID str
 			}
 			response = strings.Join(parts, "\n")
 		}
-		if result.Error {
+		if result.Result.Error {
 			response = fmt.Sprintf("ERROR: %s", response)
 		}
 	}
 
 	tr.writeToFile(func(w io.Writer) {
 		fmt.Fprintf(w, " result: %s\n", response)
+
+		if result != nil && len(result.FileRefs) > 0 {
+			hasIncludeInPrompt := false
+			for _, ref := range result.FileRefs {
+				if ref.IncludeInPrompt {
+					hasIncludeInPrompt = true
+					break
+				}
+			}
+			if hasIncludeInPrompt {
+				fmt.Fprintf(w, " (some file refs will be included in next turn)\n")
+			}
+			fmt.Fprintf(w, " file_refs:\n")
+			for _, ref := range result.FileRefs {
+				fmt.Fprintf(w, "   - path: %s, include_in_prompt: %t\n", ref.Path, ref.IncludeInPrompt)
+			}
+		}
+
 		fmt.Fprintf(w, "---- Tool END: %s (callID=%s)\n", toolName, toolCallID)
-
-		// argsJSON, _ := json.Marshal(args)
-		// fmt.Fprintf(w, "🛠️️  %s tool response:\n", run.AgentName())
-		// fmt.Fprintf(w, "   • %s(%s)\n", toolName, string(argsJSON))
-
-		// lines := strings.Split(response, "\n")
-		// for _, line := range lines {
-		// 	if line != "" {
-		// 		fmt.Fprintf(w, "     %s\n", line)
-		// 	}
-		// }
 	})
 
 	return result, nil

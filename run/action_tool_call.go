@@ -3,11 +3,13 @@ package run
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/event"
 )
 
@@ -72,9 +74,22 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		}
 	}
 
-	response := formatToolResponse(currentResult)
+	if currentResult != nil && len(currentResult.FileRefs) > 0 {
+		turn := r.AgentContext().Turn()
+		if turn != nil {
+			turn.FileRefs = append(turn.FileRefs, currentResult.FileRefs...)
+		}
+	}
 
-	if currentResult != nil && currentResult.Error {
+	var response string
+	if currentResult != nil && currentResult.Result != nil {
+		response = formatToolResponse(currentResult.Result)
+	}
+	if currentResult != nil && len(currentResult.FileRefs) > 0 {
+		response = appendFileRefsToToolResponse(r, response, currentResult.FileRefs)
+	}
+
+	if currentResult != nil && currentResult.Result != nil && currentResult.Result.Error {
 		toolErr := fmt.Errorf("tool %s reported error", act.ToolName)
 		if response != "" {
 			toolErr = fmt.Errorf("tool %s reported error: %s", act.ToolName, response)
@@ -119,6 +134,43 @@ func formatToolResponse(result *ai.ToolResult) string {
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+func appendFileRefsToToolResponse(r *AgentRun, response string, refs []ctxt.FileRefEntry) string {
+	if len(refs) == 0 {
+		return response
+	}
+	ac := r.AgentContext()
+	if ac == nil {
+		return response
+	}
+	var b strings.Builder
+	if response != "" {
+		b.WriteString(response)
+	}
+	b.WriteString("\n\nFile references:\n")
+	for _, ref := range refs {
+		b.WriteString("  ")
+		b.WriteString(ref.Path)
+		b.WriteString("\n")
+	}
+	for _, ref := range refs {
+		if !ref.IncludeInPrompt {
+			continue
+		}
+		doc := ac.GetDocument(ref.Path)
+		if doc == nil {
+			slog.Warn("failed to load file for tool response", "path", ref.Path)
+			continue
+		}
+		text := doc.Text()
+		b.WriteString("\n\nContent of ")
+		b.WriteString(ref.Path)
+		b.WriteString(":\n\n")
+		b.WriteString(text)
+		b.WriteString("\n")
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 func stringifyToolContent(content any) string {

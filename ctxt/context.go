@@ -1,7 +1,6 @@
 package ctxt
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -37,7 +36,7 @@ type AgentContext struct {
 
 	mutex               sync.RWMutex
 	memories            []MemoryEntry
-	documentReferences  []*document.Document
+	pendingRefs         []FileRefEntry
 	conversationHistory *ConversationHistory
 	outputInstructions  string
 	currentTurn         *Turn
@@ -49,12 +48,11 @@ type AgentContext struct {
 func New(id, description, instructions string, basePath string) (*AgentContext, error) {
 	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
-		id:                 id,
-		description:        description,
-		instructions:       instructions,
-		memories:           make([]MemoryEntry, 0),
-		documentReferences: make([]*document.Document, 0),
-		runMeta:            m,
+		id:           id,
+		description:  description,
+		instructions: instructions,
+		memories:     make([]MemoryEntry, 0),
+		runMeta:      m,
 	}
 
 	if basePath == "" {
@@ -69,7 +67,6 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 	ctx.conversationHistory = NewConversationHistory(ctx.execEnv)
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
-	ctx.currentTurn = ctx.newTurn() // create the first turn so it is available for the first prompt
 	return ctx, nil
 }
 
@@ -113,7 +110,7 @@ func (r *AgentContext) SetInstructions(instructions string) *AgentContext {
 	return r
 }
 
-func (r *AgentContext) insertDocuments(docs []*document.Document, docRefs []*document.Document) []ai.Message {
+func (r *AgentContext) insertDocuments(docs []*document.Document) []ai.Message {
 	var msgs []ai.Message
 
 	for _, doc := range docs {
@@ -175,44 +172,6 @@ func (r *AgentContext) insertDocuments(docs []*document.Document, docRefs []*doc
 		msgs = append(msgs, attachmentMsg)
 	}
 
-	for _, docRef := range docRefs {
-		fileID := docRef.ID()
-		var partType ai.ContentPartType
-		var part ai.ContentPart
-
-		switch {
-		case strings.HasPrefix(docRef.MimeType, "image/"):
-			partType = ai.ContentPartImageURL
-		case strings.HasPrefix(docRef.MimeType, "audio/"):
-			partType = ai.ContentPartAudio
-		case strings.HasPrefix(docRef.MimeType, "video/"):
-			partType = ai.ContentPartVideo
-		default:
-			partType = ai.ContentPartInputFile
-		}
-
-		if partType == ai.ContentPartInputFile {
-			part = ai.ContentPart{
-				Type:   partType,
-				FileID: fileID,
-				Name:   docRef.Filename,
-			}
-		} else {
-			part = ai.ContentPart{
-				Type:     partType,
-				URI:      fmt.Sprintf("file://%s", fileID),
-				Name:     docRef.Filename,
-				MimeType: docRef.MimeType,
-			}
-		}
-
-		refMsg := ai.UserMessage{
-			Role:  ai.UserRole,
-			Parts: []ai.ContentPart{part},
-		}
-		msgs = append(msgs, refMsg)
-	}
-
 	return msgs
 }
 
@@ -244,110 +203,88 @@ func (r *AgentContext) llmStore() (*document.LocalStore, error) {
 	return store, nil
 }
 
-func (r *AgentContext) AddDocument(doc *document.Document) *AgentContext {
-	if doc == nil {
-		return r
+func normalizePath(llmDir, path string) (string, error) {
+	path = filepath.ToSlash(strings.TrimPrefix(path, "/"))
+	path = filepath.Clean(path)
+	if path == "." || path == "" {
+		return "", fmt.Errorf("invalid path: %s", path)
 	}
-	store, err := r.uploadStore()
+	if strings.HasPrefix(path, "..") || strings.Contains(path, "..") {
+		return "", fmt.Errorf("path must not contain ..: %s", path)
+	}
+	absLLM, err := filepath.Abs(llmDir)
 	if err != nil {
-		slog.Error("failed to resolve upload store", "error", err)
-		return r
+		return "", fmt.Errorf("llm dir: %w", err)
 	}
-	content, err := doc.Bytes()
+	fullPath := filepath.Join(absLLM, path)
+	absFull, err := filepath.Abs(fullPath)
 	if err != nil {
-		slog.Error("failed to read document content", "error", err)
-		return r
+		return "", fmt.Errorf("path resolve: %w", err)
 	}
-	filename := doc.Filename
-	if filename == "" {
-		filename = filepath.Base(doc.FilePath)
-	}
-	if filename == "" || filename == "." || filename == string(os.PathSeparator) || filename == "/" {
-		filename = doc.ID()
-	}
-	if filename == "" {
-		return r
-	}
-	_, err = document.Create(context.Background(), store.ID(), filename, bytes.NewReader(content))
+	rel, err := filepath.Rel(absLLM, absFull)
 	if err != nil {
-		slog.Error("failed to store document", "error", err, "filename", filename)
+		return "", fmt.Errorf("path not under LLMDir: %w", err)
 	}
-	return r
+	if strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("path resolves outside LLMDir: %s", path)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
-func (r *AgentContext) AddDocumentReference(doc *document.Document) *AgentContext {
-	if doc == nil {
-		return r
+func (r *AgentContext) UploadDocument(path string, content []byte, includeInNextTurn ...bool) error {
+	if r.execEnv == nil {
+		return fmt.Errorf("execution environment not set")
 	}
-	r.documentReferences = append(r.documentReferences, doc)
-	return r
-}
-
-func (r *AgentContext) RemoveDocument(doc *document.Document) error {
-	if doc == nil {
-		return fmt.Errorf("document cannot be nil")
-	}
-	candidates := []string{}
-	if doc.ID() != "" {
-		candidates = append(candidates, doc.ID())
-	}
-	if doc.Filename != "" {
-		candidates = append(candidates, doc.Filename)
-	}
-	if doc.FilePath != "" {
-		base := filepath.Base(doc.FilePath)
-		if base != "" {
-			candidates = append(candidates, base)
-		}
-	}
-	for _, id := range candidates {
-		if err := r.RemoveDocumentByID(id); err == nil {
-			return nil
-		}
-	}
-	return fmt.Errorf("document not found: %s", doc.ID())
-}
-
-func (r *AgentContext) RemoveDocumentByID(id string) error {
-	if id == "" {
-		return fmt.Errorf("document id cannot be empty")
-	}
-	id = filepath.ToSlash(id)
-	id = strings.TrimPrefix(id, "uploads/")
-	store, err := r.uploadStore()
+	normPath, err := normalizePath(r.execEnv.LLMDir, path)
 	if err != nil {
 		return err
 	}
-	ids, err := store.List(context.Background())
+	fullPath := filepath.Join(r.execEnv.LLMDir, normPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return fmt.Errorf("create parent dirs: %w", err)
+	}
+	if err := os.WriteFile(fullPath, content, 0644); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+	inc := false
+	if len(includeInNextTurn) > 0 {
+		inc = includeInNextTurn[0]
+	}
+	r.pendingRefs = append(r.pendingRefs, FileRefEntry{Path: normPath, IncludeInPrompt: inc})
+	return nil
+}
+
+func (r *AgentContext) RemoveDocument(path string) error {
+	if r.execEnv == nil {
+		return fmt.Errorf("execution environment not set")
+	}
+	normPath, err := normalizePath(r.execEnv.LLMDir, path)
 	if err != nil {
 		return err
 	}
-	found := false
-	for _, existingID := range ids {
-		if existingID == id {
-			found = true
-			break
+	fullPath := filepath.Join(r.execEnv.LLMDir, normPath)
+	if err := os.Remove(fullPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("document not found: %s", normPath)
 		}
-	}
-	if !found {
-		return fmt.Errorf("document not found: %s", id)
-	}
-	if err := document.Delete(context.Background(), store.ID(), id); err != nil {
-		return err
+		return fmt.Errorf("remove file: %w", err)
 	}
 	return nil
 }
 
-func (r *AgentContext) GetDocumentByID(id string) *document.Document {
-	if id == "" {
+func (r *AgentContext) GetDocument(path string) *document.Document {
+	if path == "" || r.execEnv == nil {
 		return nil
 	}
-	id = filepath.ToSlash(id)
+	normPath, err := normalizePath(r.execEnv.LLMDir, path)
+	if err != nil {
+		return nil
+	}
 	store, err := r.llmStore()
 	if err != nil {
 		return nil
 	}
-	doc, err := document.Open(context.Background(), store.ID(), id)
+	doc, err := document.Open(context.Background(), store.ID(), normPath)
 	if err != nil {
 		return nil
 	}
@@ -400,10 +337,6 @@ func (r *AgentContext) GetDocuments() []*document.Document {
 		docs = append(docs, doc)
 	}
 	return docs
-}
-
-func (r *AgentContext) GetDocumentReferences() []*document.Document {
-	return r.documentReferences
 }
 
 func (r *AgentContext) GetHistory() *ConversationHistory {
@@ -527,8 +460,11 @@ func (r *AgentContext) newTurn() *Turn {
 }
 
 func (r *AgentContext) StartTurn(userMessage string) *Turn {
+	r.currentTurn = r.newTurn()
 	r.currentTurn.UserMessage = userMessage
 	r.currentTurn.Request = ai.UserMessage{Role: ai.UserRole, Content: userMessage}
+	r.currentTurn.FileRefs = append(r.currentTurn.FileRefs, r.pendingRefs...)
+	r.pendingRefs = nil
 	return r.currentTurn
 }
 
@@ -536,9 +472,6 @@ func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 	r.currentTurn.AddMessage(msg)
 	r.currentTurn.Reply = msg
 	r.conversationHistory.appendTurn(*r.currentTurn)
-
-	// create the next turn so it is available for callers
-	r.currentTurn = r.newTurn()
 	r.save()
 	return r
 }
@@ -562,11 +495,6 @@ func (r *AgentContext) ClearDocuments() *AgentContext {
 	return r
 }
 
-func (r *AgentContext) ClearDocumentReferences() *AgentContext {
-	r.documentReferences = make([]*document.Document, 0)
-	return r
-}
-
 func (r *AgentContext) ClearMemories() *AgentContext {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -581,7 +509,6 @@ func (r *AgentContext) ClearHistory() *AgentContext {
 
 func (r *AgentContext) ClearAll() *AgentContext {
 	ctx := r.ClearDocuments().
-		ClearDocumentReferences().
 		ClearMemories().
 		ClearHistory().
 		SetOutputInstructions("")

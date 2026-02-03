@@ -147,6 +147,21 @@ func (r *AgentContext) insertDocuments(docs []*document.Document) []ai.Message {
 				Data:     content,
 				Name:     doc.Filename,
 			}
+		case strings.HasPrefix(doc.MimeType, "text/"),
+			strings.HasSuffix(doc.MimeType, "application/json"),
+			strings.HasSuffix(doc.MimeType, "application/yaml"),
+			strings.HasSuffix(doc.MimeType, "application/xml"),
+			strings.HasSuffix(doc.MimeType, "application/csv"),
+			strings.HasSuffix(doc.MimeType, "application/xml"),
+			strings.HasSuffix(doc.MimeType, "application/xml"):
+			partType = ai.ContentPartText
+			part = ai.ContentPart{
+				Type:     partType,
+				MimeType: doc.MimeType,
+				Data:     content,
+				Name:     doc.Filename,
+			}
+
 		case strings.HasPrefix(doc.MimeType, "application/"):
 			partType = ai.ContentPartFile
 			part = ai.ContentPart{
@@ -155,6 +170,7 @@ func (r *AgentContext) insertDocuments(docs []*document.Document) []ai.Message {
 				Data:     content,
 				Name:     doc.Filename,
 			}
+
 		default:
 			partType = ai.ContentPartText
 			part = ai.ContentPart{

@@ -145,14 +145,8 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 	docs := ac.GetDocuments()
 	turn := ac.Turn()
-	var fileRefPaths []string
-	if turn != nil {
-		for _, ref := range turn.FileRefs {
-			fileRefPaths = append(fileRefPaths, ref.Path)
-		}
-	}
 
-	if len(docs) == 0 && len(fileRefPaths) == 0 {
+	if len(docs) == 0 && (turn == nil || len(turn.FileRefs) == 0) {
 		return nil, nil
 	}
 
@@ -179,13 +173,21 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 		}
 		promptBuf.WriteString(fmt.Sprintf("  %s, Filename: %s, Type: %s\n", doc.ID(), doc.Filename, mimeType))
 	}
-	for _, path := range fileRefPaths {
-		p := norm(path)
-		if p == "" || seenPath[p] {
-			continue
+
+	// Show FileRefs with MimeType when available
+	if turn != nil {
+		for _, ref := range turn.FileRefs {
+			p := norm(ref.Path)
+			if p == "" || seenPath[p] {
+				continue
+			}
+			seenPath[p] = true
+			if ref.MimeType != "" {
+				promptBuf.WriteString(fmt.Sprintf("  %s, Type: %s\n", ref.Path, ref.MimeType))
+			} else {
+				promptBuf.WriteString(fmt.Sprintf("  %s\n", ref.Path))
+			}
 		}
-		seenPath[p] = true
-		promptBuf.WriteString(fmt.Sprintf("  %s\n", path))
 	}
 
 	if promptBuf.Len() == 0 {
@@ -269,6 +271,10 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		if err != nil {
 			slog.Warn("failed to open file for prompt", "path", ref.Path, "error", err)
 			continue
+		}
+		// Use Python-provided MIME type if available
+		if ref.MimeType != "" {
+			doc.MimeType = ref.MimeType
 		}
 		msgs = append(msgs, r.insertDocuments([]*document.Document{doc})...)
 	}

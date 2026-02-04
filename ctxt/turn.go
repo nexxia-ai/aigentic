@@ -21,6 +21,7 @@ type FileRefEntry struct {
 	Path            string `json:"path"`
 	FileID          string `json:"file_id,omitempty"`
 	IncludeInPrompt bool   `json:"include_in_prompt"`
+	MimeType        string `json:"mime_type,omitempty"`
 }
 
 type tag struct {

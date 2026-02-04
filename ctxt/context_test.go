@@ -83,7 +83,7 @@ func TestUploadDocument(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createTestContext(t, "id", "desc", "inst")
 			for _, u := range tt.uploads {
-				if err := ctx.UploadDocument(u.path, u.content); err != nil {
+				if err := ctx.UploadDocument(u.path, u.content, ""); err != nil {
 					t.Fatalf("UploadDocument: %v", err)
 				}
 			}
@@ -143,7 +143,7 @@ func TestRemoveDocument(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createTestContext(t, "id", "desc", "inst")
 			for _, u := range tt.setup {
-				if err := ctx.UploadDocument(u.path, u.content); err != nil {
+				if err := ctx.UploadDocument(u.path, u.content, ""); err != nil {
 					t.Fatalf("UploadDocument: %v", err)
 				}
 			}
@@ -163,10 +163,10 @@ func TestRemoveDocument(t *testing.T) {
 
 func TestRemoveDocumentByPath(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
-	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1")); err != nil {
+	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1"), ""); err != nil {
 		t.Fatalf("UploadDocument: %v", err)
 	}
-	if err := ctx.UploadDocument("uploads/test2.pdf", []byte("content2")); err != nil {
+	if err := ctx.UploadDocument("uploads/test2.pdf", []byte("content2"), ""); err != nil {
 		t.Fatalf("UploadDocument: %v", err)
 	}
 
@@ -192,10 +192,10 @@ func TestRemoveDocumentByPath(t *testing.T) {
 func TestChainableMethods(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
 	ctx.SetOutputInstructions("Use JSON")
-	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1")); err != nil {
+	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1"), ""); err != nil {
 		t.Fatalf("UploadDocument: %v", err)
 	}
-	if err := ctx.UploadDocument("uploads/test2.pdf", []byte("content2")); err != nil {
+	if err := ctx.UploadDocument("uploads/test2.pdf", []byte("content2"), ""); err != nil {
 		t.Fatalf("UploadDocument: %v", err)
 	}
 
@@ -220,8 +220,8 @@ func TestClearMethods(t *testing.T) {
 		{
 			name: "clear documents",
 			setup: func(ctx *AgentContext) {
-				_ = ctx.UploadDocument("uploads/test1.pdf", []byte("c"))
-				_ = ctx.UploadDocument("uploads/test2.pdf", []byte("c"))
+				_ = ctx.UploadDocument("uploads/test1.pdf", []byte("c"), "")
+				_ = ctx.UploadDocument("uploads/test2.pdf", []byte("c"), "")
 			},
 			clear:     func(ctx *AgentContext) { ctx.ClearDocuments() },
 			check:     func(ctx *AgentContext) int { return len(ctx.GetDocuments()) },
@@ -254,7 +254,7 @@ func TestClearMethods(t *testing.T) {
 
 func TestClearAll(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
-	if err := ctx.UploadDocument("uploads/test.pdf", []byte("content")); err != nil {
+	if err := ctx.UploadDocument("uploads/test.pdf", []byte("content"), ""); err != nil {
 		t.Fatalf("UploadDocument: %v", err)
 	}
 

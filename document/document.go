@@ -95,7 +95,7 @@ func NewInMemoryDocument(id, filename string, data []byte, srcDoc *Document) *Do
 }
 
 func NewDocument(store Store, id, filename string, data []byte, srcDoc *Document) *Document {
-	mimeType := detectMimeType(filename)
+	mimeType := DetectMimeTypeFromPath(filename)
 
 	docID := id
 	if docID == "" {

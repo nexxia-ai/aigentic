@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// detectMimeType detects the MIME type for a filename, with special handling for common text-based extensions
-func detectMimeType(filename string) string {
+// DetectMimeTypeFromPath detects the MIME type for a filename, with special handling for common text-based extensions
+func DetectMimeTypeFromPath(filename string) string {
 	ext := strings.ToLower(filepath.Ext(filename))
 
 	// Handle common text-based extensions explicitly
@@ -102,7 +102,7 @@ func Create(ctx context.Context, storeName, filename string, reader io.Reader) (
 		return nil, fmt.Errorf("failed to create document in store: %w", err)
 	}
 
-	mimeType := detectMimeType(filename)
+	mimeType := DetectMimeTypeFromPath(filename)
 
 	doc := &Document{
 		id:         docID,
@@ -161,7 +161,7 @@ func Open(ctx context.Context, storeName, id string) (*Document, error) {
 		return nil, fmt.Errorf("failed to read document content: %w", err)
 	}
 
-	mimeType := detectMimeType(id)
+	mimeType := DetectMimeTypeFromPath(id)
 
 	doc = &Document{
 		id:         id,

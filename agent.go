@@ -126,7 +126,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 		if path == "uploads/" {
 			path = "uploads/" + doc.ID()
 		}
-		if err := ar.AgentContext().UploadDocument(path, content); err != nil {
+		if err := ar.AgentContext().UploadDocument(path, content, ""); err != nil {
 			slog.Warn("failed to upload document", "path", path, "error", err)
 		}
 	}

@@ -247,7 +247,7 @@ func normalizePath(llmDir, path string) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
-func (r *AgentContext) UploadDocument(path string, content []byte, includeInNextTurn ...bool) error {
+func (r *AgentContext) UploadDocument(path string, content []byte, mimeType string, includeInNextTurn ...bool) error {
 	if r.execEnv == nil {
 		return fmt.Errorf("execution environment not set")
 	}
@@ -266,7 +266,17 @@ func (r *AgentContext) UploadDocument(path string, content []byte, includeInNext
 	if len(includeInNextTurn) > 0 {
 		inc = includeInNextTurn[0]
 	}
-	r.pendingRefs = append(r.pendingRefs, FileRefEntry{Path: normPath, IncludeInPrompt: inc})
+
+	// Auto-detect if not provided
+	if mimeType == "" {
+		mimeType = document.DetectMimeTypeFromPath(normPath)
+	}
+
+	r.pendingRefs = append(r.pendingRefs, FileRefEntry{
+		Path:            normPath,
+		IncludeInPrompt: inc,
+		MimeType:        mimeType,
+	})
 	return nil
 }
 

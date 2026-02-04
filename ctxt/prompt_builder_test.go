@@ -254,8 +254,8 @@ func TestCreateDocsMsg(t *testing.T) {
 		{
 			name: "with documents",
 			setup: func(ac *AgentContext) *AgentContext {
-				_ = ac.UploadDocument("uploads/test1.pdf", []byte("content1"))
-				_ = ac.UploadDocument("uploads/test2.txt", []byte("content2"))
+				_ = ac.UploadDocument("uploads/test1.pdf", []byte("content1"), "")
+				_ = ac.UploadDocument("uploads/test2.txt", []byte("content2"), "")
 				return ac
 			},
 			expectedContains: []string{
@@ -271,8 +271,8 @@ func TestCreateDocsMsg(t *testing.T) {
 		{
 			name: "with multiple uploads",
 			setup: func(ac *AgentContext) *AgentContext {
-				_ = ac.UploadDocument("uploads/test1.pdf", []byte("content1"))
-				_ = ac.UploadDocument("uploads/ref1.txt", []byte("content2"))
+				_ = ac.UploadDocument("uploads/test1.pdf", []byte("content1"), "")
+				_ = ac.UploadDocument("uploads/ref1.txt", []byte("content2"), "")
 				return ac
 			},
 			expectedContains: []string{
@@ -287,7 +287,7 @@ func TestCreateDocsMsg(t *testing.T) {
 		{
 			name: "with empty filename document",
 			setup: func(ac *AgentContext) *AgentContext {
-				_ = ac.UploadDocument("uploads/doc1", []byte("content"))
+				_ = ac.UploadDocument("uploads/doc1", []byte("content"), "")
 				return ac
 			},
 			expectedContains: []string{
@@ -307,7 +307,7 @@ func TestCreateDocsMsg(t *testing.T) {
 		{
 			name: "with unknown mime type",
 			setup: func(ac *AgentContext) *AgentContext {
-				_ = ac.UploadDocument("uploads/test.unknown", []byte("content"))
+				_ = ac.UploadDocument("uploads/test.unknown", []byte("content"), "")
 				return ac
 			},
 			expectedContains: []string{
@@ -452,7 +452,7 @@ func TestBuildPrompt(t *testing.T) {
 		{
 			name: "with documents",
 			setup: func(ac *AgentContext) *AgentContext {
-				_ = ac.UploadDocument("uploads/test.pdf", []byte("content"))
+				_ = ac.UploadDocument("uploads/test.pdf", []byte("content"), "")
 				return ac
 			},
 			tools:            nil,
@@ -574,7 +574,7 @@ func TestBuildPrompt(t *testing.T) {
 				ac.SetDescription("Test Role")
 				ac.SetInstructions("Test Instructions")
 
-				_ = ac.UploadDocument("uploads/test1.pdf", []byte("content1"))
+				_ = ac.UploadDocument("uploads/test1.pdf", []byte("content1"), "")
 
 				ac.StartTurn("Previous message")
 				ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Previous response"})
@@ -699,7 +699,7 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 	ac, err := New("test-id", "", "", t.TempDir())
 	require.NoError(t, err)
 
-	_ = ac.UploadDocument("uploads/test1.pdf", []byte("content1"))
+	_ = ac.UploadDocument("uploads/test1.pdf", []byte("content1"), "")
 
 	ac.StartTurn("Previous")
 	ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Response"})
@@ -809,8 +809,8 @@ func TestBuildPromptUploadedDocuments(t *testing.T) {
 	ac, err := New("test-id", "", "", t.TempDir())
 	require.NoError(t, err)
 
-	_ = ac.UploadDocument("uploads/ref1.pdf", []byte("content1"))
-	_ = ac.UploadDocument("uploads/ref2.txt", []byte("content2"))
+	_ = ac.UploadDocument("uploads/ref1.pdf", []byte("content1"), "")
+	_ = ac.UploadDocument("uploads/ref2.txt", []byte("content2"), "")
 
 	ac.StartTurn("Process documents")
 

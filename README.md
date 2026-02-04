@@ -227,7 +227,7 @@ func createReportGeneratorTool() run.AgentTool {
 			
 			// Save to file
 			ctx := run.AgentContext()
-			err := ctx.UploadDocument("output/report.md", []byte(reportContent), true)
+			err := ctx.UploadDocument("output/report.md", []byte(reportContent), "text/markdown", true)
 			if err != nil {
 				return nil, err
 			}

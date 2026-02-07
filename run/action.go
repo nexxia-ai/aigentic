@@ -1,5 +1,7 @@
 package run
 
+import "github.com/nexxia-ai/aigentic/ctxt"
+
 // action is a marker interface for internal agent actions.
 // Types implement this interface by defining the unexported isAction method.
 type action interface {
@@ -24,6 +26,7 @@ func (*toolCallAction) isAction() {}
 type toolResponseAction struct {
 	request  *toolCallAction
 	response string
+	fileRefs []ctxt.FileRefEntry
 }
 
 func (*toolResponseAction) isAction() {}

@@ -85,8 +85,10 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	if currentResult != nil && currentResult.Result != nil {
 		response = formatToolResponse(currentResult.Result)
 	}
+
+	var fileRefs []ctxt.FileRefEntry
 	if currentResult != nil && len(currentResult.FileRefs) > 0 {
-		response = appendFileRefsToToolResponse(r, response, currentResult.FileRefs)
+		fileRefs = currentResult.FileRefs
 	}
 
 	if currentResult != nil && currentResult.Result != nil && currentResult.Result.Error {
@@ -99,7 +101,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		}
 	}
 
-	r.queueAction(&toolResponseAction{request: act, response: response})
+	r.queueAction(&toolResponseAction{request: act, response: response, fileRefs: fileRefs})
 }
 
 func (r *AgentRun) findTool(tcName string) *AgentTool {
@@ -245,8 +247,9 @@ func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, exi
 		group.AIMessage = &msg
 	} else {
 		group = &ToolCallGroup{
-			AIMessage: &msg,
-			Responses: make(map[string]ai.ToolMessage),
+			AIMessage:     &msg,
+			Responses:     make(map[string]ai.ToolMessage),
+			UserResponses: make(map[string]string),
 		}
 	}
 

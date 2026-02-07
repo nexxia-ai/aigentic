@@ -142,8 +142,9 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 					ToolCalls: msg.ToolCalls,
 				}
 				r.currentStreamGroup = &ToolCallGroup{
-					AIMessage: &chunkMsg,
-					Responses: make(map[string]ai.ToolMessage),
+					AIMessage:     &chunkMsg,
+					Responses:     make(map[string]ai.ToolMessage),
+					UserResponses: make(map[string]string),
 				}
 			}
 			// Process tool calls using the shared group
@@ -180,13 +181,14 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 							docs = append(docs, entry.Document)
 						}
 					}
+					userContent := r.currentStreamGroup.UserResponses[tc.ID]
 					event := &event.ToolResponseEvent{
 						RunID:      r.id,
 						AgentName:  r.AgentName(),
 						SessionID:  r.sessionID,
 						ToolCallID: response.ToolCallID,
 						ToolName:   response.ToolName,
-						Content:    response.Content,
+						Content:    userContent,
 						Documents:  docs,
 					}
 					r.queueEvent(event)

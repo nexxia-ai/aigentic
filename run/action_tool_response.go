@@ -2,14 +2,24 @@ package run
 
 import (
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 )
 
-func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string) {
+func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string, fileRefs []ctxt.FileRefEntry) {
+	// Store original content for user-facing display
+	action.Group.UserResponses[action.ToolCallID] = content
+	
+	// For LLM: include file content in the tool message
+	llmContent := content
+	if len(fileRefs) > 0 {
+		llmContent = appendFileRefsToToolResponse(r, content, fileRefs)
+	}
+
 	toolMsg := ai.ToolMessage{
 		Role:       ai.ToolRole,
-		Content:    content,
+		Content:    llmContent,
 		ToolCallID: action.ToolCallID,
 		ToolName:   action.ToolName,
 	}
@@ -34,13 +44,16 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string)
 						docs = append(docs, entry.Document)
 					}
 				}
+				// For user display: use original content without file refs
+				userContent := action.Group.UserResponses[tc.ID]
+				
 				event := &event.ToolResponseEvent{
 					RunID:      r.id,
 					AgentName:  r.AgentName(),
 					SessionID:  r.sessionID,
 					ToolCallID: response.ToolCallID,
 					ToolName:   response.ToolName,
-					Content:    response.Content,
+					Content:    userContent,
 					Documents:  docs,
 				}
 				r.queueEvent(event)

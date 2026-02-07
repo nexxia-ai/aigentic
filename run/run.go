@@ -311,7 +311,7 @@ func (r *AgentRun) processLoop() {
 				r.runLLMCallAction(act.Message)
 
 			case *toolResponseAction:
-				r.runToolResponseAction(act.request, act.response)
+				r.runToolResponseAction(act.request, act.response, act.fileRefs)
 
 			case *toolCallAction:
 				r.runToolCallAction(act)

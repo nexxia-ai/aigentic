@@ -77,7 +77,11 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	if currentResult != nil && len(currentResult.FileRefs) > 0 {
 		turn := r.AgentContext().Turn()
 		if turn != nil {
-			turn.FileRefs = append(turn.FileRefs, currentResult.FileRefs...)
+			for _, ref := range currentResult.FileRefs {
+				if !ref.Ephemeral {
+					turn.FileRefs = append(turn.FileRefs, ref)
+				}
+			}
 		}
 	}
 

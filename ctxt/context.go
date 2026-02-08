@@ -269,6 +269,13 @@ func (r *AgentContext) GetDocuments() []*document.Document {
 	return r.workspace.GetDocuments()
 }
 
+func (r *AgentContext) GetUploadDocuments() []*document.Document {
+	if r.workspace == nil {
+		return []*document.Document{}
+	}
+	return r.workspace.GetUploadDocuments()
+}
+
 func (r *AgentContext) GetHistory() *ConversationHistory {
 	return r.conversationHistory
 }

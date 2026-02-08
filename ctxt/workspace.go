@@ -329,6 +329,50 @@ func (w *Workspace) GetDocuments() []*document.Document {
 	return docs
 }
 
+// GetUploadDocuments returns only documents in the uploads directory (user-uploaded session files).
+func (w *Workspace) GetUploadDocuments() []*document.Document {
+	if w == nil || w.UploadDir == "" {
+		return []*document.Document{}
+	}
+	if _, err := w.uploadStore(); err != nil {
+		return []*document.Document{}
+	}
+	var paths []string
+	_ = filepath.WalkDir(w.UploadDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(w.UploadDir, path)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." || rel == "" {
+			return nil
+		}
+		paths = append(paths, "uploads/"+rel)
+		return nil
+	})
+	sort.Strings(paths)
+	docs := make([]*document.Document, 0, len(paths))
+	llmStore, err := w.llmStore()
+	if err != nil {
+		return docs
+	}
+	for _, rel := range paths {
+		doc, err := document.Open(context.Background(), llmStore.ID(), rel)
+		if err != nil {
+			continue
+		}
+		doc.SetID(rel)
+		docs = append(docs, doc)
+	}
+	return docs
+}
+
 // ArchiveDir returns the path to the archive directory (_private/archive/).
 func (w *Workspace) ArchiveDir() string {
 	if w == nil {

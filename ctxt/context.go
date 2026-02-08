@@ -412,7 +412,14 @@ func (r *AgentContext) StartTurn(userMessage string) *Turn {
 func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 	r.currentTurn.AddMessage(msg)
 	r.currentTurn.Reply = msg
-	r.conversationHistory.appendTurn(*r.currentTurn)
+
+	if aiMsg, ok := msg.(ai.AIMessage); ok {
+		r.currentTurn.Usage = aiMsg.Response.Usage
+	}
+
+	if !r.currentTurn.Hidden {
+		r.conversationHistory.appendTurn(*r.currentTurn)
+	}
 	r.save()
 	return r
 }

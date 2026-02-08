@@ -46,6 +46,28 @@ type AgentRun struct {
 	retrievers []Retriever
 
 	subAgents []AgentTool
+
+	turnMetrics turnMetrics
+}
+
+type turnMetrics struct {
+	usage ai.Usage
+}
+
+func (tm *turnMetrics) reset() {
+	tm.usage = ai.Usage{}
+}
+
+func (tm *turnMetrics) add(u ai.Usage) {
+	tm.usage.PromptTokens += u.PromptTokens
+	tm.usage.CompletionTokens += u.CompletionTokens
+	tm.usage.TotalTokens += u.TotalTokens
+	tm.usage.PromptTokensDetails.CachedTokens += u.PromptTokensDetails.CachedTokens
+	tm.usage.PromptTokensDetails.AudioTokens += u.PromptTokensDetails.AudioTokens
+	tm.usage.CompletionTokensDetails.ReasoningTokens += u.CompletionTokensDetails.ReasoningTokens
+	tm.usage.CompletionTokensDetails.AudioTokens += u.CompletionTokensDetails.AudioTokens
+	tm.usage.CompletionTokensDetails.AcceptedPredictionTokens += u.CompletionTokensDetails.AcceptedPredictionTokens
+	tm.usage.CompletionTokensDetails.RejectedPredictionTokens += u.CompletionTokensDetails.RejectedPredictionTokens
 }
 
 func (r *AgentRun) ID() string {
@@ -178,8 +200,23 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 }
 
 func (r *AgentRun) Run(ctx context.Context, message string) {
+	rest, cmd, ok := parseAigenticCommand(message)
+	if ok {
+		turn := r.agentContext.StartTurn(message)
+		turn.Hidden = true
+
+		r.ctx, r.cancelFunc = context.WithCancel(ctx)
+		r.eventQueue = make(chan event.Event, 100)
+		r.actionQueue = make(chan action, 100)
+
+		go r.processLoop()
+		r.handleAigenticCommand(ctx, cmd)
+		return
+	}
+	message = rest
 
 	turn := r.agentContext.StartTurn(message)
+	r.turnMetrics.reset()
 
 	if r.enableTrace {
 		traceFile := filepath.Join(turn.Dir(), "trace.txt")

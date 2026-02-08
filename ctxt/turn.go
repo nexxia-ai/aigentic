@@ -43,6 +43,7 @@ type Turn struct {
 	Timestamp    time.Time       `json:"timestamp"`
 	AgentName    string          `json:"agent_name"`
 	Hidden       bool            `json:"hidden"`
+	Usage        ai.Usage        `json:"usage,omitempty"`
 	systemTags   []tag
 	userTags     []tag
 }

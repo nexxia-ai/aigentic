@@ -103,6 +103,7 @@ func (r *AgentRun) runLLMCallAction(message string) {
 		}
 	}
 
+	r.turnMetrics.add(currentResp.Response.Usage)
 	r.handleAIMessage(currentResp, false)
 }
 
@@ -156,6 +157,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 	// this not a chunk, which means the model Call/Stream is complete
 	// end the turn and fire tool calls
 	if len(msg.ToolCalls) == 0 {
+		msg.Response.Usage = r.turnMetrics.usage
 		r.agentContext.EndTurn(msg)
 		r.queueAction(&stopAction{Error: nil})
 		return

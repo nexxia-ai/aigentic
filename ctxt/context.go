@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"text/template"
@@ -35,12 +33,11 @@ type AgentContext struct {
 	UserTemplate   *template.Template
 
 	mutex               sync.RWMutex
-	memories            []MemoryEntry
 	pendingRefs         []FileRefEntry
 	conversationHistory *ConversationHistory
 	outputInstructions  string
 	currentTurn         *Turn
-	execEnv             *ExecutionEnvironment
+	workspace           *Workspace
 	turnCounter         int
 	enableTrace         bool
 }
@@ -51,27 +48,55 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 		id:           id,
 		description:  description,
 		instructions: instructions,
-		memories:     make([]MemoryEntry, 0),
 		runMeta:      m,
 	}
 
 	if basePath == "" {
 		return nil, fmt.Errorf("context base path is required")
 	}
-	ee, err := NewExecutionEnvironment(basePath, id)
+	ws, err := NewWorkspace(basePath, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create execution environment: %s: %w", basePath, err)
+		return nil, fmt.Errorf("failed to create workspace: %s: %w", basePath, err)
 	}
-	ctx.execEnv = ee
+	ctx.workspace = ws
 
-	ctx.conversationHistory = NewConversationHistory(ctx.execEnv)
+	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
 }
 
-func (r *AgentContext) ExecutionEnvironment() *ExecutionEnvironment {
-	return r.execEnv
+// NewAtPath creates an AgentContext at an exact path without timestamp prefix.
+// Used by the orchestrator for single-instance agents.
+func NewAtPath(id, description, instructions, exactPath string) (*AgentContext, error) {
+	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
+	ctx := &AgentContext{
+		id:           id,
+		description:  description,
+		instructions: instructions,
+		runMeta:      m,
+	}
+	if exactPath == "" {
+		return nil, fmt.Errorf("exact path is required")
+	}
+	ws, err := NewWorkspaceAtPath(exactPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workspace at path: %w", err)
+	}
+	ctx.workspace = ws
+	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
+	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
+	ctx.UpdateUserTemplate(DefaultUserTemplate)
+	return ctx, nil
+}
+
+func (r *AgentContext) Workspace() *Workspace {
+	return r.workspace
+}
+
+// Deprecated: Use Workspace() instead.
+func (r *AgentContext) ExecutionEnvironment() *Workspace {
+	return r.workspace
 }
 
 func (r *AgentContext) SetOutputInstructions(instructions string) *AgentContext {
@@ -191,182 +216,69 @@ func (r *AgentContext) insertDocuments(docs []*document.Document) []ai.Message {
 	return msgs
 }
 
-func (r *AgentContext) uploadStore() (*document.LocalStore, error) {
-	if r.execEnv == nil {
-		return nil, fmt.Errorf("execution environment not set")
-	}
-	store := document.NewLocalStore(r.execEnv.UploadDir)
-	storeID := store.ID()
-	if _, exists := document.GetStore(storeID); !exists {
-		if err := document.RegisterStore(store); err != nil {
-			return nil, err
-		}
-	}
-	return store, nil
-}
-
-func (r *AgentContext) llmStore() (*document.LocalStore, error) {
-	if r.execEnv == nil {
-		return nil, fmt.Errorf("execution environment not set")
-	}
-	store := document.NewLocalStore(r.execEnv.LLMDir)
-	storeID := store.ID()
-	if _, exists := document.GetStore(storeID); !exists {
-		if err := document.RegisterStore(store); err != nil {
-			return nil, err
-		}
-	}
-	return store, nil
-}
-
-func normalizePath(llmDir, path string) (string, error) {
-	path = filepath.ToSlash(strings.TrimPrefix(path, "/"))
-	path = filepath.Clean(path)
-	if path == "." || path == "" {
-		return "", fmt.Errorf("invalid path: %s", path)
-	}
-	if strings.HasPrefix(path, "..") || strings.Contains(path, "..") {
-		return "", fmt.Errorf("path must not contain ..: %s", path)
-	}
-	absLLM, err := filepath.Abs(llmDir)
-	if err != nil {
-		return "", fmt.Errorf("llm dir: %w", err)
-	}
-	fullPath := filepath.Join(absLLM, path)
-	absFull, err := filepath.Abs(fullPath)
-	if err != nil {
-		return "", fmt.Errorf("path resolve: %w", err)
-	}
-	rel, err := filepath.Rel(absLLM, absFull)
-	if err != nil {
-		return "", fmt.Errorf("path not under LLMDir: %w", err)
-	}
-	if strings.HasPrefix(rel, "..") {
-		return "", fmt.Errorf("path resolves outside LLMDir: %s", path)
-	}
-	return filepath.ToSlash(rel), nil
-}
-
 func (r *AgentContext) UploadDocument(path string, content []byte, mimeType string, includeInNextTurn ...bool) error {
-	if r.execEnv == nil {
-		return fmt.Errorf("execution environment not set")
+	if r.workspace == nil {
+		return fmt.Errorf("workspace not set")
 	}
-	normPath, err := normalizePath(r.execEnv.LLMDir, path)
+	normPath, err := r.workspace.UploadDocument(path, content, mimeType)
 	if err != nil {
 		return err
-	}
-	fullPath := filepath.Join(r.execEnv.LLMDir, normPath)
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-		return fmt.Errorf("create parent dirs: %w", err)
-	}
-	if err := os.WriteFile(fullPath, content, 0644); err != nil {
-		return fmt.Errorf("write file: %w", err)
 	}
 	inc := false
 	if len(includeInNextTurn) > 0 {
 		inc = includeInNextTurn[0]
 	}
-
-	// Auto-detect if not provided
-	if mimeType == "" {
-		mimeType = document.DetectMimeTypeFromPath(normPath)
+	mime := mimeType
+	if mime == "" {
+		mime = document.DetectMimeTypeFromPath(normPath)
 	}
-
 	r.pendingRefs = append(r.pendingRefs, FileRefEntry{
 		Path:            normPath,
 		IncludeInPrompt: inc,
-		MimeType:        mimeType,
+		MimeType:        mime,
 	})
 	return nil
 }
 
 func (r *AgentContext) RemoveDocument(path string) error {
-	if r.execEnv == nil {
-		return fmt.Errorf("execution environment not set")
+	if r.workspace == nil {
+		return fmt.Errorf("workspace not set")
 	}
-	normPath, err := normalizePath(r.execEnv.LLMDir, path)
-	if err != nil {
-		return err
-	}
-	fullPath := filepath.Join(r.execEnv.LLMDir, normPath)
-	if err := os.Remove(fullPath); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("document not found: %s", normPath)
-		}
-		return fmt.Errorf("remove file: %w", err)
-	}
-	return nil
+	return r.workspace.RemoveDocument(path)
 }
 
 func (r *AgentContext) GetDocument(path string) *document.Document {
-	if path == "" || r.execEnv == nil {
+	if r.workspace == nil {
 		return nil
 	}
-	normPath, err := normalizePath(r.execEnv.LLMDir, path)
-	if err != nil {
-		return nil
-	}
-	store, err := r.llmStore()
-	if err != nil {
-		return nil
-	}
-	doc, err := document.Open(context.Background(), store.ID(), normPath)
-	if err != nil {
-		return nil
-	}
-	return doc
+	return r.workspace.GetDocument(path)
 }
 
 func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *AgentContext {
 	if history == nil {
-		history = NewConversationHistory(r.execEnv)
+		history = NewConversationHistory(r.workspace)
 	}
 	r.conversationHistory = history
 	return r
 }
 
 func (r *AgentContext) GetDocuments() []*document.Document {
-	if r.execEnv == nil {
+	if r.workspace == nil {
 		return []*document.Document{}
 	}
-	store, err := r.llmStore()
-	if err != nil {
-		return []*document.Document{}
-	}
-	var paths []string
-	_ = filepath.WalkDir(r.execEnv.LLMDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(r.execEnv.LLMDir, path)
-		if err != nil {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		if rel == "." || rel == "" {
-			return nil
-		}
-		paths = append(paths, rel)
-		return nil
-	})
-	sort.Strings(paths)
-	docs := make([]*document.Document, 0, len(paths))
-	for _, rel := range paths {
-		doc, err := document.Open(context.Background(), store.ID(), rel)
-		if err != nil {
-			continue
-		}
-		doc.SetID(rel)
-		docs = append(docs, doc)
-	}
-	return docs
+	return r.workspace.GetDocuments()
 }
 
 func (r *AgentContext) GetHistory() *ConversationHistory {
 	return r.conversationHistory
+}
+
+func (r *AgentContext) ConversationHistory() *ConversationHistory {
+	return r.conversationHistory
+}
+
+func (r *AgentContext) ShouldCompact(config CompactionConfig) bool {
+	return len(r.conversationHistory.DaysToCompact(config)) > 0
 }
 
 func (r *AgentContext) ID() string {
@@ -378,16 +290,12 @@ func (r *AgentContext) Name() string {
 }
 
 func (r *AgentContext) SetMeta(agentName, packageID string) {
-	r.runMeta.AgentName = agentName
-	r.runMeta.PackageID = packageID
-	r.saveRunMeta()
-}
-
-func (r *AgentContext) SetRunMeta(agentName, packageID string) {
 	if r.runMeta == nil {
 		r.runMeta = &runMetaData{StartedAt: time.Now()}
 	}
-	r.SetMeta(agentName, packageID)
+	r.runMeta.AgentName = agentName
+	r.runMeta.PackageID = packageID
+	r.saveRunMeta()
 }
 
 func (r *AgentContext) RunAgentName() string {
@@ -422,10 +330,10 @@ func (r *AgentContext) EnableTrace() bool {
 }
 
 func (r *AgentContext) saveRunMeta() {
-	if r.execEnv == nil || r.runMeta == nil {
+	if r.workspace == nil || r.runMeta == nil {
 		return
 	}
-	path := filepath.Join(r.execEnv.PrivateDir, "run_meta.json")
+	path := filepath.Join(r.workspace.PrivateDir, "run_meta.json")
 	data, err := json.MarshalIndent(r.runMeta, "", "  ")
 	if err != nil {
 		slog.Error("failed to marshal run metadata", "error", err)
@@ -472,11 +380,11 @@ func (r *AgentContext) SetSummary(summary string) *AgentContext {
 
 func (r *AgentContext) newTurn() *Turn {
 	r.turnCounter++
-	turnID := fmt.Sprintf("turn-%03d", r.turnCounter)
+	turnID := fmt.Sprintf("turn-%06d", r.turnCounter)
 	turn := NewTurn(r, "", "", turnID)
 
-	if r.execEnv != nil {
-		turnDir := filepath.Join(r.execEnv.TurnDir, turn.TurnID)
+	if r.workspace != nil {
+		turnDir := filepath.Join(r.workspace.TurnDir, turn.TurnID)
 		if err := os.MkdirAll(turnDir, 0755); err != nil {
 			slog.Error("failed to create turn directory", "error", err)
 		}
@@ -507,7 +415,7 @@ func (r *AgentContext) Turn() *Turn {
 }
 
 func (r *AgentContext) ClearDocuments() *AgentContext {
-	store, err := r.uploadStore()
+	store, err := r.workspace.uploadStore()
 	if err != nil {
 		return r
 	}
@@ -521,13 +429,6 @@ func (r *AgentContext) ClearDocuments() *AgentContext {
 	return r
 }
 
-func (r *AgentContext) ClearMemories() *AgentContext {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.memories = make([]MemoryEntry, 0)
-	return r
-}
-
 func (r *AgentContext) ClearHistory() *AgentContext {
 	r.conversationHistory.Clear()
 	return r
@@ -535,7 +436,6 @@ func (r *AgentContext) ClearHistory() *AgentContext {
 
 func (r *AgentContext) ClearAll() *AgentContext {
 	ctx := r.ClearDocuments().
-		ClearMemories().
 		ClearHistory().
 		SetOutputInstructions("")
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
@@ -544,27 +444,21 @@ func (r *AgentContext) ClearAll() *AgentContext {
 }
 
 type contextData struct {
-	ID                 string        `json:"id"`
-	Description        string        `json:"description"`
-	Instructions       string        `json:"instructions"`
-	Name               string        `json:"name"`
-	Summary            string        `json:"summary"`
-	OutputInstructions string        `json:"output_instructions"`
-	Memories           []MemoryEntry `json:"memories"`
-	TurnCounter        int           `json:"turn_counter"`
-	MemoryDir          string        `json:"memory_dir"`
-	EnableTrace        bool          `json:"enable_trace"`
+	ID                 string `json:"id"`
+	Description        string `json:"description"`
+	Instructions       string `json:"instructions"`
+	Name               string `json:"name"`
+	Summary            string `json:"summary"`
+	OutputInstructions string `json:"output_instructions"`
+	TurnCounter        int    `json:"turn_counter"`
+	MemoryDir          string `json:"memory_dir"`
+	EnableTrace        bool   `json:"enable_trace"`
 }
 
 func (r *AgentContext) save() error {
-	if r.execEnv == nil {
+	if r.workspace == nil {
 		return nil
 	}
-
-	r.mutex.RLock()
-	memories := make([]MemoryEntry, len(r.memories))
-	copy(memories, r.memories)
-	r.mutex.RUnlock()
 
 	data := contextData{
 		ID:                 r.id,
@@ -573,13 +467,12 @@ func (r *AgentContext) save() error {
 		Name:               r.name,
 		Summary:            r.summary,
 		OutputInstructions: r.outputInstructions,
-		Memories:           memories,
 		TurnCounter:        r.turnCounter,
-		MemoryDir:          r.execEnv.MemoryDir,
+		MemoryDir:          r.workspace.MemoryDir,
 		EnableTrace:        r.enableTrace,
 	}
 
-	contextFile := filepath.Join(r.execEnv.PrivateDir, "context.json")
+	contextFile := filepath.Join(r.workspace.PrivateDir, "context.json")
 	file, err := os.Create(contextFile)
 	if err != nil {
 		slog.Error("failed to save context", "error", err, "context_file", contextFile)

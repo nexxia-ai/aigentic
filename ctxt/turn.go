@@ -83,7 +83,7 @@ func (t *Turn) AddDocument(toolID string, doc *document.Document) error {
 }
 
 func (t *Turn) Dir() string {
-	return filepath.Join(t.agentContext.ExecutionEnvironment().TurnDir, t.TurnID)
+	return filepath.Join(t.agentContext.Workspace().TurnDir, t.TurnID)
 }
 
 func (t *Turn) saveToFile() {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type Session struct {
@@ -32,10 +31,6 @@ func ListSessions(baseDir string) ([]Session, error) {
 	var sessions []Session
 	for _, entry := range entries {
 		if !entry.IsDir() {
-			continue
-		}
-
-		if !strings.HasPrefix(entry.Name(), "agent-") {
 			continue
 		}
 
@@ -75,12 +70,12 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	execEnv, err := loadExecutionEnvironment(absSessionDir)
+	ws, err := loadWorkspace(absSessionDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load execution environment: %w", err)
+		return nil, fmt.Errorf("failed to load workspace: %w", err)
 	}
 
-	contextFile := filepath.Join(execEnv.PrivateDir, "context.json")
+	contextFile := filepath.Join(ws.PrivateDir, "context.json")
 	file, err := os.Open(contextFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open context file: %w", err)
@@ -92,7 +87,7 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		return nil, fmt.Errorf("failed to decode context: %w", err)
 	}
 
-	execEnv.MemoryDir = data.MemoryDir
+	ws.MemoryDir = data.MemoryDir
 
 	ctx := &AgentContext{
 		id:                 data.ID,
@@ -101,14 +96,13 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		name:               data.Name,
 		summary:            data.Summary,
 		outputInstructions: data.OutputInstructions,
-		memories:           data.Memories,
 		turnCounter:        data.TurnCounter,
-		execEnv:            execEnv,
+		workspace:          ws,
 		enableTrace:        data.EnableTrace,
 	}
 
-	loadRunMeta(ctx, execEnv.PrivateDir)
-	ctx.conversationHistory = NewConversationHistory(ctx.execEnv)
+	loadRunMeta(ctx, ws.PrivateDir)
+	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
 	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	ctx.currentTurn = ctx.newTurn()

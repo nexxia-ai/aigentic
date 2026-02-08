@@ -7,16 +7,16 @@ import (
 )
 
 func TestSetMemoryDir_UnderLLMDir_Success(t *testing.T) {
-	e, err := NewExecutionEnvironment(t.TempDir(), "agent1")
+	w, err := NewWorkspace(t.TempDir(), "agent1")
 	if err != nil {
-		t.Fatalf("NewExecutionEnvironment: %v", err)
+		t.Fatalf("NewWorkspace: %v", err)
 	}
-	memDir := filepath.Join(e.LLMDir, "memory")
-	if err := e.SetMemoryDir(memDir); err != nil {
+	memDir := filepath.Join(w.LLMDir, "memory")
+	if err := w.SetMemoryDir(memDir); err != nil {
 		t.Fatalf("SetMemoryDir: %v", err)
 	}
-	if e.MemoryDir != memDir {
-		t.Errorf("MemoryDir = %q, want %q", e.MemoryDir, memDir)
+	if w.MemoryDir != memDir {
+		t.Errorf("MemoryDir = %q, want %q", w.MemoryDir, memDir)
 	}
 	if _, err := os.Stat(memDir); err != nil {
 		t.Errorf("memory dir should exist: %v", err)
@@ -24,41 +24,41 @@ func TestSetMemoryDir_UnderLLMDir_Success(t *testing.T) {
 }
 
 func TestSetMemoryDir_OutsideLLMDir_Error(t *testing.T) {
-	e, err := NewExecutionEnvironment(t.TempDir(), "agent1")
+	w, err := NewWorkspace(t.TempDir(), "agent1")
 	if err != nil {
-		t.Fatalf("NewExecutionEnvironment: %v", err)
+		t.Fatalf("NewWorkspace: %v", err)
 	}
 	otherDir := t.TempDir()
-	if err := e.SetMemoryDir(otherDir); err == nil {
+	if err := w.SetMemoryDir(otherDir); err == nil {
 		t.Error("SetMemoryDir outside LLMDir should return error")
 	}
-	if e.MemoryDir != "" {
-		t.Errorf("MemoryDir should remain empty, got %q", e.MemoryDir)
+	if w.MemoryDir != "" {
+		t.Errorf("MemoryDir should remain empty, got %q", w.MemoryDir)
 	}
 }
 
 func TestSetMemoryDir_Empty_Clears(t *testing.T) {
-	e, err := NewExecutionEnvironment(t.TempDir(), "agent1")
+	w, err := NewWorkspace(t.TempDir(), "agent1")
 	if err != nil {
-		t.Fatalf("NewExecutionEnvironment: %v", err)
+		t.Fatalf("NewWorkspace: %v", err)
 	}
-	if err := e.SetMemoryDir(filepath.Join(e.LLMDir, "memory")); err != nil {
+	if err := w.SetMemoryDir(filepath.Join(w.LLMDir, "memory")); err != nil {
 		t.Fatalf("SetMemoryDir: %v", err)
 	}
-	if err := e.SetMemoryDir(""); err != nil {
+	if err := w.SetMemoryDir(""); err != nil {
 		t.Fatalf("SetMemoryDir empty: %v", err)
 	}
-	if e.MemoryDir != "" {
-		t.Errorf("MemoryDir = %q, want empty", e.MemoryDir)
+	if w.MemoryDir != "" {
+		t.Errorf("MemoryDir = %q, want empty", w.MemoryDir)
 	}
 }
 
 func TestMemoryFiles_EmptyMemoryDir_ReturnsNil(t *testing.T) {
-	e, err := NewExecutionEnvironment(t.TempDir(), "agent1")
+	w, err := NewWorkspace(t.TempDir(), "agent1")
 	if err != nil {
-		t.Fatalf("NewExecutionEnvironment: %v", err)
+		t.Fatalf("NewWorkspace: %v", err)
 	}
-	docs, err := e.MemoryFiles()
+	docs, err := w.MemoryFiles()
 	if err != nil {
 		t.Fatalf("MemoryFiles: %v", err)
 	}
@@ -68,25 +68,25 @@ func TestMemoryFiles_EmptyMemoryDir_ReturnsNil(t *testing.T) {
 }
 
 func TestEnvVars_EmptyMemoryDir_OmitsAGENT_MEMORY_DIR(t *testing.T) {
-	e, err := NewExecutionEnvironment(t.TempDir(), "agent1")
+	w, err := NewWorkspace(t.TempDir(), "agent1")
 	if err != nil {
-		t.Fatalf("NewExecutionEnvironment: %v", err)
+		t.Fatalf("NewWorkspace: %v", err)
 	}
-	m := e.EnvVars()
+	m := w.EnvVars()
 	if _, ok := m["AGENT_MEMORY_DIR"]; ok {
 		t.Error("EnvVars should not include AGENT_MEMORY_DIR when MemoryDir is empty")
 	}
 }
 
 func TestEnvVars_NonEmptyMemoryDir_IncludesAGENT_MEMORY_DIR(t *testing.T) {
-	e, err := NewExecutionEnvironment(t.TempDir(), "agent1")
+	w, err := NewWorkspace(t.TempDir(), "agent1")
 	if err != nil {
-		t.Fatalf("NewExecutionEnvironment: %v", err)
+		t.Fatalf("NewWorkspace: %v", err)
 	}
-	if err := e.SetMemoryDir(filepath.Join(e.LLMDir, "memory")); err != nil {
+	if err := w.SetMemoryDir(filepath.Join(w.LLMDir, "memory")); err != nil {
 		t.Fatalf("SetMemoryDir: %v", err)
 	}
-	m := e.EnvVars()
+	m := w.EnvVars()
 	if v, ok := m["AGENT_MEMORY_DIR"]; !ok || v == "" {
 		t.Errorf("EnvVars should include AGENT_MEMORY_DIR, got %q", m["AGENT_MEMORY_DIR"])
 	}

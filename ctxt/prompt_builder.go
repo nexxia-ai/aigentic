@@ -78,10 +78,10 @@ File references for this turn:
 
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 
-	ee := ac.ExecutionEnvironment()
+	ws := ac.Workspace()
 	memoryDocs := make([]*document.Document, 0)
-	if ee != nil {
-		docs, err := ee.MemoryFiles()
+	if ws != nil {
+		docs, err := ws.MemoryFiles()
 		if err != nil {
 			slog.Error("failed to load memory files", "error", err)
 		} else {
@@ -95,9 +95,9 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 	}, 0, len(memoryDocs))
 	for _, doc := range memoryDocs {
 		relPath := doc.FilePath
-		if ee != nil && ee.MemoryDir != "" && ee.LLMDir != "" {
-			absLLM, errLLM := filepath.Abs(ee.LLMDir)
-			absMem, errMem := filepath.Abs(ee.MemoryDir)
+		if ws != nil && ws.MemoryDir != "" && ws.LLMDir != "" {
+			absLLM, errLLM := filepath.Abs(ws.LLMDir)
+			absMem, errMem := filepath.Abs(ws.MemoryDir)
 			if errLLM == nil && errMem == nil {
 				fullPath := filepath.Join(absMem, doc.FilePath)
 				if r, err := filepath.Rel(absLLM, fullPath); err == nil {
@@ -239,6 +239,16 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		msgs = append(msgs, sysMsg)
 	}
 
+	// Add compaction summaries (if any) between system message and history
+	if r.conversationHistory != nil {
+		for _, s := range r.conversationHistory.GetSummaries() {
+			msgs = append(msgs, ai.UserMessage{
+				Role:    ai.UserRole,
+				Content: fmt.Sprintf("[Summary for %s]: %s", s.Date.Format("2006-01-02"), s.Summary),
+			})
+		}
+	}
+
 	// Add history messages before user message
 	if includeHistory && r.conversationHistory != nil {
 		historyMessages := r.conversationHistory.GetMessages()
@@ -286,7 +296,10 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 }
 
 func (r *AgentContext) openDocumentByPath(path string) (*document.Document, error) {
-	store, err := r.llmStore()
+	if r.workspace == nil {
+		return nil, fmt.Errorf("workspace not set")
+	}
+	store, err := r.workspace.llmStore()
 	if err != nil {
 		return nil, err
 	}

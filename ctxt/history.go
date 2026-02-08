@@ -7,25 +7,32 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
 type ConversationHistory struct {
-	turns   []Turn
-	mutex   sync.RWMutex
-	execEnv *ExecutionEnvironment
+	turns     []Turn
+	summaries []CompactionSummary
+	mutex     sync.RWMutex
+	workspace *Workspace
 }
 
-func NewConversationHistory(execEnv *ExecutionEnvironment) *ConversationHistory {
+func NewConversationHistory(workspace *Workspace) *ConversationHistory {
 	h := &ConversationHistory{
-		turns:   make([]Turn, 0),
-		execEnv: execEnv,
+		turns:     make([]Turn, 0),
+		summaries: make([]CompactionSummary, 0),
+		workspace: workspace,
 	}
-	if execEnv != nil {
-		turns := loadTurnsFromDir(execEnv.TurnDir)
+	if workspace != nil {
+		turns := loadTurnsFromDir(workspace.TurnDir)
+		summaries, _ := workspace.LoadSummaries()
 		h.mutex.Lock()
 		h.turns = turns
+		if summaries != nil {
+			h.summaries = summaries
+		}
 		h.mutex.Unlock()
 	}
 	return h
@@ -91,7 +98,7 @@ func (h *ConversationHistory) appendTurn(turn Turn) {
 	h.turns = append(h.turns, turn)
 	h.mutex.Unlock()
 
-	if h.execEnv != nil {
+	if h.workspace != nil {
 		turn.saveToFile()
 	}
 }
@@ -170,4 +177,96 @@ func (h *ConversationHistory) ExcludeHidden() []Turn {
 		}
 	}
 	return result
+}
+
+func (h *ConversationHistory) GetSummaries() []CompactionSummary {
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+
+	result := make([]CompactionSummary, len(h.summaries))
+	copy(result, h.summaries)
+	return result
+}
+
+func (h *ConversationHistory) DaysToCompact(config CompactionConfig) []DayGroup {
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+
+	cutoff := time.Now().AddDate(0, 0, -config.KeepRecentDays)
+	cutoff = time.Date(cutoff.Year(), cutoff.Month(), cutoff.Day(), 0, 0, 0, 0, cutoff.Location())
+
+	byDate := make(map[string]DayGroup)
+	for _, turn := range h.turns {
+		if turn.Hidden {
+			continue
+		}
+		day := time.Date(turn.Timestamp.Year(), turn.Timestamp.Month(), turn.Timestamp.Day(), 0, 0, 0, 0, turn.Timestamp.Location())
+		if day.Before(cutoff) {
+			key := day.Format("2006-01-02")
+			g := byDate[key]
+			g.Date = day
+			g.Turns = append(g.Turns, turn)
+			byDate[key] = g
+		}
+	}
+
+	var result []DayGroup
+	for _, g := range byDate {
+		result = append(result, g)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Date.Before(result[j].Date)
+	})
+	return result
+}
+
+func (h *ConversationHistory) ArchiveDay(day DayGroup, summary CompactionSummary) error {
+	if h.workspace == nil {
+		return nil
+	}
+
+	h.mutex.Lock()
+	turnIDs := make(map[string]bool)
+	for _, t := range day.Turns {
+		turnIDs[t.TurnID] = true
+	}
+	var kept []Turn
+	for _, t := range h.turns {
+		if !turnIDs[t.TurnID] {
+			kept = append(kept, t)
+		}
+	}
+	h.turns = kept
+	h.summaries = append(h.summaries, summary)
+	h.mutex.Unlock()
+
+	if err := h.workspace.ArchiveTurns(day.Turns, day.Date); err != nil {
+		return err
+	}
+
+	summaries := h.GetSummaries()
+	if err := h.workspace.SaveSummaries(summaries); err != nil {
+		return err
+	}
+
+	month := day.Date.Format("2006-01")
+	existing, _ := h.workspace.LoadArchiveIndex(month)
+	entries := make([]ArchiveIndexEntry, len(existing))
+	copy(entries, existing)
+	for _, t := range day.Turns {
+		content := ""
+		if t.Reply != nil {
+			_, content = t.Reply.Value()
+			if len(content) > 200 {
+				content = content[:200] + "..."
+			}
+		}
+		entries = append(entries, ArchiveIndexEntry{
+			TurnID:      t.TurnID,
+			Date:       day.Date,
+			UserMessage: t.UserMessage,
+			Summary:    content,
+		})
+	}
+	return h.workspace.SaveArchiveIndex(month, entries)
 }

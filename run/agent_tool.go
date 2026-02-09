@@ -14,6 +14,7 @@ import (
 type ToolCallResult struct {
 	Result   *ai.ToolResult
 	FileRefs []ctxt.FileRefEntry
+	Terminal bool
 }
 
 type AgentTool struct {

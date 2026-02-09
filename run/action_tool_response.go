@@ -60,17 +60,23 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string,
 			}
 		}
 
-		// Notify any content from the AI message
-		if action.Group.AIMessage.Content != "" {
-			event := &event.ContentEvent{
-				RunID:     r.id,
-				AgentName: r.AgentName(),
-				SessionID: r.sessionID,
-				Content:   action.Group.AIMessage.Content,
-			}
-			r.queueEvent(event)
+	// Notify any content from the AI message
+	if action.Group.AIMessage.Content != "" {
+		event := &event.ContentEvent{
+			RunID:     r.id,
+			AgentName: r.AgentName(),
+			SessionID: r.sessionID,
+			Content:   action.Group.AIMessage.Content,
 		}
+		r.queueEvent(event)
+	}
 
+	// Check if this tool group is terminal - if so, end the turn
+	if action.Group.Terminal {
+		r.queueAction(&stopAction{})
+	} else {
 		r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
+	}
+}
 	}
 }

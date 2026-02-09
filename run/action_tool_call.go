@@ -51,7 +51,10 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		}
 	}
 
+	// Set current tool call ID so tools can access it if needed (e.g., show_card)
+	r.currentToolCallID = act.ToolCallID
 	result, err := tool.call(r, currentArgs)
+	r.currentToolCallID = ""
 	if err != nil {
 		if r.enableTrace {
 			r.trace.RecordError(err)
@@ -103,6 +106,11 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		if r.enableTrace {
 			r.trace.RecordError(toolErr)
 		}
+	}
+
+	// Propagate terminal flag to the group
+	if currentResult != nil && currentResult.Terminal {
+		act.Group.Terminal = true
 	}
 
 	r.queueAction(&toolResponseAction{request: act, response: response, fileRefs: fileRefs})

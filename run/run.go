@@ -32,6 +32,7 @@ type AgentRun struct {
 	actionQueue          chan action
 	processedToolCallIDs map[string]bool
 	currentStreamGroup   *ToolCallGroup
+	currentToolCallID    string // Set during tool execution for tools that need their own ID
 	trace                Trace
 	enableTrace          bool
 	parentRun            *AgentRun
@@ -88,6 +89,10 @@ func (r *AgentRun) Model() *ai.Model {
 
 func (r *AgentRun) Turn() *ctxt.Turn {
 	return r.agentContext.Turn()
+}
+
+func (r *AgentRun) CurrentToolCallID() string {
+	return r.currentToolCallID
 }
 
 func (r *AgentRun) Cancel() {
@@ -388,6 +393,19 @@ func (r *AgentRun) queueEvent(event event.Event) {
 	default:
 		r.Logger.Error("event queue is full. dropping event", "event", event)
 	}
+}
+
+// EmitToolContent emits tool-scoped content during tool execution.
+// This allows tools to stream progress updates and structured data (like cards)
+// in real-time during their execution, before the final tool result is returned.
+func (r *AgentRun) EmitToolContent(toolCallID, content string) {
+	r.queueEvent(&event.ToolContentEvent{
+		RunID:      r.id,
+		AgentName:  r.agentName,
+		SessionID:  r.sessionID,
+		ToolCallID: toolCallID,
+		Content:    content,
+	})
 }
 
 func (r *AgentRun) queueAction(action action) {

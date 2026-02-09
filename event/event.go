@@ -88,6 +88,16 @@ type ThinkingEvent struct {
 
 func (e *ThinkingEvent) ID() string { return e.RunID }
 
+type ToolContentEvent struct {
+	RunID      string
+	AgentName  string
+	SessionID  string
+	ToolCallID string
+	Content    string
+}
+
+func (e *ToolContentEvent) ID() string { return e.RunID }
+
 type ErrorEvent struct {
 	RunID     string
 	AgentName string

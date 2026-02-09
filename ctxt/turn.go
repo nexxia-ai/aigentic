@@ -30,6 +30,11 @@ type tag struct {
 	Content string `json:"content"`
 }
 
+type TagEntry struct {
+	Name    string
+	Content string
+}
+
 type Turn struct {
 	TurnID       string          `json:"turn_id"`
 	agentContext *AgentContext   `json:"-"`
@@ -139,6 +144,14 @@ func (t *Turn) InjectSystemTag(tagName string, content string) {
 		Name:    tagName,
 		Content: content,
 	})
+}
+
+func (t *Turn) SystemTags() []TagEntry {
+	result := make([]TagEntry, len(t.systemTags))
+	for i, tag := range t.systemTags {
+		result[i] = TagEntry{Name: tag.Name, Content: tag.Content}
+	}
+	return result
 }
 
 func (t *Turn) InjectUserTag(tagName string, content string) {

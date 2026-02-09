@@ -77,6 +77,5 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string,
 	} else {
 		r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
 	}
-}
 	}
 }

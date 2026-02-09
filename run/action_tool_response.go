@@ -32,8 +32,6 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string,
 
 	// Check if all tool calls in this group are completed
 	if len(action.Group.Responses) == len(action.Group.AIMessage.ToolCalls) {
-
-		// add all tool responses and queue their events
 		turn := r.agentContext.Turn()
 		for _, tc := range action.Group.AIMessage.ToolCalls {
 			if response, exists := action.Group.Responses[tc.ID]; exists {
@@ -44,9 +42,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string,
 						docs = append(docs, entry.Document)
 					}
 				}
-				// For user display: use original content without file refs
 				userContent := action.Group.UserResponses[tc.ID]
-				
 				event := &event.ToolResponseEvent{
 					RunID:      r.id,
 					AgentName:  r.AgentName(),
@@ -60,22 +56,20 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string,
 			}
 		}
 
-	// Notify any content from the AI message
-	if action.Group.AIMessage.Content != "" {
-		event := &event.ContentEvent{
-			RunID:     r.id,
-			AgentName: r.AgentName(),
-			SessionID: r.sessionID,
-			Content:   action.Group.AIMessage.Content,
+		if action.Group.AIMessage.Content != "" {
+			event := &event.ContentEvent{
+				RunID:     r.id,
+				AgentName: r.AgentName(),
+				SessionID: r.sessionID,
+				Content:   action.Group.AIMessage.Content,
+			}
+			r.queueEvent(event)
 		}
-		r.queueEvent(event)
-	}
 
-	// Check if this tool group is terminal - if so, end the turn
-	if action.Group.Terminal {
-		r.queueAction(&stopAction{})
-	} else {
-		r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
-	}
+		if action.Group.Terminal {
+			r.queueAction(&stopAction{})
+		} else {
+			r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
+		}
 	}
 }

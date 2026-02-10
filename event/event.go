@@ -98,6 +98,26 @@ type ToolContentEvent struct {
 
 func (e *ToolContentEvent) ID() string { return e.RunID }
 
+type ToolActivityEvent struct {
+	RunID      string
+	AgentName  string
+	SessionID  string
+	ToolCallID string
+	Label      string
+}
+
+func (e *ToolActivityEvent) ID() string { return e.RunID }
+
+type ToolCardEvent struct {
+	RunID      string
+	AgentName  string
+	SessionID  string
+	ToolCallID string
+	Card       map[string]any
+}
+
+func (e *ToolCardEvent) ID() string { return e.RunID }
+
 type ErrorEvent struct {
 	RunID     string
 	AgentName string

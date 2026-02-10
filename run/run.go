@@ -408,6 +408,30 @@ func (r *AgentRun) EmitToolContent(toolCallID, content string) {
 	})
 }
 
+// EmitToolActivity emits a live progress label for a tool execution.
+// Each call replaces the previous label for this tool on the frontend.
+func (r *AgentRun) EmitToolActivity(toolCallID, label string) {
+	r.queueEvent(&event.ToolActivityEvent{
+		RunID:      r.id,
+		AgentName:  r.agentName,
+		SessionID:  r.sessionID,
+		ToolCallID: toolCallID,
+		Label:      label,
+	})
+}
+
+// EmitToolCard emits a structured card during tool execution.
+// The card is rendered inline in the chat stream as a typed component.
+func (r *AgentRun) EmitToolCard(toolCallID string, card map[string]any) {
+	r.queueEvent(&event.ToolCardEvent{
+		RunID:      r.id,
+		AgentName:  r.agentName,
+		SessionID:  r.sessionID,
+		ToolCallID: toolCallID,
+		Card:       card,
+	})
+}
+
 func (r *AgentRun) queueAction(action action) {
 	select {
 	case r.actionQueue <- action:

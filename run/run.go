@@ -207,9 +207,7 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 func (r *AgentRun) Run(ctx context.Context, message string) {
 	rest, cmd, ok := parseAigenticCommand(message)
 	if ok {
-		turn := r.agentContext.StartTurn(message)
-		turn.Hidden = true
-
+		// Command-only path: do not create or consume a turn (no StartTurn, no pendingRefs/history/usage side effects).
 		r.ctx, r.cancelFunc = context.WithCancel(ctx)
 		r.eventQueue = make(chan event.Event, 100)
 		r.actionQueue = make(chan action, 100)
@@ -269,7 +267,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			if v, ok := args["input"].(string); ok {
 				input = v
 			}
-			subRun, err := NewAgentRun(name, description, message, r.agentContext.ExecutionEnvironment().RootDir)
+			subRun, err := NewAgentRun(name, description, message, r.agentContext.Workspace().RootDir)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create sub-agent run: %w", err)
 			}

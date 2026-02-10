@@ -3,7 +3,7 @@
 ## Package API Notes
 - Create models with `ai.New(<model identifier>, apiKey)` after importing provider modules (e.g., `_ "github.com/nexxia-ai/aigentic-openai"`); identifiers are listed via `ai.Models()`.
 - Agent tools use the `run.AgentTool` type and `run.NewTool` helper; built-in tools in `tools/` return `run.AgentTool`.
-- Tools return `*run.ToolCallResult` which includes both the `ai.ToolResult` and optional `FileRefs` (files to be included in the next turn prompt).
+- Tools return `*run.ToolCallResult` which includes both the `ai.ToolResult`, optional `FileRefs` (files to be included in the next turn prompt), and optional `Terminal` (when true, the run stops after tool execution with no further LLM call).
 - Documents come from the `document` package and are passed as `[]*document.Document` via `Agent.Documents`. They are stored in the run filesystem under `llm/` (e.g. `llm/uploads`).
 
 ## Project Structure & Module Organization
@@ -22,10 +22,10 @@
 The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runtime execution engine. It contains:
 
 - **AgentRun** (`run.go`) - Main execution runtime type that orchestrates agent execution, handles LLM calls, tool execution, and event streaming
-- **Events** (`event.go`) - Event types for execution lifecycle: `ContentEvent`, `ToolEvent`, `ThinkingEvent`, `ErrorEvent`, `LLMCallEvent`, `EvalEvent`, etc.
+- **Events** (`event/event.go`) - Event types for execution lifecycle: `ContentEvent`, `ToolEvent`, `ThinkingEvent`, `ErrorEvent`, `LLMCallEvent`, `EvalEvent`, `ToolContentEvent`, `ToolActivityEvent`, `ToolCardEvent`, etc.
 - **AgentTool** (`agent_tool.go`) - Tool definition type and `NewTool()` helper for creating type-safe tools. Tools execute with signature `func(*AgentRun, map[string]interface{}) (*ToolCallResult, error)`.
-- **ToolCallResult** (`agent_tool.go`) - Return type for tool execution containing both `*ai.ToolResult` (the LLM-visible result) and `[]ctxt.FileRefEntry` (files to register for the next turn). This allows tools to generate files and automatically include them in subsequent prompts.
-- **Interceptor** (`interceptor.go`) - Interface for intercepting and modifying LLM calls and tool executions. The `AfterToolCall` method receives and can modify `*ToolCallResult`.
+- **ToolCallResult** (`agent_tool.go`) - Return type for tool execution containing `*ai.ToolResult` (the LLM-visible result), `[]ctxt.FileRefEntry` (files to register for the next turn), and `Terminal` (when true, run stops after tool execution). This allows tools to generate files and automatically include them in subsequent prompts.
+- **Interceptor** (`interceptor.go`) - Interface for intercepting and modifying LLM calls and tool executions. The `AfterToolCall` method receives and can modify `*ToolCallResult` (including `Result`, `FileRefs`, and `Terminal`).
 - **Tracer** (`trace_run.go`) - Tracing support for debugging agent execution, including file reference tracking
 - **Retriever** (`retriever.go`) - Interface for document retrieval systems
 
@@ -46,17 +46,17 @@ return &run.ToolCallResult{
 }, nil
 ```
 
-When `IncludeInPrompt` is `true`, the file content is automatically injected into the next turn's context, allowing the agent to reference it without explicit file reading.
+When `IncludeInPrompt` is `true`, the file content is automatically injected into the next turn's context. `FileRefEntry` also supports `Ephemeral` (when true, include only in this tool response; do not persist to turn history) and `MimeType` (used when injecting document content into prompts). Tools can stream progress via `AgentRun.EmitToolContent(toolCallID, content)`, `EmitToolActivity(toolCallID, label)`, and `EmitToolCard(toolCallID, card)`; use `AgentRun.CurrentToolCallID()` inside a tool to get the current tool call ID.
 
 ### The `ctxt` Package
 
 The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context management and execution environment for agents:
 
-- **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and execution environment. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
-- **ExecutionEnvironment** (`environment.go`) - Provides structured directory layout for agent execution with `uploads/` and `output/` directories
+- **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and workspace. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
+- **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`, `_private/turns`). Use `AgentContext.Workspace()` (deprecated: `ExecutionEnvironment()`).
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **Turn** (`turn.go`) - Represents individual conversation turns. Contains `FileRefs []FileRefEntry` to track files registered by tools during the turn.
-- **FileRefEntry** (`turn.go`) - Describes a file reference with `Path` (relative to LLM dir) and `IncludeInPrompt` flag. When `true`, file content is automatically injected into the next turn's prompt.
+- **FileRefEntry** (`turn.go`) - Describes a file reference with `Path` (relative to LLM dir), `IncludeInPrompt`, `Ephemeral` (do not persist to turn), and `MimeType` (for prompt injection).
 - **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context and documents
 
 ### The `document` Package

@@ -196,7 +196,7 @@ go run github.com/nexxia-ai/aigentic-examples/tools@latest
 
 #### Advanced Tools with File References
 
-Tools can register files to be automatically included in the next turn's prompt using `ToolCallResult`:
+Tools can register files to be automatically included in the next turn's prompt using `ToolCallResult`. You can either call `ctx.UploadDocument()` to register files for the next turn, or return `FileRefs` in `ToolCallResult` to include content in the current turn's tool response and optionally later prompts; returning `FileRefs` is often sufficient.
 
 ```go
 import (
@@ -250,7 +250,7 @@ func createReportGeneratorTool() run.AgentTool {
 }
 ```
 
-When `IncludeInPrompt` is `true`, the file content is automatically injected into the next turn's context, allowing the agent to reference it without explicit file reading.
+When `IncludeInPrompt` is `true`, the file content is automatically injected into the next turn's context. `FileRefEntry` also supports `Ephemeral` (include only in this tool response, do not persist to turn history) and `MimeType` (for prompt injection). Set `ToolCallResult.Terminal` to `true` when the tool should end the run after execution (e.g. show-card style tools); no further LLM call is made.
 
 ### Document Usage
 
@@ -411,6 +411,7 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
 )
 
@@ -432,20 +433,28 @@ func main() {
 		log.Fatal(err)
 	}
 
-	for event := range run.Next() {
-		switch e := event.(type) {
+	for ev := range run.Next() {
+		switch e := ev.(type) {
 		case *aigentic.ContentEvent:
 			fmt.Print(e.Content)
 		case *aigentic.ThinkingEvent:
 			fmt.Printf("\n🤔 Thinking: %s\n", e.Thought)
 		case *aigentic.ToolEvent:
 			fmt.Printf("\n🔧 Tool executed: %s\n", e.ToolName)
+		case *event.ToolContentEvent:
+			fmt.Print(e.Content)
+		case *event.ToolActivityEvent:
+			fmt.Printf("\n⏳ %s\n", e.Label)
+		case *event.ToolCardEvent:
+			fmt.Printf("\n📋 Card: %v\n", e.Card)
 		case *aigentic.ErrorEvent:
 			fmt.Printf("\n❌ Error: %v\n", e.Err)
 		}
 	}
 }
 ```
+
+Tools can stream progress during execution via `run.EmitToolContent(toolCallID, content)`, `run.EmitToolActivity(toolCallID, label)` (progress label; each call replaces the previous for that tool), and `run.EmitToolCard(toolCallID, card)` for structured inline cards. Use `run.CurrentToolCallID()` inside a tool to get the current tool call ID. Consume `*event.ToolContentEvent`, `*event.ToolActivityEvent`, and `*event.ToolCardEvent` from `run.Next()` (import `github.com/nexxia-ai/aigentic/event`).
 
 ### Tracing and Debugging
 
@@ -478,28 +487,23 @@ if err != nil {
 }
 ```
 
-### Execution Environment
+### Workspace (Execution Environment)
 
-Each agent run creates an `ExecutionEnvironment` that provides a structured directory layout for agent execution. The environment is automatically created when an agent run starts and provides directories for organizing files and outputs.
-
-The execution environment is automatically created when an agent run starts. If no base directory is specified, it defaults to the system temporary directory.
-
+Each agent run uses a `Workspace` (accessed via `AgentContext.Workspace()`) that provides a structured directory layout for agent execution. The workspace is created when an agent run starts. If no base directory is specified, it defaults to the system temporary directory.
 
 **Directory Structure:**
 
-The execution environment creates the following directory structure under a base directory:
-
 ```
 {baseDir}/
-  └── agent-{runID}/
+  └── {timestamp}-{runID}/
       ├── llm/
       │   ├── uploads/  # Documents uploaded for the run
       │   └── output/   # Agent output files and tool-generated content
       └── _private/
-          ├── memory/   # Memory files automatically loaded into prompts
-          ├── history/  # Conversation history with file references
-          └── turns/    # Per-turn execution traces
+          └── turns/    # Per-turn execution traces and history
 ```
+
+Optional memory files can be loaded into prompts via `Workspace.SetMemoryDir()`; conversation history is stored in `_private/turns/`.
 
 **File References:**
 

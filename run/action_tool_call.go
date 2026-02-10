@@ -25,13 +25,14 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 
 	eventID := uuid.New().String()
 	toolEvent := &event.ToolEvent{
-		RunID:     r.id,
-		EventID:   eventID,
-		AgentName: r.AgentName(),
-		SessionID: r.sessionID,
-		ToolName:  act.ToolName,
-		Args:      act.Args,
-		ToolGroup: act.Group,
+		RunID:      r.id,
+		EventID:    eventID,
+		ToolCallID: act.ToolCallID,
+		AgentName:  r.AgentName(),
+		SessionID:  r.sessionID,
+		ToolName:   act.ToolName,
+		Args:       act.Args,
+		ToolGroup:  act.Group,
 	}
 	r.queueEvent(toolEvent)
 

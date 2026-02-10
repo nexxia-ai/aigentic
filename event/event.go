@@ -66,15 +66,16 @@ type ToolResponseEvent struct {
 func (e *ToolResponseEvent) ID() string { return e.RunID }
 
 type ToolEvent struct {
-	RunID     string
-	EventID   string
-	AgentName string
-	SessionID string
-	ToolName  string
-	Args      map[string]any
-	ToolGroup interface{}
-	Result    interface{}
-	Error     error
+	RunID      string
+	EventID    string
+	ToolCallID string // LLM-assigned tool call ID (used for correlating tool events)
+	AgentName  string
+	SessionID  string
+	ToolName   string
+	Args       map[string]any
+	ToolGroup  interface{}
+	Result     interface{}
+	Error      error
 }
 
 func (e *ToolEvent) ID() string { return e.RunID }

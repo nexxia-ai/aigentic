@@ -531,7 +531,7 @@ func orderDAG(steps []dagStep) [][]dagStep {
 
 type executeStepFn func(ctx context.Context, step dagStep, upstream map[string]stepResult) (stepResult, error)
 
-func executeDAG(ctx context.Context, steps []dagStep, concurrency int, fn executeStepFn, progressFn func(completed, total int, label string)) ([]stepResult, error) {
+func executeDAG(ctx context.Context, steps []dagStep, concurrency int, fn executeStepFn, progressFn func(completed, total int, label string, activityID string)) ([]stepResult, error) {
 	if err := validateDAG(steps); err != nil {
 		return nil, err
 	}
@@ -549,13 +549,10 @@ func executeDAG(ctx context.Context, steps []dagStep, concurrency int, fn execut
 		sem := make(chan struct{}, concurrency)
 		var wg sync.WaitGroup
 
-		// Build step label
-		names := make([]string, len(level))
-		for i, s := range level {
-			names[i] = s.ID
-		}
-		if progressFn != nil {
-			progressFn(completed, total, fmt.Sprintf("Running %s", strings.Join(names, ", ")))
+		for _, s := range level {
+			if progressFn != nil {
+				progressFn(completed, total, fmt.Sprintf("Processing %s", s.ID), s.ID)
+			}
 		}
 
 		for _, step := range level {
@@ -569,6 +566,9 @@ func executeDAG(ctx context.Context, steps []dagStep, concurrency int, fn execut
 					mu.Lock()
 					results[s.ID] = stepResult{StepID: s.ID, Status: "cancelled", Error: "context cancelled"}
 					mu.Unlock()
+					if progressFn != nil {
+						progressFn(0, total, fmt.Sprintf("Processing %s : failed", s.ID), s.ID)
+					}
 					return
 				}
 
@@ -593,7 +593,11 @@ func executeDAG(ctx context.Context, steps []dagStep, concurrency int, fn execut
 				mu.Unlock()
 
 				if progressFn != nil {
-					progressFn(c, total, fmt.Sprintf("Completed %d/%d steps", c, total))
+					label := fmt.Sprintf("Processing %s : completed", s.ID)
+					if res.Status != "completed" {
+						label = fmt.Sprintf("Processing %s : failed", s.ID)
+					}
+					progressFn(c, total, label, s.ID)
 				}
 			}(step)
 		}
@@ -717,8 +721,8 @@ func executePlan(parentRun *AgentRun, plan PlanDef, args map[string]interface{})
 		return stepResult{Status: "completed", Output: content}, nil
 	}
 
-	progressFn := func(completed, total int, label string) {
-		parentRun.EmitToolActivity(toolCallID, label, "")
+	progressFn := func(completed, total int, label string, activityID string) {
+		parentRun.EmitToolActivity(toolCallID, label, activityID)
 	}
 
 	stepResults, err := executeDAG(parentRun.ctx, dagSteps, 5, fn, progressFn)
@@ -1099,8 +1103,8 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 		return stepResult{Status: "completed", Output: content}, nil
 	}
 
-	progressFn := func(completed, total int, label string) {
-		parentRun.EmitToolActivity(toolCallID, label, "")
+	progressFn := func(completed, total int, label string, activityID string) {
+		parentRun.EmitToolActivity(toolCallID, label, activityID)
 	}
 
 	stepResults, err := executeDAG(parentRun.ctx, dagSteps, 5, fn, progressFn)

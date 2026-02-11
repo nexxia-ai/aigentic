@@ -132,7 +132,7 @@ func TestExecuteDAG_SimpleLinear(t *testing.T) {
 	}
 
 	var progressCalls []string
-	progressFn := func(completed, total int, label string) {
+	progressFn := func(completed, total int, label string, activityID string) {
 		progressCalls = append(progressCalls, label)
 	}
 

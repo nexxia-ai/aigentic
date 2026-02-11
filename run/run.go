@@ -299,6 +299,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			subRun.SetModel(model)
 			subRun.SetTools(tools)
 			subRun.trace = r.trace
+			subRun.SetEnableTrace(r.enableTrace)
 			subRun.Logger = r.Logger.With("sub-agent", name)
 			subRun.parentRun = r
 			if r.streaming {

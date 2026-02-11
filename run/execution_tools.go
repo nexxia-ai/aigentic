@@ -288,6 +288,7 @@ func runChildAgent(ctx context.Context, parentRun *AgentRun, def subAgentDef, it
 	}
 	childRun.SetAgentName(def.name)
 	childRun.trace = parentRun.trace
+	childRun.SetEnableTrace(parentRun.enableTrace)
 	childRun.Logger = parentRun.Logger.With("batch-item", itemID)
 	if parentRun.streaming {
 		childRun.SetStreaming(true)
@@ -608,6 +609,7 @@ func executePlan(parentRun *AgentRun, plan PlanDef, args map[string]interface{})
 		}
 		childRun.SetAgentName(def.name)
 		childRun.trace = parentRun.trace
+		childRun.SetEnableTrace(parentRun.enableTrace)
 		childRun.Logger = parentRun.Logger.With("plan-step", step.ID)
 		if parentRun.streaming {
 			childRun.SetStreaming(true)
@@ -989,6 +991,7 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 		}
 		childRun.SetAgentName(def.name)
 		childRun.trace = parentRun.trace
+		childRun.SetEnableTrace(parentRun.enableTrace)
 		childRun.Logger = parentRun.Logger.With("plan-task", step.ID)
 		if parentRun.streaming {
 			childRun.SetStreaming(true)

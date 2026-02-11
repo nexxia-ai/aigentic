@@ -105,6 +105,7 @@ type ToolActivityEvent struct {
 	SessionID  string
 	ToolCallID string
 	Label      string
+	ActivityID string // optional; when set, frontend can update/add activity line by id
 }
 
 func (e *ToolActivityEvent) ID() string { return e.RunID }

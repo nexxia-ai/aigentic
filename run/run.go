@@ -441,14 +441,16 @@ func (r *AgentRun) EmitToolContent(toolCallID, content string) {
 }
 
 // EmitToolActivity emits a live progress label for a tool execution.
-// Each call replaces the previous label for this tool on the frontend.
-func (r *AgentRun) EmitToolActivity(toolCallID, label string) {
+// When activityID is empty, each call replaces the previous label for this tool on the frontend.
+// When activityID is set, the frontend upserts an activity line by id (chronological order).
+func (r *AgentRun) EmitToolActivity(toolCallID, label, activityID string) {
 	r.queueEvent(&event.ToolActivityEvent{
 		RunID:      r.id,
 		AgentName:  r.agentName,
 		SessionID:  r.sessionID,
 		ToolCallID: toolCallID,
 		Label:      label,
+		ActivityID: activityID,
 	})
 }
 

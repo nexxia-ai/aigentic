@@ -220,7 +220,9 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 				return
 			}
 
-			parentRun.EmitToolActivity(toolCallID, fmt.Sprintf("Processing item %d/%d: %s", i+1, total, it.ItemID))
+			activityID := it.ItemID
+			processingLabel := fmt.Sprintf("Processing %s", it.ItemID)
+			parentRun.EmitToolActivity(toolCallID, processingLabel, activityID)
 
 			output, err := runChildAgent(batchCtx, parentRun, def, it.ItemID, "Process "+it.ItemID, batchID, policy.TimeoutPerItem)
 			if err != nil {
@@ -233,9 +235,12 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 				results[i] = batchItemResult{ItemID: it.ItemID, Status: "completed", Output: output}
 			}
 			completedCount.Add(1)
-
 			c := int(completedCount.Load())
-			parentRun.EmitToolActivity(toolCallID, fmt.Sprintf("Completed %d/%d", c, total))
+			if err != nil {
+				parentRun.EmitToolActivity(toolCallID, processingLabel+" : failed", activityID)
+			} else {
+				parentRun.EmitToolActivity(toolCallID, processingLabel+" : completed", activityID)
+			}
 
 			// Incremental persistence
 			if batchDir != "" {
@@ -713,7 +718,7 @@ func executePlan(parentRun *AgentRun, plan PlanDef, args map[string]interface{})
 	}
 
 	progressFn := func(completed, total int, label string) {
-		parentRun.EmitToolActivity(toolCallID, label)
+		parentRun.EmitToolActivity(toolCallID, label, "")
 	}
 
 	stepResults, err := executeDAG(parentRun.ctx, dagSteps, 5, fn, progressFn)
@@ -1095,7 +1100,7 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 	}
 
 	progressFn := func(completed, total int, label string) {
-		parentRun.EmitToolActivity(toolCallID, label)
+		parentRun.EmitToolActivity(toolCallID, label, "")
 	}
 
 	stepResults, err := executeDAG(parentRun.ctx, dagSteps, 5, fn, progressFn)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -65,8 +66,7 @@ func AddExecutionTools(r *AgentRun, cfg ExecutionToolsConfig) {
 // --- agent_batch tool ---
 
 type batchItem struct {
-	ItemID  string `json:"item_id"`
-	Message string `json:"message"`
+	ItemID string `json:"item_id"`
 }
 
 type batchInput struct {
@@ -113,14 +113,10 @@ func newAgentBatchTool(parent *AgentRun, policy *BatchPolicy) AgentTool {
 						"properties": map[string]interface{}{
 							"item_id": map[string]interface{}{
 								"type":        "string",
-								"description": "Unique identifier for the item",
-							},
-							"message": map[string]interface{}{
-								"type":        "string",
-								"description": "Text input for the sub-agent",
+								"description": "Identifier for the item. Supports file:// for files/folders relative to the working directory (e.g. file://uploads) which expand to one item per file recursively, and https:// for web pages.",
 							},
 						},
-						"required": []string{"item_id", "message"},
+						"required": []string{"item_id"},
 					},
 					"description": "List of items to process",
 				},
@@ -139,6 +135,20 @@ func newAgentBatchTool(parent *AgentRun, policy *BatchPolicy) AgentTool {
 }
 
 func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*ToolCallResult, error) {
+	ws := parentRun.AgentContext().Workspace()
+	if ws != nil {
+		expanded, err := expandItems(ws.LLMDir, input.Items)
+		if err != nil {
+			return &ToolCallResult{
+				Result: &ai.ToolResult{
+					Content: []ai.ToolContent{{Type: "text", Content: err.Error()}},
+					Error:   true,
+				},
+			}, nil
+		}
+		input.Items = expanded
+	}
+
 	def, ok := parentRun.subAgentDefs[input.SubAgent]
 	if !ok {
 		return &ToolCallResult{
@@ -182,7 +192,6 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 
 	// Persist intermediate results
 	batchDir := ""
-	ws := parentRun.AgentContext().Workspace()
 	if ws != nil {
 		batchDir = filepath.Join(ws.PrivateDir, "batch", batchID)
 		os.MkdirAll(batchDir, 0755)
@@ -213,7 +222,7 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 
 			parentRun.EmitToolActivity(toolCallID, fmt.Sprintf("Processing item %d/%d: %s", i+1, total, it.ItemID))
 
-			output, err := runChildAgent(batchCtx, parentRun, def, it.ItemID, it.Message, batchID, policy.TimeoutPerItem)
+			output, err := runChildAgent(batchCtx, parentRun, def, it.ItemID, "Process "+it.ItemID, batchID, policy.TimeoutPerItem)
 			if err != nil {
 				results[i] = batchItemResult{ItemID: it.ItemID, Status: "failed", Error: err.Error()}
 				failedCount.Add(1)
@@ -318,6 +327,86 @@ func persistBatchResult(batchDir string, result batchResult) {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		slog.Warn("failed to write batch result", "path", path, "error", err)
 	}
+}
+
+func expandItems(llmDir string, items []batchItem) ([]batchItem, error) {
+	var out []batchItem
+	for _, it := range items {
+		id := it.ItemID
+		if strings.HasPrefix(id, "file://") {
+			expanded, err := expandFileURL(llmDir, id)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, expanded...)
+			continue
+		}
+		if strings.HasPrefix(id, "http://") || strings.HasPrefix(id, "https://") {
+			out = append(out, it)
+			continue
+		}
+		out = append(out, it)
+	}
+	return out, nil
+}
+
+func expandFileURL(llmDir, rawURL string) ([]batchItem, error) {
+	path := strings.TrimPrefix(rawURL, "file://")
+	path = filepath.Clean(path)
+	if path == "" || path == "." {
+		return nil, fmt.Errorf("invalid file URL path: %s", rawURL)
+	}
+	if filepath.IsAbs(path) || strings.HasPrefix(path, string(filepath.Separator)) {
+		return nil, fmt.Errorf("file URL path must be relative to the agent VM directory, not absolute: %s", rawURL)
+	}
+	if strings.Contains(path, "..") {
+		return nil, fmt.Errorf("file URL path must be relative to the agent VM directory: %s", rawURL)
+	}
+	fullPath := filepath.Join(llmDir, path)
+	absFull, err := filepath.Abs(fullPath)
+	if err != nil {
+		return nil, fmt.Errorf("file URL path resolve: %w", err)
+	}
+	absLLM, err := filepath.Abs(llmDir)
+	if err != nil {
+		return nil, fmt.Errorf("llm dir resolve: %w", err)
+	}
+	rel, err := filepath.Rel(absLLM, absFull)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return nil, fmt.Errorf("file URL path must be relative to the agent VM directory: %s", rawURL)
+	}
+	info, err := os.Stat(absFull)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("file or folder not found: %s", path)
+		}
+		return nil, fmt.Errorf("file URL stat: %w", err)
+	}
+	if info.IsDir() {
+		var items []batchItem
+		err := filepath.WalkDir(absFull, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			itemRel, err := filepath.Rel(absLLM, p)
+			if err != nil || strings.HasPrefix(itemRel, "..") {
+				return nil
+			}
+			items = append(items, batchItem{ItemID: filepath.ToSlash(itemRel)})
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("file URL walk: %w", err)
+		}
+		if len(items) == 0 {
+			return nil, fmt.Errorf("folder is empty: %s", path)
+		}
+		return items, nil
+	}
+	return []batchItem{{ItemID: filepath.ToSlash(rel)}}, nil
 }
 
 // --- DAG Executor ---

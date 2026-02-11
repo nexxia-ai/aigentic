@@ -248,8 +248,8 @@ func TestExecuteBatch_Success(t *testing.T) {
 		SubAgent:    "worker",
 		Description: "test batch",
 		Items: []batchItem{
-			{ItemID: "item-1", Message: "process item 1"},
-			{ItemID: "item-2", Message: "process item 2"},
+			{ItemID: "item-1"},
+			{ItemID: "item-2"},
 		},
 	}
 	policy := &BatchPolicy{MaxConcurrency: 2, ContinueOnError: false}
@@ -275,7 +275,7 @@ func TestExecuteBatch_UnknownSubAgent(t *testing.T) {
 	input := batchInput{
 		SubAgent:    "nonexistent",
 		Description: "test batch",
-		Items:       []batchItem{{ItemID: "item-1", Message: "test"}},
+		Items:       []batchItem{{ItemID: "item-1"}},
 	}
 	policy := &BatchPolicy{MaxConcurrency: 2}
 
@@ -291,7 +291,7 @@ func TestExecuteBatch_MaxItemsExceeded(t *testing.T) {
 
 	items := make([]batchItem, 5)
 	for i := range items {
-		items[i] = batchItem{ItemID: "i", Message: "m"}
+		items[i] = batchItem{ItemID: "i"}
 	}
 
 	input := batchInput{SubAgent: "worker", Description: "test", Items: items}
@@ -310,7 +310,7 @@ func TestExecuteBatch_PersistsResult(t *testing.T) {
 	input := batchInput{
 		SubAgent:    "worker",
 		Description: "persist test",
-		Items:       []batchItem{{ItemID: "item-1", Message: "process"}},
+		Items:       []batchItem{{ItemID: "item-1"}},
 	}
 	policy := &BatchPolicy{MaxConcurrency: 1}
 
@@ -334,6 +334,125 @@ func TestExecuteBatch_PersistsResult(t *testing.T) {
 	err = json.Unmarshal(data, &res)
 	require.NoError(t, err)
 	assert.Equal(t, "completed", res.Status)
+}
+
+func TestExpandFileURL_SingleFile(t *testing.T) {
+	llmDir := t.TempDir()
+	uploads := filepath.Join(llmDir, "uploads")
+	require.NoError(t, os.MkdirAll(uploads, 0755))
+	f := filepath.Join(uploads, "doc.pdf")
+	require.NoError(t, os.WriteFile(f, []byte("x"), 0644))
+
+	items, err := expandFileURL(llmDir, "file://uploads/doc.pdf")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "uploads/doc.pdf", items[0].ItemID)
+}
+
+func TestExpandFileURL_Folder(t *testing.T) {
+	llmDir := t.TempDir()
+	uploads := filepath.Join(llmDir, "uploads")
+	require.NoError(t, os.MkdirAll(uploads, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(uploads, "a.pdf"), []byte("a"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(uploads, "b.pdf"), []byte("b"), 0644))
+
+	items, err := expandFileURL(llmDir, "file://uploads")
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	ids := []string{items[0].ItemID, items[1].ItemID}
+	assert.Contains(t, ids, "uploads/a.pdf")
+	assert.Contains(t, ids, "uploads/b.pdf")
+}
+
+func TestExpandFileURL_Recursive(t *testing.T) {
+	llmDir := t.TempDir()
+	base := filepath.Join(llmDir, "uploads", "nested")
+	require.NoError(t, os.MkdirAll(base, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "deep.pdf"), []byte("x"), 0644))
+
+	items, err := expandFileURL(llmDir, "file://uploads")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "uploads/nested/deep.pdf", items[0].ItemID)
+}
+
+func TestExpandFileURL_EmptyFolder(t *testing.T) {
+	llmDir := t.TempDir()
+	empty := filepath.Join(llmDir, "empty")
+	require.NoError(t, os.MkdirAll(empty, 0755))
+
+	_, err := expandFileURL(llmDir, "file://empty")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty")
+}
+
+func TestExpandFileURL_NotFound(t *testing.T) {
+	llmDir := t.TempDir()
+	_, err := expandFileURL(llmDir, "file://nonexistent")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestExpandFileURL_PathEscape(t *testing.T) {
+	llmDir := t.TempDir()
+	_, err := expandFileURL(llmDir, "file://../../etc/passwd")
+	require.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "..") || strings.Contains(err.Error(), "agent VM directory"), "error should reject path escape")
+}
+
+func TestExpandFileURL_AbsolutePathRejected(t *testing.T) {
+	llmDir := t.TempDir()
+	// Build absolute path using filepath separator (e.g. /foo on Unix, \foo on Windows)
+	absoluteURL := "file://" + string(filepath.Separator) + "foo"
+	_, err := expandFileURL(llmDir, absoluteURL)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "relative")
+	assert.Contains(t, err.Error(), "agent VM directory")
+}
+
+func TestExpandItems_HTTPURL(t *testing.T) {
+	items, err := expandItems(t.TempDir(), []batchItem{{ItemID: "https://example.com/page1"}})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "https://example.com/page1", items[0].ItemID)
+}
+
+func TestExpandItems_RegularItem(t *testing.T) {
+	items, err := expandItems(t.TempDir(), []batchItem{{ItemID: "task-1"}})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "task-1", items[0].ItemID)
+}
+
+func TestExecuteBatch_WithFileURL(t *testing.T) {
+	ar := newTestAgentRun(t)
+	ar.AddSubAgent("worker", "processes items", "You process items", ar.model, nil)
+
+	llmDir := ar.AgentContext().Workspace().LLMDir
+	uploads := filepath.Join(llmDir, "uploads")
+	require.NoError(t, os.MkdirAll(uploads, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(uploads, "f1.pdf"), []byte("1"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(uploads, "f2.pdf"), []byte("2"), 0644))
+
+	input := batchInput{
+		SubAgent:    "worker",
+		Description: "batch from folder",
+		Items:       []batchItem{{ItemID: "file://uploads"}},
+	}
+	policy := &BatchPolicy{MaxConcurrency: 2}
+
+	result, err := executeBatch(ar, input, policy)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Result.Error)
+
+	var res batchResult
+	err = json.Unmarshal([]byte(toolResultText(result)), &res)
+	require.NoError(t, err)
+	assert.Equal(t, "completed", res.Status)
+	assert.Equal(t, 2, res.Total)
+	assert.Equal(t, 2, res.Completed)
+	assert.Len(t, res.Items, 2)
 }
 
 // --- Plan Execution Tests ---

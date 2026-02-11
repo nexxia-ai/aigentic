@@ -90,6 +90,36 @@ func NewAtPath(id, description, instructions, exactPath string) (*AgentContext, 
 	return ctx, nil
 }
 
+// NewChild creates a child AgentContext with its own _private/ directory but sharing the
+// given llm/ directory. Used by batch and plan tools to give each child its own turns
+// while sharing uploads, output, and memory with the parent and siblings.
+func NewChild(id, description, instructions, privateDir, sharedLLMDir string) (*AgentContext, error) {
+	if privateDir == "" {
+		return nil, fmt.Errorf("child private dir is required")
+	}
+	if sharedLLMDir == "" {
+		return nil, fmt.Errorf("shared LLM dir is required")
+	}
+
+	ws, err := newChildWorkspace(privateDir, sharedLLMDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create child workspace: %w", err)
+	}
+
+	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
+	ctx := &AgentContext{
+		id:           id,
+		description:  description,
+		instructions: instructions,
+		runMeta:      m,
+		workspace:    ws,
+	}
+	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
+	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
+	ctx.UpdateUserTemplate(DefaultUserTemplate)
+	return ctx, nil
+}
+
 func (r *AgentContext) Workspace() *Workspace {
 	return r.workspace
 }

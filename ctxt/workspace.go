@@ -46,6 +46,38 @@ func NewWorkspaceAtPath(exactPath string) (*Workspace, error) {
 	return newWorkspaceAt(absPath)
 }
 
+// newChildWorkspace creates a workspace for a child agent that has its own _private/ directory
+// but shares the parent's llm/ directory (uploads, output, memory).
+func newChildWorkspace(privateDir, sharedLLMDir string) (*Workspace, error) {
+	absPrivate, err := filepath.Abs(privateDir)
+	if err != nil {
+		return nil, fmt.Errorf("child private dir: %w", err)
+	}
+	absLLM, err := filepath.Abs(sharedLLMDir)
+	if err != nil {
+		return nil, fmt.Errorf("shared LLM dir: %w", err)
+	}
+
+	w := &Workspace{
+		RootDir:    filepath.Dir(absPrivate), // parent of _private
+		LLMDir:     absLLM,
+		PrivateDir: absPrivate,
+		MemoryDir:  "",
+		UploadDir:  filepath.Join(absLLM, "uploads"),
+		OutputDir:  filepath.Join(absLLM, "output"),
+		TurnDir:    filepath.Join(absPrivate, "turns"),
+	}
+
+	// Only create the private directories; the shared llm/ dirs already exist.
+	privateDirs := []string{absPrivate, w.TurnDir}
+	for _, dir := range privateDirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+	}
+	return w, nil
+}
+
 func newWorkspaceAt(rootDir string) (*Workspace, error) {
 	llmDir := filepath.Join(rootDir, "llm")
 	privateDir := filepath.Join(rootDir, "_private")

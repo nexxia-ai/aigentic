@@ -25,6 +25,10 @@ type Agent struct {
 	Agents     []Agent
 	AgentTools []run.AgentTool
 
+	// DynamicPlanning enables runtime plan creation.
+	// When true, the platform injects a planner sub-agent, create_plan, and execute_plan tools.
+	DynamicPlanning bool
+
 	// Description should contain a description of the agent's role and capabilities.
 	// It will be added to the system prompt. If this is a sub-agent, the Description is passed to the parent agent.
 	Description string
@@ -109,6 +113,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetStreaming(a.Stream)
 	ar.SetOutputInstructions(a.OutputInstructions)
 	ar.SetLogLevel(a.LogLevel)
+	ar.SetDynamicPlanning(a.DynamicPlanning)
 	for _, agent := range a.Agents {
 		ar.AddSubAgent(agent.Name, agent.Description, agent.Instructions, agent.Model, agent.AgentTools)
 	}

@@ -46,9 +46,20 @@ type AgentRun struct {
 
 	retrievers []Retriever
 
-	subAgents []AgentTool
+	subAgents    []AgentTool
+	subAgentDefs map[string]subAgentDef
+
+	dynamicPlanning bool
 
 	turnMetrics turnMetrics
+}
+
+type subAgentDef struct {
+	name         string
+	description  string
+	instructions string
+	model        *ai.Model
+	tools        []AgentTool
 }
 
 type turnMetrics struct {
@@ -133,6 +144,7 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 		processedToolCallIDs: make(map[string]bool),
 		interceptors:         make([]Interceptor, 0),
 		tools:                make([]AgentTool, 0),
+		subAgentDefs:         make(map[string]subAgentDef),
 		trace:                &TraceRun{},
 		streaming:            false,
 		includeHistory:       true,
@@ -158,6 +170,7 @@ func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*Agen
 		processedToolCallIDs: make(map[string]bool),
 		interceptors:         make([]Interceptor, 0),
 		tools:                tools,
+		subAgentDefs:         make(map[string]subAgentDef),
 		trace:                &TraceRun{},
 		streaming:            false,
 		includeHistory:       true,
@@ -248,6 +261,18 @@ func (r *AgentRun) stop() {
 	close(r.actionQueue)
 }
 
+func (r *AgentRun) SetDynamicPlanning(enabled bool) {
+	r.dynamicPlanning = enabled
+}
+
+func (r *AgentRun) DynamicPlanning() bool {
+	return r.dynamicPlanning
+}
+
+func (r *AgentRun) SubAgentDefs() map[string]subAgentDef {
+	return r.subAgentDefs
+}
+
 func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Model, tools []AgentTool) {
 	agentTool := AgentTool{
 		Name:        name,
@@ -312,6 +337,14 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 		},
 	}
 	r.subAgents = append(r.subAgents, agentTool)
+
+	r.subAgentDefs[name] = subAgentDef{
+		name:         name,
+		description:  description,
+		instructions: message,
+		model:        model,
+		tools:        tools,
+	}
 }
 
 func (r *AgentRun) Wait(d time.Duration) (string, error) {

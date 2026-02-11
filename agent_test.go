@@ -356,6 +356,154 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 	assert.Equal(t, expectedToolResponses, actualToolResponses, "Tool response messages should have correct tool call IDs, tool names, and content that match the original requests")
 }
 
+func TestAgentBatchExecution(t *testing.T) {
+	subAgentCallCount := 0
+
+	callCount := 0
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
+
+		// Check if this is the sub-agent (child run) -- it won't have tools
+		if len(tools) == 0 {
+			subAgentCallCount++
+			for _, msg := range messages {
+				if um, ok := msg.(ai.UserMessage); ok {
+					return ai.AIMessage{
+						Role:    ai.AssistantRole,
+						Content: "Processed: " + um.Content,
+					}, nil
+				}
+			}
+			return ai.AIMessage{Role: ai.AssistantRole, Content: "no input"}, nil
+		}
+
+		// Main agent: first call triggers agent_batch
+		if callCount == 1 {
+			return ai.AIMessage{
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_batch",
+						Type: "function",
+						Name: "agent_batch",
+						Args: `{"sub_agent": "worker", "description": "process items", "items": [{"item_id": "doc-1", "message": "analyse document 1"}, {"item_id": "doc-2", "message": "analyse document 2"}]}`,
+					},
+				},
+			}, nil
+		}
+
+		// Second call: summarize results
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Batch completed. Both documents have been processed.",
+		}, nil
+	})
+
+	agent := Agent{
+		Name:        "batch-agent",
+		Description: "An agent that processes documents in batch",
+		Model:       model,
+		EnableTrace: true,
+	}
+
+	ar, err := agent.New()
+	assert.NoError(t, err)
+
+	ar.AddSubAgent("worker", "analyses documents", "You analyse documents and extract key data.", model, nil)
+	run.AddExecutionTools(ar, run.ExecutionToolsConfig{
+		BatchPolicy: &run.BatchPolicy{MaxConcurrency: 2, ContinueOnError: true},
+	})
+
+	ar.Run(context.Background(), "Process these two documents in batch")
+	result, err := ar.Wait(0)
+
+	assert.NoError(t, err)
+	assert.Contains(t, result, "Batch completed")
+	assert.GreaterOrEqual(t, subAgentCallCount, 2, "Sub-agent should have been called at least twice (once per batch item)")
+}
+
+func TestAgentPlanExecution(t *testing.T) {
+	stepExecutions := make(map[string]bool)
+	callCount := 0
+
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		callCount++
+
+		// Child agent calls (no tools available)
+		if len(tools) == 0 {
+			for _, msg := range messages {
+				if um, ok := msg.(ai.UserMessage); ok {
+					if strings.Contains(um.Content, "extract") || strings.Contains(um.Content, "step-1") {
+						stepExecutions["extract"] = true
+					}
+					if strings.Contains(um.Content, "Previous step results") {
+						stepExecutions["review"] = true
+					}
+					return ai.AIMessage{
+						Role:    ai.AssistantRole,
+						Content: "Completed analysis: found key terms and dates",
+					}, nil
+				}
+			}
+			return ai.AIMessage{Role: ai.AssistantRole, Content: "done"}, nil
+		}
+
+		// Main agent: first call triggers plan tool
+		if callCount == 1 {
+			return ai.AIMessage{
+				Role: ai.AssistantRole,
+				ToolCalls: []ai.ToolCall{
+					{
+						ID:   "call_plan",
+						Type: "function",
+						Name: "doc_pipeline",
+						Args: `{"description": "process document", "inputs": {"extract": "extract key data from document"}}`,
+					},
+				},
+			}, nil
+		}
+
+		// Final response
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "Pipeline completed. Document has been extracted and reviewed.",
+		}, nil
+	})
+
+	agent := Agent{
+		Name:        "plan-agent",
+		Description: "An agent that runs document pipelines",
+		Model:       model,
+		EnableTrace: true,
+	}
+
+	ar, err := agent.New()
+	assert.NoError(t, err)
+
+	ar.AddSubAgent("analyser", "extracts data", "You extract key data from documents.", model, nil)
+	ar.AddSubAgent("reviewer", "reviews data", "You review extracted data for accuracy.", model, nil)
+	run.AddExecutionTools(ar, run.ExecutionToolsConfig{
+		Plans: []run.PlanDef{
+			{
+				Name:        "doc-pipeline",
+				Description: "Extract then review a document",
+				Steps: []run.PlanStep{
+					{ID: "extract", SubAgent: "analyser"},
+					{ID: "review", SubAgent: "reviewer", DependsOn: []string{"extract"}},
+				},
+			},
+		},
+	})
+
+	ar.Run(context.Background(), "Run the document pipeline")
+	result, err := ar.Wait(0)
+
+	assert.NoError(t, err)
+	assert.Contains(t, result, "Pipeline completed")
+	assert.True(t, stepExecutions["extract"], "extract step should have executed")
+	assert.True(t, stepExecutions["review"], "review step should have executed (received upstream output)")
+}
+
 func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 
 	callCount := 0

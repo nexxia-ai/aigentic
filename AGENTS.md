@@ -31,6 +31,22 @@ The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runti
 
 The root `aigentic` package (`agent.go`) provides the declarative `Agent` type that users configure, which internally creates and manages `run.AgentRun` instances for execution.
 
+#### Execution Tools (`execution_tools.go`)
+
+The `run` package provides execution tools for batch processing, DAG-based plan execution, and dynamic planning:
+
+- **`AddExecutionTools(r *AgentRun, cfg ExecutionToolsConfig)`** - Registers batch, plan, and dynamic planning tools on an AgentRun based on config.
+- **`BatchPolicy`** - Configures batch execution: `MaxItems`, `MaxConcurrency`, `TimeoutPerItem`, `TimeoutTotal`, `ContinueOnError`, `MaxFailedCount`.
+- **`PlanDef` / `PlanStep`** - Named plan with ordered sub-agent steps and DAG dependencies.
+- **`agent_batch` tool** - Dispatches a sub-agent across multiple items concurrently using a worker pool. Each item runs as a child `AgentRun` with shared `llm/` directory.
+- **Plan tools** - Each manifest-declared plan becomes a tool. Steps execute via the DAG executor with automatic upstream output wiring.
+- **Dynamic planning** - When `DynamicPlanning` is true, injects `planner` sub-agent + `create_plan` / `execute_plan` tools for runtime plan creation.
+- **DAG executor** - Validates, topologically sorts, and concurrently executes steps respecting dependencies.
+- **Child workspace model** - Child agents use `ctxt.NewChild()` for private workspace with shared LLM directory.
+- **Persistence** - Batch results (`result.json`) and plan state (`plan.json`) are persisted incrementally for reload support.
+
+Sub-agents are declared on `AgentRun` via `AddSubAgent(name, description, instructions, model, tools)` and stored in `subAgentDefs`. The `Agent` struct supports `DynamicPlanning bool` to enable runtime plan creation.
+
 #### Tool File References
 
 Tools can register files to be included in the next turn's prompt by returning `FileRefs` in `ToolCallResult`:
@@ -53,7 +69,8 @@ When `IncludeInPrompt` is `true`, the file content is automatically injected int
 The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context management and execution environment for agents:
 
 - **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and workspace. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
-- **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`, `_private/turns`). Use `AgentContext.Workspace()` (deprecated: `ExecutionEnvironment()`).
+- **NewChild** (`context.go`) - Creates a child `AgentContext` with its own `_private/` directory but sharing the parent's `llm/` directory. Used by batch items and plan steps: `NewChild(id, description, instructions, privateDir, sharedLLMDir)`.
+- **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`, `_private/turns`). Use `AgentContext.Workspace()` (deprecated: `ExecutionEnvironment()`). `newChildWorkspace(privateDir, sharedLLMDir)` creates workspaces for child contexts.
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **Turn** (`turn.go`) - Represents individual conversation turns. Contains `FileRefs []FileRefEntry` to track files registered by tools during the turn.
 - **FileRefEntry** (`turn.go`) - Describes a file reference with `Path` (relative to LLM dir), `IncludeInPrompt`, `Ephemeral` (do not persist to turn), and `MimeType` (for prompt injection).

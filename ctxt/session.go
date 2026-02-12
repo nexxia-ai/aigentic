@@ -35,7 +35,7 @@ func ListSessions(baseDir string) ([]Session, error) {
 		}
 
 		sessionDir := filepath.Join(absBaseDir, entry.Name())
-		contextFile := filepath.Join(sessionDir, "_private", "context.json")
+		contextFile := filepath.Join(sessionDir, "_private", "main", "context.json")
 
 		if _, err := os.Stat(contextFile); os.IsNotExist(err) {
 			continue

@@ -17,7 +17,7 @@ import (
 const memoryStoreName = "memory_files"
 
 // Workspace manages the filesystem layout and I/O operations for an agent's execution directory.
-// It owns llm/, _private/, turns/, and provides document CRUD and memory file access.
+// It owns llm/, _private/main/ (or _private/batch|plan/<runid>/ for children), and turn/.
 type Workspace struct {
 	RootDir    string
 	LLMDir     string
@@ -65,7 +65,7 @@ func newChildWorkspace(privateDir, sharedLLMDir string) (*Workspace, error) {
 		MemoryDir:  "",
 		UploadDir:  filepath.Join(absLLM, "uploads"),
 		OutputDir:  filepath.Join(absLLM, "output"),
-		TurnDir:    filepath.Join(absPrivate, "turns"),
+		TurnDir:    filepath.Join(absPrivate, "turn"),
 	}
 
 	// Only create the private directories; the shared llm/ dirs already exist.
@@ -80,7 +80,7 @@ func newChildWorkspace(privateDir, sharedLLMDir string) (*Workspace, error) {
 
 func newWorkspaceAt(rootDir string) (*Workspace, error) {
 	llmDir := filepath.Join(rootDir, "llm")
-	privateDir := filepath.Join(rootDir, "_private")
+	privateDir := filepath.Join(rootDir, "_private", "main")
 
 	w := &Workspace{
 		RootDir:    rootDir,
@@ -89,7 +89,7 @@ func newWorkspaceAt(rootDir string) (*Workspace, error) {
 		MemoryDir:  "",
 		UploadDir:  filepath.Join(llmDir, "uploads"),
 		OutputDir:  filepath.Join(llmDir, "output"),
-		TurnDir:    filepath.Join(privateDir, "turns"),
+		TurnDir:    filepath.Join(privateDir, "turn"),
 	}
 	if err := w.init(); err != nil {
 		return nil, err
@@ -192,7 +192,7 @@ func loadWorkspace(sessionDir string) (*Workspace, error) {
 
 	rootDir := sessionDir
 	llmDir := filepath.Join(rootDir, "llm")
-	privateDir := filepath.Join(rootDir, "_private")
+	privateDir := filepath.Join(rootDir, "_private", "main")
 
 	ws := &Workspace{
 		RootDir:    rootDir,
@@ -201,7 +201,7 @@ func loadWorkspace(sessionDir string) (*Workspace, error) {
 		MemoryDir:  "",
 		UploadDir:  filepath.Join(llmDir, "uploads"),
 		OutputDir:  filepath.Join(llmDir, "output"),
-		TurnDir:    filepath.Join(privateDir, "turns"),
+		TurnDir:    filepath.Join(privateDir, "turn"),
 	}
 
 	return ws, nil

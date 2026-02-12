@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -190,10 +191,10 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 	var completedCount atomic.Int32
 	var failedCount atomic.Int32
 
-	// Persist intermediate results
+	// Persist intermediate results under _private/batch/<batchID>/
 	batchDir := ""
 	if ws != nil {
-		batchDir = filepath.Join(ws.PrivateDir, "batch", batchID)
+		batchDir = filepath.Join(ws.RootDir, "_private", "batch", batchID)
 		os.MkdirAll(batchDir, 0755)
 	}
 
@@ -224,7 +225,7 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 			processingLabel := fmt.Sprintf("Processing %s", it.ItemID)
 			parentRun.EmitToolActivity(toolCallID, processingLabel, activityID)
 
-			output, err := runChildAgent(batchCtx, parentRun, def, it.ItemID, "Process "+it.ItemID, batchID, policy.TimeoutPerItem)
+			output, err := runChildAgent(batchCtx, parentRun, def, it.ItemID, "Process "+it.ItemID, batchID, i, policy.TimeoutPerItem)
 			if err != nil {
 				results[i] = batchItemResult{ItemID: it.ItemID, Status: "failed", Error: err.Error()}
 				failedCount.Add(1)
@@ -287,9 +288,10 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 	}, nil
 }
 
-func runChildAgent(ctx context.Context, parentRun *AgentRun, def subAgentDef, itemID, message, batchID string, timeoutPerItem int) (string, error) {
+func runChildAgent(ctx context.Context, parentRun *AgentRun, def subAgentDef, itemID, message, batchID string, itemIndex int, timeoutPerItem int) (string, error) {
 	ws := parentRun.AgentContext().Workspace()
-	privateDir := filepath.Join(ws.PrivateDir, "batch", batchID, "items", itemID)
+	// Child run under _private/batch/<batchID>/<itemIndex>/turn/
+	privateDir := filepath.Join(ws.RootDir, "_private", "batch", batchID, strconv.Itoa(itemIndex))
 
 	childCtx, err := ctxt.NewChild(def.name+"-"+itemID, def.description, def.instructions, privateDir, ws.LLMDir)
 	if err != nil {
@@ -670,7 +672,7 @@ func executePlan(parentRun *AgentRun, plan PlanDef, args map[string]interface{})
 	ws := parentRun.AgentContext().Workspace()
 	planDir := ""
 	if ws != nil {
-		planDir = filepath.Join(ws.PrivateDir, "plan", planID)
+		planDir = filepath.Join(ws.RootDir, "_private", "plan", planID)
 		os.MkdirAll(planDir, 0755)
 	}
 
@@ -695,7 +697,8 @@ func executePlan(parentRun *AgentRun, plan PlanDef, args map[string]interface{})
 			message = upstreamText.String()
 		}
 
-		privateDir := filepath.Join(ws.PrivateDir, "plan", planID, "tasks", step.ID)
+		// Child run under _private/plan/<planID>/<stepID>/turn/
+		privateDir := filepath.Join(ws.RootDir, "_private", "plan", planID, step.ID)
 		childCtx, err := ctxt.NewChild(def.name+"-"+step.ID, def.description, def.instructions, privateDir, ws.LLMDir)
 		if err != nil {
 			return stepResult{Status: "failed", Error: err.Error()}, nil
@@ -924,10 +927,10 @@ func executeCreatePlan(r *AgentRun, input createPlanInput) (*ToolCallResult, err
 
 	planID := "plan_" + uuid.New().String()[:8]
 
-	// Persist frozen plan
+	// Persist frozen plan under _private/plan/<planID>/
 	ws := r.AgentContext().Workspace()
 	if ws != nil {
-		planDir := filepath.Join(ws.PrivateDir, "plan", planID)
+		planDir := filepath.Join(ws.RootDir, "_private", "plan", planID)
 		os.MkdirAll(planDir, 0755)
 
 		planData := map[string]interface{}{
@@ -996,7 +999,7 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 		}, nil
 	}
 
-	planDir := filepath.Join(ws.PrivateDir, "plan", planID)
+	planDir := filepath.Join(ws.RootDir, "_private", "plan", planID)
 	planFile := filepath.Join(planDir, "plan.json")
 	data, err := os.ReadFile(planFile)
 	if err != nil {
@@ -1077,7 +1080,8 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 			message = upstreamText.String()
 		}
 
-		privateDir := filepath.Join(ws.PrivateDir, "plan", planID, "tasks", step.ID)
+		// Child run under _private/plan/<planID>/<stepID>/turn/
+		privateDir := filepath.Join(ws.RootDir, "_private", "plan", planID, step.ID)
 		childCtx, err := ctxt.NewChild(def.name+"-"+step.ID, def.description, def.instructions, privateDir, ws.LLMDir)
 		if err != nil {
 			return stepResult{Status: "failed", Error: err.Error()}, nil

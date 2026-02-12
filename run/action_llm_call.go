@@ -197,8 +197,8 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 				}
 			}
 
-			// Notify any content from the AI message
-			if r.currentStreamGroup.AIMessage.Content != "" {
+			// Notify any content from the AI message (skip when streaming; already sent in chunks)
+			if r.currentStreamGroup.AIMessage.Content != "" && !r.streaming {
 				event := &event.ContentEvent{
 					RunID:     r.id,
 					AgentName: r.AgentName(),

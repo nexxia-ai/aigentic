@@ -56,7 +56,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string,
 			}
 		}
 
-		if action.Group.AIMessage.Content != "" {
+		if action.Group.AIMessage.Content != "" && !r.streaming {
 			event := &event.ContentEvent{
 				RunID:     r.id,
 				AgentName: r.AgentName(),

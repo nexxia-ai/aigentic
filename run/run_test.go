@@ -2,6 +2,9 @@ package run
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,10 +42,6 @@ func (n *noOpTrace) Close() error {
 
 func (n *noOpTrace) Filepath() string {
 	return ""
-}
-
-func newTestTracer() Trace {
-	return &noOpTrace{}
 }
 
 func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
@@ -541,4 +540,118 @@ func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
 	assert.NotContains(t, content2, "Response from model-1")
 
 	assert.Equal(t, model2, ar.Model(), "Model() should return the updated model")
+}
+
+func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "ok",
+			Response: ai.Response{
+				Usage: ai.Usage{
+					PromptTokens:     5,
+					CompletionTokens: 5,
+				},
+			},
+		}, nil
+	})
+
+	ar, err := NewAgentRun("context-stats-agent", "test", "", t.TempDir())
+	assert.NoError(t, err)
+	ar.SetModel(model)
+	ar.SetEnableTrace(true)
+
+	ar.Run(context.Background(), "hello")
+	_, err = ar.Wait(0)
+	assert.NoError(t, err)
+
+	ws := ar.AgentContext().Workspace()
+	assert.NotNil(t, ws)
+	root := ws.RootDir
+	batchDir := filepath.Join(root, "_private", "batch", "bid", "0")
+	assert.NoError(t, os.MkdirAll(filepath.Join(batchDir, "turn", "turn-000001"), 0755))
+
+	runMeta := map[string]string{"agent_name": "subagent"}
+	runMetaData, _ := json.Marshal(runMeta)
+	assert.NoError(t, os.WriteFile(filepath.Join(batchDir, "run_meta.json"), runMetaData, 0644))
+
+	parentTurns := ar.AgentContext().GetHistory().GetTurns()
+	var childTs string
+	if len(parentTurns) > 0 {
+		childTs = parentTurns[0].Timestamp.Add(time.Second).Format(time.RFC3339)
+	} else {
+		childTs = time.Now().Format(time.RFC3339)
+	}
+	childTurn := map[string]interface{}{
+		"turn_id":    "turn-000001",
+		"timestamp":  childTs,
+		"agent_name": "subagent",
+		"usage": map[string]interface{}{
+			"prompt_tokens":     10,
+			"completion_tokens": 20,
+		},
+	}
+	turnData, _ := json.Marshal(childTurn)
+	assert.NoError(t, os.WriteFile(filepath.Join(batchDir, "turn", "turn-000001", "turn.json"), turnData, 0644))
+
+	ar.Run(context.Background(), "/context")
+	var content string
+	for evt := range ar.eventQueue {
+		if ce, ok := evt.(*event.ContentEvent); ok {
+			content = ce.Content
+		}
+	}
+
+	assert.Contains(t, content, "run total:")
+	assert.Contains(t, content, "in: 15", "run total should include parent (5) + child (10) prompt tokens")
+	assert.Contains(t, content, "out: 25", "run total should include parent (5) + child (20) completion tokens")
+	assert.Contains(t, content, "  subagent/", "table should show indented child row (two spaces, no arrow)")
+	assert.Contains(t, content, "subagent")
+}
+
+func TestFormatAigenticStats_ShowsReasoningWhenOnlyChildHasIt(t *testing.T) {
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{
+			Role:     ai.AssistantRole,
+			Content:  "ok",
+			Response: ai.Response{Usage: ai.Usage{PromptTokens: 1, CompletionTokens: 1}},
+		}, nil
+	})
+
+	ar, err := NewAgentRun("context-reasoning-agent", "test", "", t.TempDir())
+	assert.NoError(t, err)
+	ar.SetModel(model)
+	ar.SetEnableTrace(true)
+
+	ar.Run(context.Background(), "hello")
+	_, _ = ar.Wait(0)
+
+	ws := ar.AgentContext().Workspace()
+	batchDir := filepath.Join(ws.RootDir, "_private", "batch", "r1", "0")
+	assert.NoError(t, os.MkdirAll(filepath.Join(batchDir, "turn", "turn-000001"), 0755))
+	os.WriteFile(filepath.Join(batchDir, "run_meta.json"), []byte(`{"agent_name":"sub"}`), 0644)
+	childTurn := map[string]interface{}{
+		"turn_id":    "turn-000001",
+		"timestamp":  time.Now().Format(time.RFC3339),
+		"agent_name": "sub",
+		"usage": map[string]interface{}{
+			"prompt_tokens":     1,
+			"completion_tokens": 1,
+			"completion_tokens_details": map[string]interface{}{
+				"reasoning_tokens": 5,
+			},
+		},
+	}
+	turnData, _ := json.Marshal(childTurn)
+	os.WriteFile(filepath.Join(batchDir, "turn", "turn-000001", "turn.json"), turnData, 0644)
+
+	ar.Run(context.Background(), "/context")
+	var content string
+	for evt := range ar.eventQueue {
+		if ce, ok := evt.(*event.ContentEvent); ok {
+			content = ce.Content
+		}
+	}
+
+	assert.Contains(t, content, "reasoning:", "table should show reasoning column when child has reasoning tokens")
 }

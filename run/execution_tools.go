@@ -190,6 +190,7 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 	results := make([]batchItemResult, total)
 	var completedCount atomic.Int32
 	var failedCount atomic.Int32
+	var resultsMu sync.Mutex
 
 	// Persist intermediate results under _private/batch/<batchID>/
 	batchDir := ""
@@ -210,22 +211,27 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
 			case <-batchCtx.Done():
+				resultsMu.Lock()
 				results[i] = batchItemResult{ItemID: it.ItemID, Status: "cancelled", Error: "batch cancelled"}
+				resultsMu.Unlock()
 				failedCount.Add(1)
 				return
 			}
 
+			resultsMu.Lock()
 			if policy.MaxFailedCount > 0 && int(failedCount.Load()) >= policy.MaxFailedCount {
 				results[i] = batchItemResult{ItemID: it.ItemID, Status: "skipped", Error: "max failures reached"}
-				failedCount.Add(1)
+				resultsMu.Unlock()
 				return
 			}
+			resultsMu.Unlock()
 
 			activityID := it.ItemID
 			processingLabel := fmt.Sprintf("Processing %s", it.ItemID)
 			parentRun.EmitToolActivity(toolCallID, processingLabel, activityID)
 
 			output, err := runChildAgent(batchCtx, parentRun, def, it.ItemID, "Process "+it.ItemID, batchID, i, policy.TimeoutPerItem)
+			resultsMu.Lock()
 			if err != nil {
 				results[i] = batchItemResult{ItemID: it.ItemID, Status: "failed", Error: err.Error()}
 				failedCount.Add(1)
@@ -237,21 +243,24 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 			}
 			completedCount.Add(1)
 			c := int(completedCount.Load())
+			f := int(failedCount.Load())
+			itemsCopy := append([]batchItemResult(nil), results...)
+			resultsMu.Unlock()
+
 			if err != nil {
 				parentRun.EmitToolActivity(toolCallID, processingLabel+" : failed", activityID)
 			} else {
 				parentRun.EmitToolActivity(toolCallID, processingLabel+" : completed", activityID)
 			}
 
-			// Incremental persistence
 			if batchDir != "" {
 				persistBatchResult(batchDir, batchResult{
 					SubAgent:  input.SubAgent,
 					Status:    "running",
 					Total:     total,
 					Completed: c,
-					Failed:    int(failedCount.Load()),
-					Items:     results,
+					Failed:    f,
+					Items:     itemsCopy,
 				})
 			}
 		}(idx, item)
@@ -260,7 +269,10 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 	wg.Wait()
 
 	status := "completed"
+	resultsMu.Lock()
 	f := int(failedCount.Load())
+	resItems := append([]batchItemResult(nil), results...)
+	resultsMu.Unlock()
 	if f > 0 && f == total {
 		status = "failed"
 	} else if f > 0 {
@@ -273,7 +285,7 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 		Total:     total,
 		Completed: int(completedCount.Load()),
 		Failed:    f,
-		Items:     results,
+		Items:     resItems,
 	}
 
 	if batchDir != "" {
@@ -288,16 +300,12 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 	}, nil
 }
 
-func runChildAgent(ctx context.Context, parentRun *AgentRun, def subAgentDef, itemID, message, batchID string, itemIndex int, timeoutPerItem int) (string, error) {
+func runChildStep(ctx context.Context, parentRun *AgentRun, def subAgentDef, privateDir, stepID, message string) (string, error) {
 	ws := parentRun.AgentContext().Workspace()
-	// Child run under _private/batch/<batchID>/<itemIndex>/turn/
-	privateDir := filepath.Join(ws.RootDir, "_private", "batch", batchID, strconv.Itoa(itemIndex))
-
-	childCtx, err := ctxt.NewChild(def.name+"-"+itemID, def.description, def.instructions, privateDir, ws.LLMDir)
+	childCtx, err := ctxt.NewChild(def.name+"-"+stepID, def.description, def.instructions, privateDir, ws.LLMDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to create child context: %w", err)
 	}
-
 	childRun, err := Continue(childCtx, def.model, def.tools)
 	if err != nil {
 		return "", fmt.Errorf("failed to create child run: %w", err)
@@ -305,11 +313,31 @@ func runChildAgent(ctx context.Context, parentRun *AgentRun, def subAgentDef, it
 	childRun.SetAgentName(def.name)
 	childRun.trace = parentRun.trace
 	childRun.SetEnableTrace(parentRun.enableTrace)
-	childRun.Logger = parentRun.Logger.With("batch-item", itemID)
+	childRun.Logger = parentRun.Logger.With("step", stepID)
 	if parentRun.streaming {
 		childRun.SetStreaming(true)
 	}
+	childRun.Run(ctx, message)
+	return childRun.Wait(0)
+}
 
+func buildMessageWithUpstream(base string, upstream map[string]stepResult) string {
+	if len(upstream) == 0 {
+		return base
+	}
+	var b strings.Builder
+	b.WriteString("Previous step results:\n\n")
+	for depID, depRes := range upstream {
+		b.WriteString(fmt.Sprintf("[%s]: %s\n", depID, depRes.Output))
+	}
+	b.WriteString("\n---\n")
+	b.WriteString(base)
+	return b.String()
+}
+
+func runChildAgent(ctx context.Context, parentRun *AgentRun, def subAgentDef, itemID, message, batchID string, itemIndex int, timeoutPerItem int) (string, error) {
+	ws := parentRun.AgentContext().Workspace()
+	privateDir := filepath.Join(ws.RootDir, "_private", "batch", batchID, strconv.Itoa(itemIndex))
 	var itemCtx context.Context
 	var itemCancel context.CancelFunc
 	if timeoutPerItem > 0 {
@@ -318,10 +346,7 @@ func runChildAgent(ctx context.Context, parentRun *AgentRun, def subAgentDef, it
 		itemCtx, itemCancel = context.WithCancel(ctx)
 	}
 	defer itemCancel()
-
-	childRun.Run(itemCtx, message)
-	content, err := childRun.Wait(0)
-	return content, err
+	return runChildStep(itemCtx, parentRun, def, privateDir, itemID, message)
 }
 
 func persistBatchResult(batchDir string, result batchResult) {
@@ -334,6 +359,14 @@ func persistBatchResult(batchDir string, result batchResult) {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		slog.Warn("failed to write batch result", "path", path, "error", err)
 	}
+}
+
+// validPathComponent returns true if s is safe to use as a single path component (no separators, not . or ..).
+func validPathComponent(s string) bool {
+	if s == "" || s == "." || s == ".." {
+		return false
+	}
+	return !strings.ContainsAny(s, `/\`)
 }
 
 func expandItems(llmDir string, items []batchItem) ([]batchItem, error) {
@@ -433,10 +466,13 @@ type stepResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// validateDAG checks for cycles and unknown step references.
+// validateDAG checks for cycles, unknown step references, and path-safe step IDs.
 func validateDAG(steps []dagStep) error {
 	ids := make(map[string]bool, len(steps))
 	for _, s := range steps {
+		if !validPathComponent(s.ID) {
+			return fmt.Errorf("invalid step ID (path component): %s", s.ID)
+		}
 		if ids[s.ID] {
 			return fmt.Errorf("duplicate step ID: %s", s.ID)
 		}
@@ -681,43 +717,9 @@ func executePlan(parentRun *AgentRun, plan PlanDef, args map[string]interface{})
 		if !ok {
 			return stepResult{Status: "failed", Error: fmt.Sprintf("unknown sub-agent: %s", step.SubAgent)}, nil
 		}
-
-		// Wire upstream output into the message
-		message := step.Message
-		if len(upstream) > 0 {
-			var upstreamText strings.Builder
-			upstreamText.WriteString("Previous step results:\n\n")
-			for depID, depRes := range upstream {
-				upstreamText.WriteString(fmt.Sprintf("[%s]: %s\n", depID, depRes.Output))
-			}
-			if message != "" {
-				upstreamText.WriteString("\n---\n")
-				upstreamText.WriteString(message)
-			}
-			message = upstreamText.String()
-		}
-
-		// Child run under _private/plan/<planID>/<stepID>/turn/
+		message := buildMessageWithUpstream(step.Message, upstream)
 		privateDir := filepath.Join(ws.RootDir, "_private", "plan", planID, step.ID)
-		childCtx, err := ctxt.NewChild(def.name+"-"+step.ID, def.description, def.instructions, privateDir, ws.LLMDir)
-		if err != nil {
-			return stepResult{Status: "failed", Error: err.Error()}, nil
-		}
-
-		childRun, err := Continue(childCtx, def.model, def.tools)
-		if err != nil {
-			return stepResult{Status: "failed", Error: err.Error()}, nil
-		}
-		childRun.SetAgentName(def.name)
-		childRun.trace = parentRun.trace
-		childRun.SetEnableTrace(parentRun.enableTrace)
-		childRun.Logger = parentRun.Logger.With("plan-step", step.ID)
-		if parentRun.streaming {
-			childRun.SetStreaming(true)
-		}
-
-		childRun.Run(ctx, message)
-		content, err := childRun.Wait(0)
+		content, err := runChildStep(ctx, parentRun, def, privateDir, step.ID, message)
 		if err != nil {
 			return stepResult{Status: "failed", Error: err.Error()}, nil
 		}
@@ -888,6 +890,19 @@ func newCreatePlanTool(parentRun *AgentRun) AgentTool {
 	}
 }
 
+func dynamicTasksToDAG(tasks []dynamicPlanTask) []dagStep {
+	out := make([]dagStep, len(tasks))
+	for i, t := range tasks {
+		out[i] = dagStep{
+			ID:           t.ID,
+			SubAgent:     t.SubAgent,
+			Instructions: t.Instructions,
+			DependsOn:    t.DependsOn,
+		}
+	}
+	return out
+}
+
 func executeCreatePlan(r *AgentRun, input createPlanInput) (*ToolCallResult, error) {
 	if len(input.Tasks) == 0 {
 		return &ToolCallResult{
@@ -905,17 +920,7 @@ func executeCreatePlan(r *AgentRun, input createPlanInput) (*ToolCallResult, err
 			},
 		}, nil
 	}
-
-	// Validate as a DAG
-	dagSteps := make([]dagStep, len(input.Tasks))
-	for i, t := range input.Tasks {
-		dagSteps[i] = dagStep{
-			ID:           t.ID,
-			SubAgent:     t.SubAgent,
-			Instructions: t.Instructions,
-			DependsOn:    t.DependsOn,
-		}
-	}
+	dagSteps := dynamicTasksToDAG(input.Tasks)
 	if err := validateDAG(dagSteps); err != nil {
 		return &ToolCallResult{
 			Result: &ai.ToolResult{
@@ -983,12 +988,28 @@ func newExecutePlanTool(parentRun *AgentRun) AgentTool {
 					},
 				}, nil
 			}
+			if !validPathComponent(planID) {
+				return &ToolCallResult{
+					Result: &ai.ToolResult{
+						Content: []ai.ToolContent{{Type: "text", Content: "invalid plan_id: must not contain path separators"}},
+						Error:   true,
+					},
+				}, nil
+			}
 			return executeStoredPlan(run, planID)
 		},
 	}
 }
 
 func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, error) {
+	if !validPathComponent(planID) {
+		return &ToolCallResult{
+			Result: &ai.ToolResult{
+				Content: []ai.ToolContent{{Type: "text", Content: "invalid plan_id: must not contain path separators"}},
+				Error:   true,
+			},
+		}, nil
+	}
 	ws := parentRun.AgentContext().Workspace()
 	if ws == nil {
 		return &ToolCallResult{
@@ -1037,19 +1058,19 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 
 	toolCallID := parentRun.CurrentToolCallID()
 
-	// Convert dynamic tasks to DAG steps
-	dagSteps := make([]dagStep, len(stored.Tasks))
-	for i, t := range stored.Tasks {
-		dagSteps[i] = dagStep{
-			ID:           t.ID,
-			SubAgent:     t.SubAgent,
-			Instructions: t.Instructions,
-			DependsOn:    t.DependsOn,
+	for _, t := range stored.Tasks {
+		if !validPathComponent(t.ID) {
+			return &ToolCallResult{
+				Result: &ai.ToolResult{
+					Content: []ai.ToolContent{{Type: "text", Content: fmt.Sprintf("invalid task ID in plan (path component): %s", t.ID)}},
+					Error:   true,
+				},
+			}, nil
 		}
 	}
+	dagSteps := dynamicTasksToDAG(stored.Tasks)
 
 	fn := func(ctx context.Context, step dagStep, upstream map[string]stepResult) (stepResult, error) {
-		// For dynamic plans, steps may reference a sub-agent or use inline instructions
 		var def subAgentDef
 		if step.SubAgent != "" {
 			d, ok := parentRun.subAgentDefs[step.SubAgent]
@@ -1058,7 +1079,6 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 			}
 			def = d
 		} else {
-			// Dynamic task with inline instructions -- use the parent's model
 			def = subAgentDef{
 				name:         step.ID,
 				description:  "Dynamic plan task",
@@ -1066,41 +1086,9 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 				model:        parentRun.model,
 			}
 		}
-
-		// Wire upstream output
-		message := step.Instructions
-		if len(upstream) > 0 {
-			var upstreamText strings.Builder
-			upstreamText.WriteString("Previous step results:\n\n")
-			for depID, depRes := range upstream {
-				upstreamText.WriteString(fmt.Sprintf("[%s]: %s\n", depID, depRes.Output))
-			}
-			upstreamText.WriteString("\n---\n")
-			upstreamText.WriteString(message)
-			message = upstreamText.String()
-		}
-
-		// Child run under _private/plan/<planID>/<stepID>/turn/
+		message := buildMessageWithUpstream(step.Instructions, upstream)
 		privateDir := filepath.Join(ws.RootDir, "_private", "plan", planID, step.ID)
-		childCtx, err := ctxt.NewChild(def.name+"-"+step.ID, def.description, def.instructions, privateDir, ws.LLMDir)
-		if err != nil {
-			return stepResult{Status: "failed", Error: err.Error()}, nil
-		}
-
-		childRun, err := Continue(childCtx, def.model, def.tools)
-		if err != nil {
-			return stepResult{Status: "failed", Error: err.Error()}, nil
-		}
-		childRun.SetAgentName(def.name)
-		childRun.trace = parentRun.trace
-		childRun.SetEnableTrace(parentRun.enableTrace)
-		childRun.Logger = parentRun.Logger.With("plan-task", step.ID)
-		if parentRun.streaming {
-			childRun.SetStreaming(true)
-		}
-
-		childRun.Run(ctx, message)
-		content, err := childRun.Wait(0)
+		content, err := runChildStep(ctx, parentRun, def, privateDir, step.ID, message)
 		if err != nil {
 			return stepResult{Status: "failed", Error: err.Error()}, nil
 		}
@@ -1199,18 +1187,4 @@ func loadPlanState(planDir string) (*struct {
 		return nil, err
 	}
 	return &state, nil
-}
-
-// ResumeState holds the reload state for batch and plan executions found in workspace.
-type ResumeState struct {
-	Batches map[string]*batchResult // batchID -> previous result
-	Plans   map[string][]stepResult // planID -> previous step results
-}
-
-// LoadResumeState scans the workspace for persisted batch/plan state.
-func LoadResumeState(ws interface{ PrivateDir() string }) *ResumeState {
-	return &ResumeState{
-		Batches: make(map[string]*batchResult),
-		Plans:   make(map[string][]stepResult),
-	}
 }

@@ -71,6 +71,17 @@ func TestValidateDAG_SingleStep(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestValidateDAG_InvalidStepID(t *testing.T) {
+	for _, id := range []string{"a/b", "..", ".", ""} {
+		t.Run(id, func(t *testing.T) {
+			steps := []dagStep{{ID: id}}
+			err := validateDAG(steps)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid step ID")
+		})
+	}
+}
+
 // --- DAG Ordering Tests ---
 
 func TestOrderDAG_Linear(t *testing.T) {
@@ -238,6 +249,30 @@ func toolResultText(result *ToolCallResult) string {
 	return s
 }
 
+// newTestAgentRunWithFailingModel returns an AgentRun whose model returns an error when the user message contains "fail".
+func newTestAgentRunWithFailingModel(t *testing.T) *AgentRun {
+	t.Helper()
+	tmpDir := t.TempDir()
+	ar, err := NewAgentRun("test-agent", "test", "instructions", tmpDir)
+	require.NoError(t, err)
+	failModel := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		for _, msg := range messages {
+			if um, ok := msg.(ai.UserMessage); ok {
+				if strings.Contains(um.Content, "fail") {
+					return ai.AIMessage{}, context.DeadlineExceeded
+				}
+				return ai.AIMessage{Role: ai.AssistantRole, Content: "processed: " + um.Content}, nil
+			}
+		}
+		return ai.AIMessage{Role: ai.AssistantRole, Content: "no input"}, nil
+	})
+	ar.SetModel(failModel)
+	ar.SetEnableTrace(true)
+	ar.ctx, ar.cancelFunc = context.WithCancel(context.Background())
+	t.Cleanup(func() { ar.cancelFunc() })
+	return ar
+}
+
 func TestExecuteBatch_Success(t *testing.T) {
 	ar := newTestAgentRun(t)
 
@@ -330,10 +365,85 @@ func TestExecuteBatch_PersistsResult(t *testing.T) {
 	data, err := os.ReadFile(resultPath)
 	require.NoError(t, err)
 
-	var res batchResult
-	err = json.Unmarshal(data, &res)
+	var persisted batchResult
+	err = json.Unmarshal(data, &persisted)
 	require.NoError(t, err)
-	assert.Equal(t, "completed", res.Status)
+	assert.Equal(t, "completed", persisted.Status)
+}
+
+func TestExecuteBatch_ContinueOnError(t *testing.T) {
+	ar := newTestAgentRunWithFailingModel(t)
+	ar.AddSubAgent("worker", "worker", "instructions", ar.model, nil)
+
+	input := batchInput{
+		SubAgent:    "worker",
+		Description: "continue on error test",
+		Items: []batchItem{
+			{ItemID: "item-ok"},
+			{ItemID: "item-fail"},
+			{ItemID: "item-ok2"},
+		},
+	}
+	policy := &BatchPolicy{MaxConcurrency: 2, ContinueOnError: true}
+
+	result, err := executeBatch(ar, input, policy)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Result.Error)
+
+	var res batchResult
+	err = json.Unmarshal([]byte(toolResultText(result)), &res)
+	require.NoError(t, err)
+	assert.Equal(t, "partial", res.Status)
+	assert.Equal(t, 3, res.Total)
+	assert.Equal(t, 3, res.Completed)
+	assert.Equal(t, 1, res.Failed)
+	assert.Len(t, res.Items, 3)
+	statuses := map[string]int{}
+	for _, it := range res.Items {
+		statuses[it.Status]++
+	}
+	assert.Equal(t, 2, statuses["completed"])
+	assert.Equal(t, 1, statuses["failed"])
+}
+
+func TestExecuteBatch_MaxFailedCount(t *testing.T) {
+	ar := newTestAgentRunWithFailingModel(t)
+	ar.AddSubAgent("worker", "worker", "instructions", ar.model, nil)
+
+	input := batchInput{
+		SubAgent:    "worker",
+		Description: "max failed test",
+		Items: []batchItem{
+			{ItemID: "item-fail1"},
+			{ItemID: "item-fail2"},
+			{ItemID: "item-ok"},
+		},
+	}
+	policy := &BatchPolicy{MaxConcurrency: 1, ContinueOnError: true, MaxFailedCount: 2}
+
+	result, err := executeBatch(ar, input, policy)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Result.Error)
+
+	var res batchResult
+	err = json.Unmarshal([]byte(toolResultText(result)), &res)
+	require.NoError(t, err)
+	assert.Equal(t, "partial", res.Status)
+	assert.Equal(t, 3, res.Total)
+	assert.Equal(t, 2, res.Failed, "should stop at MaxFailedCount=2")
+	assert.Len(t, res.Items, 3)
+	failedCount := 0
+	for _, it := range res.Items {
+		if it.Status == "failed" {
+			failedCount++
+		}
+		if it.Status == "skipped" {
+			assert.Contains(t, it.Error, "max failures reached")
+		}
+	}
+	assert.Equal(t, 2, failedCount)
 }
 
 func TestExpandFileURL_SingleFile(t *testing.T) {
@@ -657,6 +767,17 @@ func TestExecuteStoredPlan_NotFound(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Result.Error)
 	assert.Contains(t, toolResultText(result), "plan not found")
+}
+
+func TestExecuteStoredPlan_InvalidPlanID(t *testing.T) {
+	ar := newTestAgentRun(t)
+
+	for _, planID := range []string{"../other", "plan_/slash", "a\\b"} {
+		result, err := executeStoredPlan(ar, planID)
+		require.NoError(t, err)
+		assert.True(t, result.Result.Error)
+		assert.Contains(t, toolResultText(result), "invalid plan_id")
+	}
 }
 
 func TestCreateAndExecutePlan_RoundTrip(t *testing.T) {

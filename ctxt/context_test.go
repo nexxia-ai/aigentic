@@ -346,13 +346,13 @@ func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test context: %v", err)
 	}
-	if err := ctx.ExecutionEnvironment().SetMemoryDir(filepath.Join(ctx.ExecutionEnvironment().LLMDir, "memory")); err != nil {
+	if err := ctx.Workspace().SetMemoryDir(filepath.Join(ctx.Workspace().LLMDir, "memory")); err != nil {
 		t.Fatalf("SetMemoryDir: %v", err)
 	}
 
 	memoryFileContent := "memory file content for testing"
 	memoryFileName := "memory_test.txt"
-	memoryFilePath := filepath.Join(ctx.ExecutionEnvironment().MemoryDir, memoryFileName)
+	memoryFilePath := filepath.Join(ctx.Workspace().MemoryDir, memoryFileName)
 
 	err = os.WriteFile(memoryFilePath, []byte(memoryFileContent), 0644)
 	if err != nil {
@@ -382,7 +382,7 @@ func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 		t.Errorf("system message should contain memory file name %q, got: %s", memoryFileName, sysMsg.Content)
 	}
 
-	storeName := ctx.ExecutionEnvironment().MemoryStoreName()
+	storeName := ctx.Workspace().MemoryStoreName()
 	t.Cleanup(func() {
 		document.UnregisterStore(storeName)
 	})

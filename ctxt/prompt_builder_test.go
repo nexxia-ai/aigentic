@@ -139,7 +139,7 @@ func TestCreateSystemMsg(t *testing.T) {
 			ac, err := New("test-id", "", "", t.TempDir())
 			require.NoError(t, err)
 
-			storeName := ac.ExecutionEnvironment().MemoryStoreName()
+			storeName := ac.Workspace().MemoryStoreName()
 			t.Cleanup(func() {
 				document.UnregisterStore(storeName)
 			})
@@ -183,9 +183,9 @@ func TestCreateSystemMsgWithMemoryFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	ac, err := New("test-id", "", "", tempDir)
 	require.NoError(t, err)
-	require.NoError(t, ac.ExecutionEnvironment().SetMemoryDir(filepath.Join(ac.ExecutionEnvironment().LLMDir, "memory")))
+	require.NoError(t, ac.Workspace().SetMemoryDir(filepath.Join(ac.Workspace().LLMDir, "memory")))
 
-	store := document.NewLocalStore(ac.ExecutionEnvironment().MemoryDir)
+	store := document.NewLocalStore(ac.Workspace().MemoryDir)
 	storeID := store.ID()
 
 	// Try to get existing store or register new one
@@ -228,7 +228,7 @@ func TestCreateSystemMsgWithEmptyMemoryDir_NoMemoryFilesInPrompt(t *testing.T) {
 	tempDir := t.TempDir()
 	ac, err := New("test-id", "", "", tempDir)
 	require.NoError(t, err)
-	require.Empty(t, ac.ExecutionEnvironment().MemoryDir, "MemoryDir should be empty by default")
+	require.Empty(t, ac.Workspace().MemoryDir, "MemoryDir should be empty by default")
 	msg, err := createSystemMsg(ac, nil)
 	require.NoError(t, err)
 	require.NotNil(t, msg)
@@ -775,9 +775,9 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	ac, err := New("test-id", "", "", tempDir)
 	require.NoError(t, err)
-	require.NoError(t, ac.ExecutionEnvironment().SetMemoryDir(filepath.Join(ac.ExecutionEnvironment().LLMDir, "memory")))
+	require.NoError(t, ac.Workspace().SetMemoryDir(filepath.Join(ac.Workspace().LLMDir, "memory")))
 
-	store := document.NewLocalStore(ac.ExecutionEnvironment().MemoryDir)
+	store := document.NewLocalStore(ac.Workspace().MemoryDir)
 	storeID := store.ID()
 
 	// Try to get existing store or register new one

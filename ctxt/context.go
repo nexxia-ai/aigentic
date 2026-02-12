@@ -124,11 +124,6 @@ func (r *AgentContext) Workspace() *Workspace {
 	return r.workspace
 }
 
-// Deprecated: Use Workspace() instead.
-func (r *AgentContext) ExecutionEnvironment() *Workspace {
-	return r.workspace
-}
-
 func (r *AgentContext) SetOutputInstructions(instructions string) *AgentContext {
 	r.outputInstructions = instructions
 	r.save()

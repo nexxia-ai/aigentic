@@ -70,7 +70,7 @@ The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context manag
 
 - **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and workspace. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
 - **NewChild** (`context.go`) - Creates a child `AgentContext` with its own `_private/` directory but sharing the parent's `llm/` directory. Used by batch items and plan steps: `NewChild(id, description, instructions, privateDir, sharedLLMDir)`.
-- **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`, `_private/turns`). Use `AgentContext.Workspace()` (deprecated: `ExecutionEnvironment()`). `newChildWorkspace(privateDir, sharedLLMDir)` creates workspaces for child contexts.
+- **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`, `_private/turns`). Use `AgentContext.Workspace()`. `newChildWorkspace(privateDir, sharedLLMDir)` creates workspaces for child contexts.
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **Turn** (`turn.go`) - Represents individual conversation turns. Contains `FileRefs []FileRefEntry` to track files registered by tools during the turn.
 - **FileRefEntry** (`turn.go`) - Describes a file reference with `Path` (relative to LLM dir), `IncludeInPrompt`, `Ephemeral` (do not persist to turn), and `MimeType` (for prompt injection).

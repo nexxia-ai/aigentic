@@ -20,7 +20,7 @@ func TestContextSaveAndLoad(t *testing.T) {
 		t.Fatalf("failed to save context: %v", err)
 	}
 
-	sessionPath := ctx.ExecutionEnvironment().RootDir
+	sessionPath := ctx.Workspace().RootDir
 	loadedCtx, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
@@ -50,7 +50,7 @@ func TestContextAutoSave(t *testing.T) {
 		t.Fatalf("failed to create context: %v", err)
 	}
 
-	sessionPath := ctx.ExecutionEnvironment().RootDir
+	sessionPath := ctx.Workspace().RootDir
 
 	ctx.SetName("Test Name")
 	loadedCtx1, err := LoadContext(sessionPath)
@@ -95,7 +95,7 @@ func TestListSessions(t *testing.T) {
 	ctx3.SetName("Session 3")
 	ctx3.SetSummary("Summary 3")
 
-	loadedCtx1, err := LoadContext(ctx1.ExecutionEnvironment().RootDir)
+	loadedCtx1, err := LoadContext(ctx1.Workspace().RootDir)
 	if err != nil {
 		t.Fatalf("failed to load context 1: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestListSessions(t *testing.T) {
 		t.Errorf("expected Summary 'Summary 1', got '%s'", loadedCtx1.Summary())
 	}
 
-	loadedCtx2, err := LoadContext(ctx2.ExecutionEnvironment().RootDir)
+	loadedCtx2, err := LoadContext(ctx2.Workspace().RootDir)
 	if err != nil {
 		t.Fatalf("failed to load context 2: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestListSessions(t *testing.T) {
 		t.Errorf("expected Name 'Session 2', got '%s'", loadedCtx2.Name())
 	}
 
-	loadedCtx3, err := LoadContext(ctx3.ExecutionEnvironment().RootDir)
+	loadedCtx3, err := LoadContext(ctx3.Workspace().RootDir)
 	if err != nil {
 		t.Fatalf("failed to load context 3: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestLoadContextWithHistory(t *testing.T) {
 	ctx.StartTurn("How are you?")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "I'm fine"})
 
-	sessionPath := ctx.ExecutionEnvironment().RootDir
+	sessionPath := ctx.Workspace().RootDir
 	loadedCtx, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
@@ -202,7 +202,7 @@ func TestReloadedContextMatchesOriginal(t *testing.T) {
 		t.Fatalf("expected 2 original turns, got %d", len(origTurns))
 	}
 
-	sessionPath := ctx.ExecutionEnvironment().RootDir
+	sessionPath := ctx.Workspace().RootDir
 	loadedCtx, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
@@ -293,7 +293,7 @@ func TestLoadContextRestoresMetadata(t *testing.T) {
 		t.Fatalf("failed to save: %v", err)
 	}
 
-	sessionPath := ctx.ExecutionEnvironment().RootDir
+	sessionPath := ctx.Workspace().RootDir
 	loaded, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
@@ -321,7 +321,7 @@ func TestLoadContextMetadataWithHistory(t *testing.T) {
 	ctx.StartTurn("Hello")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Hi"})
 
-	sessionPath := ctx.ExecutionEnvironment().RootDir
+	sessionPath := ctx.Workspace().RootDir
 	loaded, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)
@@ -350,7 +350,7 @@ func TestLoadContextNoRunMeta(t *testing.T) {
 		t.Fatalf("failed to save: %v", err)
 	}
 
-	sessionPath := ctx.ExecutionEnvironment().RootDir
+	sessionPath := ctx.Workspace().RootDir
 	loaded, err := LoadContext(sessionPath)
 	if err != nil {
 		t.Fatalf("failed to load context: %v", err)

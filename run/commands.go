@@ -154,8 +154,12 @@ func (r *AgentRun) formatAigenticStats() string {
 	}
 
 	var b strings.Builder
-	b.WriteString("aigentic stats\n\n")
-	b.WriteString(fmt.Sprintf("Agent: %s  \n", agentName))
+	b.WriteString(fmt.Sprintf("Agent: %s\n\n", agentName))
+	if r.agentContext != nil {
+		if ws := r.agentContext.Workspace(); ws != nil {
+			b.WriteString(fmt.Sprintf("Workspace: %s\n", filepath.Base(ws.RootDir)))
+		}
+	}
 	b.WriteString(fmt.Sprintf("Model: %s\n\n", modelName))
 
 	history := r.agentContext.GetHistory()
@@ -192,7 +196,6 @@ func (r *AgentRun) formatAigenticStats() string {
 	b.WriteString(fmt.Sprintf("last turn: %s  \n", formatUsage(lastUsage)))
 	b.WriteString(fmt.Sprintf("Turns: %d\n\n", turnCount))
 
-	b.WriteString("Context breakdown\n\n")
 	sysTok, memTok := r.agentContext.EstimateSystemAndMemoryTokens()
 
 	b.WriteString(fmt.Sprintf("system:  ~%d\n", sysTok))

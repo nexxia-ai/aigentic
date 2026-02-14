@@ -67,7 +67,6 @@ func RegisterModel(info ModelInfo) error {
 
 	defaultRegistry.models[info.Identifier] = info
 
-	slog.Info("registered model", "identifier", info.Identifier, "provider", info.Provider, "model", info.Model)
 	return nil
 }
 

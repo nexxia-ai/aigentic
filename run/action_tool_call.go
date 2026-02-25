@@ -83,6 +83,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		if turn != nil {
 			for _, ref := range currentResult.FileRefs {
 				if !ref.Ephemeral {
+					ref.UserUpload = false
 					turn.FileRefs = append(turn.FileRefs, ref)
 				}
 			}

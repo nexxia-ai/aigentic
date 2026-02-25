@@ -257,10 +257,18 @@ func (r *AgentContext) UploadDocument(path string, content []byte, mimeType stri
 	if mime == "" {
 		mime = document.DetectMimeTypeFromPath(normPath)
 	}
+	for i := range r.pendingRefs {
+		if r.pendingRefs[i].Path != normPath {
+			continue
+		}
+		slog.Error("duplicated file ref in upload", "path", normPath)
+		return nil
+	}
 	r.pendingRefs = append(r.pendingRefs, FileRefEntry{
 		Path:            normPath,
 		IncludeInPrompt: inc,
 		MimeType:        mime,
+		UserUpload:      true,
 	})
 	return nil
 }

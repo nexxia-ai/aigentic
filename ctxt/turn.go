@@ -23,6 +23,7 @@ type FileRefEntry struct {
 	IncludeInPrompt bool   `json:"include_in_prompt"`
 	MimeType        string `json:"mime_type,omitempty"`
 	Ephemeral       bool   `json:"ephemeral"`
+	UserUpload      bool   `json:"user_upload"`
 }
 
 type tag struct {

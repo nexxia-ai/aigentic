@@ -40,6 +40,15 @@ type AgentContext struct {
 	workspace           *Workspace
 	turnCounter         int
 	enableTrace         bool
+	skillsByID          map[string]Skill
+	skillOrder          []string
+}
+
+type Skill struct {
+	ID          string
+	Name        string
+	Description string
+	Source      string
 }
 
 func New(id, description, instructions string, basePath string) (*AgentContext, error) {
@@ -367,6 +376,85 @@ func (r *AgentContext) SetEnableTrace(enable bool) *AgentContext {
 
 func (r *AgentContext) EnableTrace() bool {
 	return r.enableTrace
+}
+
+func (r *AgentContext) AddSkill(skill Skill) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	id := strings.TrimSpace(skill.ID)
+	if id == "" {
+		return fmt.Errorf("skill id is required")
+	}
+	source := strings.TrimSpace(skill.Source)
+	if source == "" {
+		return fmt.Errorf("skill source is required")
+	}
+
+	if r.skillsByID == nil {
+		r.skillsByID = make(map[string]Skill)
+	}
+	if _, exists := r.skillsByID[id]; exists {
+		return fmt.Errorf("skill already exists: %s", id)
+	}
+
+	skill.ID = id
+	skill.Source = source
+	r.skillsByID[id] = skill
+	r.skillOrder = append(r.skillOrder, id)
+	return nil
+}
+
+func (r *AgentContext) RemoveSkill(id string) bool {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	id = strings.TrimSpace(id)
+	if id == "" || r.skillsByID == nil {
+		return false
+	}
+	if _, exists := r.skillsByID[id]; !exists {
+		return false
+	}
+
+	delete(r.skillsByID, id)
+	for i, sid := range r.skillOrder {
+		if sid == id {
+			r.skillOrder = append(r.skillOrder[:i], r.skillOrder[i+1:]...)
+			break
+		}
+	}
+	return true
+}
+
+func (r *AgentContext) Skills() []Skill {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+
+	if len(r.skillOrder) == 0 || r.skillsByID == nil {
+		return nil
+	}
+
+	out := make([]Skill, 0, len(r.skillOrder))
+	for _, id := range r.skillOrder {
+		skill, ok := r.skillsByID[id]
+		if !ok {
+			continue
+		}
+		out = append(out, skill)
+	}
+	return out
+}
+
+func (r *AgentContext) GetSkill(id string) (Skill, bool) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+
+	if r.skillsByID == nil {
+		return Skill{}, false
+	}
+	skill, ok := r.skillsByID[strings.TrimSpace(id)]
+	return skill, ok
 }
 
 func (r *AgentContext) saveRunMeta() {

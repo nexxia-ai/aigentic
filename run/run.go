@@ -24,6 +24,7 @@ type AgentRun struct {
 	cancelFunc context.CancelFunc
 
 	tools []AgentTool
+	sysTools []AgentTool
 
 	agentContext *ctxt.AgentContext
 	interceptors []Interceptor
@@ -144,6 +145,7 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 		processedToolCallIDs: make(map[string]bool),
 		interceptors:         make([]Interceptor, 0),
 		tools:                make([]AgentTool, 0),
+		sysTools:             make([]AgentTool, 0),
 		subAgentDefs:         make(map[string]subAgentDef),
 		trace:                &TraceRun{},
 		streaming:            false,
@@ -151,6 +153,7 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 	}
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel})).With("agent", name)
+	run.addSysTool(run.readFileTool())
 	return run, nil
 }
 
@@ -170,6 +173,7 @@ func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*Agen
 		processedToolCallIDs: make(map[string]bool),
 		interceptors:         make([]Interceptor, 0),
 		tools:                tools,
+		sysTools:             make([]AgentTool, 0),
 		subAgentDefs:         make(map[string]subAgentDef),
 		trace:                &TraceRun{},
 		streaming:            false,
@@ -178,6 +182,7 @@ func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*Agen
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel}))
 	run.SetEnableTrace(ctx.EnableTrace())
+	run.addSysTool(run.readFileTool())
 	return run, nil
 }
 
@@ -211,6 +216,16 @@ func (r *AgentRun) SetMaxLLMCalls(maxLLMCalls int) {
 
 func (r *AgentRun) SetTools(tools []AgentTool) {
 	r.tools = tools
+}
+
+func (r *AgentRun) addSysTool(tool AgentTool) {
+	for i := range r.sysTools {
+		if r.sysTools[i].Name == tool.Name {
+			r.sysTools[i] = tool
+			return
+		}
+	}
+	r.sysTools = append(r.sysTools, tool)
 }
 
 func (r *AgentRun) IncludeHistory(enable bool) {
@@ -298,6 +313,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			}
 			subRun.SetModel(model)
 			subRun.SetTools(tools)
+			subRun.sysTools = nil
 			subRun.trace = r.trace
 			subRun.SetEnableTrace(r.enableTrace)
 			subRun.Logger = r.Logger.With("sub-agent", name)

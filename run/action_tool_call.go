@@ -124,6 +124,11 @@ func (r *AgentRun) findTool(tcName string) *AgentTool {
 			return &r.tools[i]
 		}
 	}
+	for i := range r.sysTools {
+		if r.sysTools[i].Name == tcName {
+			return &r.sysTools[i]
+		}
+	}
 	for i := range r.subAgents {
 		if r.subAgents[i].Name == tcName {
 			return &r.subAgents[i]

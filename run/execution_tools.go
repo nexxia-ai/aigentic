@@ -310,6 +310,7 @@ func runChildStep(ctx context.Context, parentRun *AgentRun, def subAgentDef, pri
 	if err != nil {
 		return "", fmt.Errorf("failed to create child run: %w", err)
 	}
+	childRun.sysTools = nil
 	childRun.SetAgentName(def.name)
 	childRun.trace = parentRun.trace
 	childRun.SetEnableTrace(parentRun.enableTrace)

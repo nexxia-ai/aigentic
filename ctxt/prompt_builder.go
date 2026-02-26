@@ -46,6 +46,19 @@ You have access to the following tools:
 </tools>
 {{end}}
 
+{{if .Skills}}
+You have access to the following skills:
+<skills>
+{{range .Skills}}<skill>
+id: {{.ID}}
+{{if .Name}}name: {{.Name}}
+{{end}}{{if .Description}}description: {{.Description}}
+{{end}}{{if .Source}}source: {{.Source}}
+{{end}}</skill>
+{{end}}</skills>
+Use the read_file tool with the skill source filename/path to load complete skill contents when needed.
+{{end}}
+
 {{if .Documents}}
 {{range .Documents}}
 <document name="{{.Filename}}">
@@ -58,6 +71,18 @@ You have access to the following tools:
 {{range .SystemTags}}<{{.Name}}>{{.Content}}</{{.Name}}>
 {{end}}
 {{end}}`
+
+const (
+	maxSkillsInSystemPrompt       = 50
+	maxSkillDescriptionPromptChar = 200
+)
+
+type skillSummary struct {
+	ID          string
+	Name        string
+	Description string
+	Source      string
+}
 
 const DefaultUserTemplate = `
 {{if .HasMessage}}
@@ -123,10 +148,28 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 	if t := ac.Turn(); t != nil {
 		systemTags = t.systemTags
 	}
+	skills := ac.Skills()
+	summaries := make([]skillSummary, 0, len(skills))
+	for i, skill := range skills {
+		if i >= maxSkillsInSystemPrompt {
+			break
+		}
+		desc := strings.TrimSpace(skill.Description)
+		if len(desc) > maxSkillDescriptionPromptChar {
+			desc = desc[:maxSkillDescriptionPromptChar] + "..."
+		}
+		summaries = append(summaries, skillSummary{
+			ID:          strings.TrimSpace(skill.ID),
+			Name:        strings.TrimSpace(skill.Name),
+			Description: desc,
+			Source:      strings.TrimSpace(skill.Source),
+		})
+	}
 	systemVars := map[string]any{
 		"Role":               ac.description,
 		"Instructions":       ac.instructions,
 		"Tools":              tools,
+		"Skills":             summaries,
 		"Documents":          docsForTemplate,
 		"OutputInstructions": ac.outputInstructions,
 		"SystemTags":         systemTags,

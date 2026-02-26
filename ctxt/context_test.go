@@ -387,3 +387,63 @@ func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 		document.UnregisterStore(storeName)
 	})
 }
+
+func TestSkillRegistryAddRemoveAndOrder(t *testing.T) {
+	ctx := createTestContext(t, "id", "desc", "inst")
+
+	err := ctx.AddSkill(Skill{ID: "skill-a", Source: "skills/a.md"})
+	if err != nil {
+		t.Fatalf("AddSkill(skill-a) unexpected error: %v", err)
+	}
+	err = ctx.AddSkill(Skill{ID: "skill-b", Source: "skills/b.md"})
+	if err != nil {
+		t.Fatalf("AddSkill(skill-b) unexpected error: %v", err)
+	}
+	if err := ctx.AddSkill(Skill{ID: "skill-a", Source: "skills/a2.md"}); err == nil {
+		t.Fatal("expected duplicate AddSkill to fail")
+	}
+	if err := ctx.AddSkill(Skill{ID: "", Source: "skills/empty.md"}); err == nil {
+		t.Fatal("expected AddSkill with empty id to fail")
+	}
+
+	skills := ctx.Skills()
+	if len(skills) != 2 {
+		t.Fatalf("expected 2 skills, got %d", len(skills))
+	}
+	if skills[0].ID != "skill-a" || skills[1].ID != "skill-b" {
+		t.Fatalf("unexpected skill order: %+v", skills)
+	}
+
+	if removed := ctx.RemoveSkill("missing"); removed {
+		t.Fatal("expected RemoveSkill(missing) to be false")
+	}
+	if removed := ctx.RemoveSkill("skill-a"); !removed {
+		t.Fatal("expected RemoveSkill(skill-a) to be true")
+	}
+
+	after := ctx.Skills()
+	if len(after) != 1 || after[0].ID != "skill-b" {
+		t.Fatalf("unexpected skills after remove: %+v", after)
+	}
+}
+
+func TestSkillsReturnsCopy(t *testing.T) {
+	ctx := createTestContext(t, "id", "desc", "inst")
+	if err := ctx.AddSkill(Skill{ID: "skill-a", Source: "skills/a.md"}); err != nil {
+		t.Fatalf("AddSkill(skill-a) unexpected error: %v", err)
+	}
+
+	skills := ctx.Skills()
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(skills))
+	}
+	skills[0].Name = "mutated"
+
+	got, ok := ctx.GetSkill("skill-a")
+	if !ok {
+		t.Fatal("expected GetSkill(skill-a) to succeed")
+	}
+	if got.Name == "mutated" {
+		t.Fatal("Skills() should return a defensive copy")
+	}
+}

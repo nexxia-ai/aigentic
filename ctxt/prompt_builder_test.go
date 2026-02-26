@@ -2,6 +2,7 @@ package ctxt
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -235,6 +236,60 @@ func TestCreateSystemMsgWithEmptyMemoryDir_NoMemoryFilesInPrompt(t *testing.T) {
 	sysMsg, ok := msg.(ai.SystemMessage)
 	require.True(t, ok)
 	assert.NotContains(t, sysMsg.Content, "<document name=", "system message should not contain memory documents when MemoryDir is empty")
+}
+
+func TestCreateSystemMsgWithSkills(t *testing.T) {
+	withTempWorkingDirPB(t)
+
+	ac, err := New("test-id", "role", "instructions", t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, ac.AddSkill(Skill{
+		ID:          "skill-one",
+		Name:        "Skill One",
+		Description: "First skill description",
+		Source:      "skills/skill-one.md",
+	}))
+
+	msg, err := createSystemMsg(ac, nil)
+	require.NoError(t, err)
+	require.NotNil(t, msg)
+
+	sysMsg, ok := msg.(ai.SystemMessage)
+	require.True(t, ok)
+	content := sysMsg.Content
+
+	assert.Contains(t, content, "<skills>")
+	assert.Contains(t, content, "id: skill-one")
+	assert.Contains(t, content, "name: Skill One")
+	assert.Contains(t, content, "description: First skill description")
+	assert.Contains(t, content, "source: skills/skill-one.md")
+	assert.Contains(t, content, "read_file")
+}
+
+func TestCreateSystemMsgSkillsCapAndDescriptionTruncate(t *testing.T) {
+	withTempWorkingDirPB(t)
+
+	ac, err := New("test-id", "role", "instructions", t.TempDir())
+	require.NoError(t, err)
+
+	longDesc := strings.Repeat("x", maxSkillDescriptionPromptChar+50)
+	for i := 0; i < maxSkillsInSystemPrompt+1; i++ {
+		err := ac.AddSkill(Skill{
+			ID:          fmt.Sprintf("skill-%02d", i),
+			Description: longDesc,
+			Source:      fmt.Sprintf("skills/skill-%02d.md", i),
+		})
+		require.NoError(t, err)
+	}
+
+	msg, err := createSystemMsg(ac, nil)
+	require.NoError(t, err)
+	sysMsg := msg.(ai.SystemMessage)
+	content := sysMsg.Content
+
+	assert.Equal(t, maxSkillsInSystemPrompt, strings.Count(content, "<skill>"))
+	assert.NotContains(t, content, fmt.Sprintf("id: skill-%02d", maxSkillsInSystemPrompt))
+	assert.Contains(t, content, strings.Repeat("x", maxSkillDescriptionPromptChar)+"...")
 }
 
 func TestCreateDocsMsg(t *testing.T) {

@@ -19,9 +19,10 @@ func (r *AgentRun) runLLMCallAction(message string) {
 	}
 	r.llmCallCount++ // Increment counter
 
-	// Get all tools from agent, sub-agents, and retrievers
-	allTools := make([]AgentTool, 0, len(r.tools)+len(r.subAgents))
+	// Get all tools from agent, system, sub-agents, and retrievers
+	allTools := make([]AgentTool, 0, len(r.tools)+len(r.sysTools)+len(r.subAgents))
 	allTools = append(allTools, r.tools...)
+	allTools = append(allTools, r.sysTools...)
 	allTools = append(allTools, r.subAgents...)
 	for _, retriever := range r.retrievers {
 		allTools = append(allTools, retriever.ToTool())

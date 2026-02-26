@@ -5,6 +5,7 @@
 - Agent tools use the `run.AgentTool` type and `run.NewTool` helper; built-in tools in `tools/` return `run.AgentTool`.
 - Tools return `*run.ToolCallResult` which includes both the `ai.ToolResult`, optional `FileRefs` (files to be included in the next turn prompt), and optional `Terminal` (when true, the run stops after tool execution with no further LLM call).
 - Documents come from the `document` package and are passed as `[]*document.Document` via `Agent.Documents`. They are stored in the run filesystem under `llm/` (e.g. `llm/uploads`).
+- Skills are reusable instruction files registered on `AgentRun` via `AddSkill`. They appear in the system prompt and the LLM loads them on demand using the built-in `read_file` system tool.
 
 ## Project Structure & Module Organization
 - Root Go module: `aigentic` (see `go.mod`).
@@ -28,6 +29,7 @@ The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runti
 - **Interceptor** (`interceptor.go`) - Interface for intercepting and modifying LLM calls and tool executions. The `AfterToolCall` method receives and can modify `*ToolCallResult` (including `Result`, `FileRefs`, and `Terminal`).
 - **Tracer** (`trace_run.go`) - Tracing support for debugging agent execution, including file reference tracking
 - **Retriever** (`retriever.go`) - Interface for document retrieval systems
+- **Skill** (`skill.go`) - Type alias for `ctxt.Skill`. `AgentRun` exposes `AddSkill`, `RemoveSkill`, and `Skills` which delegate to `AgentContext`. Skills are injected into the system prompt and loaded on demand by the LLM via the built-in `read_file` system tool.
 
 The root `aigentic` package (`agent.go`) provides the declarative `Agent` type that users configure, which internally creates and manages `run.AgentRun` instances for execution.
 
@@ -46,6 +48,19 @@ The `run` package provides execution tools for batch processing, DAG-based plan 
 - **Persistence** - Batch results (`result.json`) and plan state (`plan.json`) are persisted incrementally for reload support.
 
 Sub-agents are declared on `AgentRun` via `AddSubAgent(name, description, instructions, model, tools)` and stored in `subAgentDefs`. The `Agent` struct supports `DynamicPlanning bool` to enable runtime plan creation.
+
+#### Skills and System Tools (`skill.go`, `skill_tool.go`)
+
+Skills are reusable instruction files that can be registered on an `AgentRun` and made available to the LLM as on-demand reference material.
+
+- **`Skill`** (`ctxt.Skill`) - Value type with `ID`, `Name`, `Description`, and `Source` (relative workspace path to the skill file).
+- **`AgentRun.AddSkill(skill Skill) error`** - Register a skill. Returns an error if the ID is empty, source is empty, or the ID is already registered.
+- **`AgentRun.RemoveSkill(id string) bool`** - Unregister a skill by ID. Returns false if not found.
+- **`AgentRun.Skills() []Skill`** - Return registered skills in insertion order (returns a defensive copy).
+
+**System prompt injection:** Registered skills appear in a `<skills>` block in the system prompt (capped at 50; descriptions truncated at 200 chars). The LLM is instructed to use `read_file` to load the full content of any skill when needed.
+
+**`read_file` system tool** (`skill_tool.go`) - A framework-managed tool automatically added to every `AgentRun`. It reads a file from the run workspace by relative path (blocks absolute paths; truncates reads at 64 KB). System tools are kept separate from user-defined `tools` in `sysTools` and are **not** inherited by child runs (sub-agents, batch items, plan steps).
 
 #### Tool File References
 
@@ -68,13 +83,14 @@ When `IncludeInPrompt` is `true`, the file content is automatically injected int
 
 The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context management and execution environment for agents:
 
-- **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and workspace. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
+- **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, workspace, and skill registry. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
+- **Skill** (`context.go`) - Value type `{ ID, Name, Description, Source }`. Registered via `AgentContext.AddSkill`, retrieved via `Skills()`, `GetSkill(id)`, and removed via `RemoveSkill(id)`. Insertion order is preserved; all methods are concurrency-safe.
 - **NewChild** (`context.go`) - Creates a child `AgentContext` with its own `_private/` directory but sharing the parent's `llm/` directory. Used by batch items and plan steps: `NewChild(id, description, instructions, privateDir, sharedLLMDir)`.
 - **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`, `_private/turns`). Use `AgentContext.Workspace()`. `newChildWorkspace(privateDir, sharedLLMDir)` creates workspaces for child contexts.
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **Turn** (`turn.go`) - Represents individual conversation turns. Contains `FileRefs []FileRefEntry` to track files registered by tools during the turn.
 - **FileRefEntry** (`turn.go`) - Describes a file reference with `Path` (relative to LLM dir), `IncludeInPrompt`, `Ephemeral` (do not persist to turn), and `MimeType` (for prompt injection).
-- **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context and documents
+- **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context and documents. Skills are included as a `<skills>` block in the system prompt with a pointer to `read_file` for on-demand loading.
 
 ### The `document` Package
 

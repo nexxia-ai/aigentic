@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,6 +54,7 @@ type AgentRun struct {
 	dynamicPlanning bool
 
 	turnMetrics turnMetrics
+	processWg   sync.WaitGroup
 }
 
 type subAgentDef struct {
@@ -233,6 +235,10 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 }
 
 func (r *AgentRun) Run(ctx context.Context, message string) {
+	// Wait for any previous processLoop goroutine to fully exit before
+	// re-initialising shared fields (eventQueue, actionQueue, ctx, etc.).
+	r.processWg.Wait()
+
 	rest, cmd, ok := parseAigenticCommand(message)
 	if ok {
 		// Command-only path: do not create or consume a turn (no StartTurn, no pendingRefs/history/usage side effects).
@@ -240,7 +246,11 @@ func (r *AgentRun) Run(ctx context.Context, message string) {
 		r.eventQueue = make(chan event.Event, 100)
 		r.actionQueue = make(chan action, 100)
 
-		go r.processLoop()
+		r.processWg.Add(1)
+		go func() {
+			defer r.processWg.Done()
+			r.processLoop()
+		}()
 		r.handleAigenticCommand(ctx, cmd)
 		return
 	}
@@ -264,7 +274,11 @@ func (r *AgentRun) Run(ctx context.Context, message string) {
 	r.eventQueue = make(chan event.Event, 100)
 	r.actionQueue = make(chan action, 100)
 
-	go r.processLoop()
+	r.processWg.Add(1)
+	go func() {
+		defer r.processWg.Done()
+		r.processLoop()
+	}()
 	r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})
 }
 
@@ -272,8 +286,11 @@ func (r *AgentRun) stop() {
 	if r.cancelFunc != nil {
 		r.cancelFunc()
 	}
-	close(r.eventQueue)
+	// actionQueue must be closed before eventQueue so that when Wait/Next sees
+	// the eventQueue close, this goroutine has no more references to r.actionQueue.
+	// Reversing the order creates a race when Run is immediately re-called.
 	close(r.actionQueue)
+	close(r.eventQueue)
 }
 
 func (r *AgentRun) SetDynamicPlanning(enabled bool) {

@@ -109,30 +109,26 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 			agentRun.SetEnableTrace(true)
 			defer agentRun.stop()
 
+			agentRun.agentContext.StartTurn("")
+			agentRun.runLLMCallAction("Test message")
+
+			// runLLMCallAction is synchronous; all events are in the buffered channel.
 			var events []event.Event
 			var contentEvents []*event.ContentEvent
 			var thinkingEvents []*event.ThinkingEvent
 			var llmCallEvents []*event.LLMCallEvent
-
-			go func() {
-				for evt := range agentRun.eventQueue {
-					events = append(events, evt)
-
-					switch e := evt.(type) {
-					case *event.ContentEvent:
-						contentEvents = append(contentEvents, e)
-					case *event.ThinkingEvent:
-						thinkingEvents = append(thinkingEvents, e)
-					case *event.LLMCallEvent:
-						llmCallEvents = append(llmCallEvents, e)
-					}
+			for n := len(agentRun.eventQueue); n > 0; n-- {
+				evt := <-agentRun.eventQueue
+				events = append(events, evt)
+				switch e := evt.(type) {
+				case *event.ContentEvent:
+					contentEvents = append(contentEvents, e)
+				case *event.ThinkingEvent:
+					thinkingEvents = append(thinkingEvents, e)
+				case *event.LLMCallEvent:
+					llmCallEvents = append(llmCallEvents, e)
 				}
-			}()
-
-			agentRun.agentContext.StartTurn("")
-			agentRun.runLLMCallAction("Test message")
-
-			time.Sleep(100 * time.Millisecond)
+			}
 
 			t.Logf("Content events: %d", len(contentEvents))
 			t.Logf("Thinking events: %d", len(thinkingEvents))
@@ -184,27 +180,22 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
-	var contentEvents []*event.ContentEvent
-	var llmCallEvents []*event.LLMCallEvent
-
-	go func() {
-		for evt := range agentRun.eventQueue {
-			switch e := evt.(type) {
-			case *event.ContentEvent:
-				contentEvents = append(contentEvents, e)
-			case *event.LLMCallEvent:
-				llmCallEvents = append(llmCallEvents, e)
-			}
-		}
-	}()
-
 	agentRun.agentContext.StartTurn("")
 	agentRun.runLLMCallAction("Test message")
 
-	time.Sleep(100 * time.Millisecond)
+	// runLLMCallAction is synchronous; drain the buffered channel without a goroutine.
+	var contentEvents []*event.ContentEvent
+	var llmCallEvents []*event.LLMCallEvent
+	for n := len(agentRun.eventQueue); n > 0; n-- {
+		switch e := (<-agentRun.eventQueue).(type) {
+		case *event.ContentEvent:
+			contentEvents = append(contentEvents, e)
+		case *event.LLMCallEvent:
+			llmCallEvents = append(llmCallEvents, e)
+		}
+	}
 
 	assert.Len(t, llmCallEvents, 1, "Should have one LLM call event")
-
 	assert.Len(t, contentEvents, 1, "Non-streaming agent should have only one content event")
 	assert.Equal(t, "This is a non-streaming response", contentEvents[0].Content)
 }
@@ -291,19 +282,16 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
-	var actions []action
-	go func() {
-		for action := range agentRun.actionQueue {
-			actions = append(actions, action)
-		}
-	}()
-
 	agentRun.agentContext.StartTurn("")
 	agentRun.runLLMCallAction("First call")
 	agentRun.runLLMCallAction("Second call")
 	agentRun.runLLMCallAction("Third call")
 
-	time.Sleep(100 * time.Millisecond)
+	// runLLMCallAction is synchronous; drain the buffered action queue without a goroutine.
+	var actions []action
+	for n := len(agentRun.actionQueue); n > 0; n-- {
+		actions = append(actions, <-agentRun.actionQueue)
+	}
 
 	var stopActions []*stopAction
 	for _, action := range actions {
@@ -375,19 +363,16 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
-	var contentEvents []*event.ContentEvent
-	go func() {
-		for evt := range agentRun.eventQueue {
-			if ce, ok := evt.(*event.ContentEvent); ok {
-				contentEvents = append(contentEvents, ce)
-			}
-		}
-	}()
-
 	agentRun.agentContext.StartTurn("")
 	agentRun.runLLMCallAction("Test chunking")
 
-	time.Sleep(100 * time.Millisecond)
+	// runLLMCallAction is synchronous; drain the buffered channel without a goroutine.
+	var contentEvents []*event.ContentEvent
+	for n := len(agentRun.eventQueue); n > 0; n-- {
+		if ce, ok := (<-agentRun.eventQueue).(*event.ContentEvent); ok {
+			contentEvents = append(contentEvents, ce)
+		}
+	}
 
 	assert.Len(t, contentEvents, len(contentChunks), "Should have exactly the expected number of content chunks")
 

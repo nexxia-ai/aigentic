@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -357,15 +358,15 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 }
 
 func TestAgentBatchExecution(t *testing.T) {
-	subAgentCallCount := 0
+	var subAgentCallCount atomic.Int64
+	var callCount atomic.Int64
 
-	callCount := 0
 	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-		callCount++
+		n := callCount.Add(1)
 
 		// Check if this is the sub-agent (child run) -- it won't have tools
 		if len(tools) == 0 {
-			subAgentCallCount++
+			subAgentCallCount.Add(1)
 			for _, msg := range messages {
 				if um, ok := msg.(ai.UserMessage); ok {
 					return ai.AIMessage{
@@ -378,7 +379,7 @@ func TestAgentBatchExecution(t *testing.T) {
 		}
 
 		// Main agent: first call triggers agent_batch
-		if callCount == 1 {
+		if n == 1 {
 			return ai.AIMessage{
 				Role: ai.AssistantRole,
 				ToolCalls: []ai.ToolCall{
@@ -419,7 +420,7 @@ func TestAgentBatchExecution(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Contains(t, result, "Batch completed")
-	assert.GreaterOrEqual(t, subAgentCallCount, 2, "Sub-agent should have been called at least twice (once per batch item)")
+	assert.GreaterOrEqual(t, subAgentCallCount.Load(), int64(2), "Sub-agent should have been called at least twice (once per batch item)")
 }
 
 func TestAgentPlanExecution(t *testing.T) {

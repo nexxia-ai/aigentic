@@ -48,15 +48,23 @@ You have access to the following tools:
 
 {{if .Skills}}
 You have access to the following skills:
-<skills>
+<available_skills>
 {{range .Skills}}<skill>
-id: {{.ID}}
-{{if .Name}}name: {{.Name}}
-{{end}}{{if .Description}}description: {{.Description}}
-{{end}}{{if .Source}}source: {{.Source}}
-{{end}}</skill>
-{{end}}</skills>
-Use the read_file tool with the skill source filename/path to load complete skill contents when needed.
+<name>{{.Name}}</name>
+<description>{{.Description}}</description>
+<location>{{.Location}}</location>
+</skill>
+{{end}}</available_skills>
+Skills are executable instructions, not references.
+When a user request matches a skill's name or description, you must load that skill before taking other actions.
+
+Skill loading policy:
+1. Identify the most relevant skill(s) from <available_skills>.
+2. Use read_file with the skill <location> to load the full SKILL content.
+3. Read selected skills before planning, tool calls, or substantive responses.
+4. Do not assume skill behavior from name/description alone.
+5. If multiple skills apply, load all relevant ones; resolve conflicts by priority: system/developer/user instructions, then skill instructions.
+6. If no skill applies, continue normally.
 {{end}}
 
 {{if .Documents}}
@@ -78,10 +86,9 @@ const (
 )
 
 type skillSummary struct {
-	ID          string
 	Name        string
 	Description string
-	Source      string
+	Location    string
 }
 
 const DefaultUserTemplate = `
@@ -158,11 +165,14 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		if len(desc) > maxSkillDescriptionPromptChar {
 			desc = desc[:maxSkillDescriptionPromptChar] + "..."
 		}
+		name := strings.TrimSpace(skill.Name)
+		if name == "" {
+			name = strings.TrimSpace(skill.ID)
+		}
 		summaries = append(summaries, skillSummary{
-			ID:          strings.TrimSpace(skill.ID),
-			Name:        strings.TrimSpace(skill.Name),
+			Name:        name,
 			Description: desc,
-			Source:      strings.TrimSpace(skill.Source),
+			Location:    strings.TrimSpace(skill.Source),
 		})
 	}
 	systemVars := map[string]any{

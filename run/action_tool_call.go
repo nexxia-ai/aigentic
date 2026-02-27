@@ -13,9 +13,25 @@ import (
 	"github.com/nexxia-ai/aigentic/event"
 )
 
+func (r *AgentRun) traceToolCallFailure(toolName, toolCallID, message string, args map[string]any) {
+	if !r.enableTrace {
+		return
+	}
+
+	_, _ = r.trace.BeforeToolCall(r, toolName, toolCallID, args)
+	_, _ = r.trace.AfterToolCall(r, toolName, toolCallID, args, &ToolCallResult{
+		Result: &ai.ToolResult{
+			Content: []ai.ToolContent{{Type: "text", Content: message}},
+			Error:   true,
+		},
+	})
+	_ = r.trace.RecordError(fmt.Errorf("tool %s (callID=%s): %s", toolName, toolCallID, message))
+}
+
 func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	tool := r.findTool(act.ToolName)
 	if tool == nil {
+		r.traceToolCallFailure(act.ToolName, act.ToolCallID, fmt.Sprintf("tool not found: %s", act.ToolName), act.Args)
 		r.queueAction(&toolResponseAction{
 			request:  act,
 			response: fmt.Sprintf("tool not found: %s", act.ToolName),
@@ -57,10 +73,8 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	result, err := tool.call(r, currentArgs)
 	r.currentToolCallID = ""
 	if err != nil {
-		if r.enableTrace {
-			r.trace.RecordError(err)
-		}
 		errMsg := fmt.Sprintf("tool execution error: %v", err)
+		r.traceToolCallFailure(act.ToolName, act.ToolCallID, errMsg, currentArgs)
 		r.queueAction(&toolResponseAction{request: act, response: errMsg})
 		return
 	}
@@ -70,9 +84,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		currentResult, err = interceptor.AfterToolCall(r, act.ToolName, act.ToolCallID, currentArgs, currentResult)
 		if err != nil {
 			errMsg := fmt.Sprintf("interceptor error after tool call: %v", err)
-			if r.enableTrace {
-				r.trace.RecordError(err)
-			}
+			r.traceToolCallFailure(act.ToolName, act.ToolCallID, errMsg, currentArgs)
 			r.queueAction(&toolResponseAction{request: act, response: errMsg})
 			return
 		}
@@ -224,9 +236,8 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *ToolCallGroup) {
 
 	var args map[string]interface{}
 	if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
-		if r.enableTrace {
-			r.trace.RecordError(err)
-		}
+		traceArgs := map[string]any{"raw_args": tc.Args}
+		r.traceToolCallFailure(tc.Name, tc.ID, fmt.Sprintf("invalid tool parameters: %v", err), traceArgs)
 		r.queueAction(&toolResponseAction{
 			request: &toolCallAction{
 				ToolCallID: tc.ID,
@@ -241,8 +252,9 @@ func (r *AgentRun) processToolCall(tc ai.ToolCall, group *ToolCallGroup) {
 
 	tool := r.findTool(tc.Name)
 	if tool == nil {
+		r.traceToolCallFailure(tc.Name, tc.ID, fmt.Sprintf("tool not found: %s", tc.Name), args)
 		r.queueAction(&toolResponseAction{
-			request:  &toolCallAction{ToolName: tc.Name, Args: args, Group: group},
+			request:  &toolCallAction{ToolCallID: tc.ID, ToolName: tc.Name, Args: args, Group: group},
 			response: fmt.Sprintf("tool not found: %s", tc.Name),
 		})
 		return

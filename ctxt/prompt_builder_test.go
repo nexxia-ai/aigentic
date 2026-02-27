@@ -258,11 +258,10 @@ func TestCreateSystemMsgWithSkills(t *testing.T) {
 	require.True(t, ok)
 	content := sysMsg.Content
 
-	assert.Contains(t, content, "<skills>")
-	assert.Contains(t, content, "id: skill-one")
-	assert.Contains(t, content, "name: Skill One")
-	assert.Contains(t, content, "description: First skill description")
-	assert.Contains(t, content, "source: skills/skill-one.md")
+	assert.Contains(t, content, "<available_skills>")
+	assert.Contains(t, content, "<name>Skill One</name>")
+	assert.Contains(t, content, "<description>First skill description</description>")
+	assert.Contains(t, content, "<location>skills/skill-one.md</location>")
 	assert.Contains(t, content, "read_file")
 }
 
@@ -288,7 +287,7 @@ func TestCreateSystemMsgSkillsCapAndDescriptionTruncate(t *testing.T) {
 	content := sysMsg.Content
 
 	assert.Equal(t, maxSkillsInSystemPrompt, strings.Count(content, "<skill>"))
-	assert.NotContains(t, content, fmt.Sprintf("id: skill-%02d", maxSkillsInSystemPrompt))
+	assert.NotContains(t, content, fmt.Sprintf("<name>skill-%02d</name>", maxSkillsInSystemPrompt))
 	assert.Contains(t, content, strings.Repeat("x", maxSkillDescriptionPromptChar)+"...")
 }
 

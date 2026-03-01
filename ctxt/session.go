@@ -91,11 +91,9 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 
 	ctx := &AgentContext{
 		id:                 data.ID,
-		description:        data.Description,
-		instructions:       data.Instructions,
 		name:               data.Name,
 		summary:            data.Summary,
-		outputInstructions: data.OutputInstructions,
+		systemParts:        data.SystemParts,
 		turnCounter:        data.TurnCounter,
 		workspace:          ws,
 		enableTrace:        data.EnableTrace,
@@ -103,7 +101,6 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 
 	loadRunMeta(ctx, ws.PrivateDir)
 	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
-	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	ctx.currentTurn = ctx.newTurn()
 

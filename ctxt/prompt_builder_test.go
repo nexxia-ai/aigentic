@@ -2,7 +2,6 @@ package ctxt
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +33,7 @@ func TestCreateSystemMsg(t *testing.T) {
 				"You are an autonomous agent",
 			},
 			expectedNotContains: []string{
-				"<role>",
+				"<description>",
 				"<instructions>",
 				"<tools>",
 				"<document",
@@ -47,9 +46,9 @@ func TestCreateSystemMsg(t *testing.T) {
 			},
 			tools: nil,
 			expectedContains: []string{
-				"<role>",
+				"<description>",
 				"Test Agent Role",
-				"</role>",
+				"</description>",
 			},
 		},
 		{
@@ -67,7 +66,7 @@ func TestCreateSystemMsg(t *testing.T) {
 		{
 			name: "with output instructions",
 			setup: func(ac *AgentContext) *AgentContext {
-				return ac.SetOutputInstructions("Format output as JSON")
+				return ac.SetSystemPart(SystemPartKeyOutputInstructions, "Format output as JSON")
 			},
 			tools: nil,
 			expectedContains: []string{
@@ -113,7 +112,7 @@ func TestCreateSystemMsg(t *testing.T) {
 			setup: func(ac *AgentContext) *AgentContext {
 				ac.SetDescription("Test Role")
 				ac.SetInstructions("Test Instructions")
-				ac.SetOutputInstructions("Test Output")
+				ac.SetSystemPart(SystemPartKeyOutputInstructions, "Test Output")
 				ac.StartTurn("")
 				ac.Turn().InjectSystemTag("tag1", "tag content")
 				return ac
@@ -122,7 +121,7 @@ func TestCreateSystemMsg(t *testing.T) {
 				{Name: "tool1", Description: "Tool description"},
 			},
 			expectedContains: []string{
-				"<role>",
+				"<description>",
 				"Test Role",
 				"<instructions>",
 				"Test Instructions",
@@ -236,59 +235,6 @@ func TestCreateSystemMsgWithEmptyMemoryDir_NoMemoryFilesInPrompt(t *testing.T) {
 	sysMsg, ok := msg.(ai.SystemMessage)
 	require.True(t, ok)
 	assert.NotContains(t, sysMsg.Content, "<document name=", "system message should not contain memory documents when MemoryDir is empty")
-}
-
-func TestCreateSystemMsgWithSkills(t *testing.T) {
-	withTempWorkingDirPB(t)
-
-	ac, err := New("test-id", "role", "instructions", t.TempDir())
-	require.NoError(t, err)
-	require.NoError(t, ac.AddSkill(Skill{
-		ID:          "skill-one",
-		Name:        "Skill One",
-		Description: "First skill description",
-		Source:      "skills/skill-one.md",
-	}))
-
-	msg, err := createSystemMsg(ac, nil)
-	require.NoError(t, err)
-	require.NotNil(t, msg)
-
-	sysMsg, ok := msg.(ai.SystemMessage)
-	require.True(t, ok)
-	content := sysMsg.Content
-
-	assert.Contains(t, content, "<available_skills>")
-	assert.Contains(t, content, "<name>Skill One</name>")
-	assert.Contains(t, content, "<description>First skill description</description>")
-	assert.Contains(t, content, "<location>skills/skill-one.md</location>")
-	assert.Contains(t, content, "read_file")
-}
-
-func TestCreateSystemMsgSkillsCapAndDescriptionTruncate(t *testing.T) {
-	withTempWorkingDirPB(t)
-
-	ac, err := New("test-id", "role", "instructions", t.TempDir())
-	require.NoError(t, err)
-
-	longDesc := strings.Repeat("x", maxSkillDescriptionPromptChar+50)
-	for i := 0; i < maxSkillsInSystemPrompt+1; i++ {
-		err := ac.AddSkill(Skill{
-			ID:          fmt.Sprintf("skill-%02d", i),
-			Description: longDesc,
-			Source:      fmt.Sprintf("skills/skill-%02d.md", i),
-		})
-		require.NoError(t, err)
-	}
-
-	msg, err := createSystemMsg(ac, nil)
-	require.NoError(t, err)
-	sysMsg := msg.(ai.SystemMessage)
-	content := sysMsg.Content
-
-	assert.Equal(t, maxSkillsInSystemPrompt, strings.Count(content, "<skill>"))
-	assert.NotContains(t, content, fmt.Sprintf("<name>skill-%02d</name>", maxSkillsInSystemPrompt))
-	assert.Contains(t, content, strings.Repeat("x", maxSkillDescriptionPromptChar)+"...")
 }
 
 func TestCreateDocsMsg(t *testing.T) {

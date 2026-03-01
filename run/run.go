@@ -24,7 +24,7 @@ type AgentRun struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
-	tools []AgentTool
+	tools    []AgentTool
 	sysTools []AgentTool
 
 	agentContext *ctxt.AgentContext
@@ -119,10 +119,6 @@ func (r *AgentRun) SetRetrievers(retrievers []Retriever) {
 	r.retrievers = retrievers
 }
 
-func (r *AgentRun) SetOutputInstructions(instructions string) {
-	r.agentContext.SetOutputInstructions(instructions)
-}
-
 func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, error) {
 	runID := uuid.New().String()
 	sessionID := uuid.New().String()
@@ -155,7 +151,6 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 	}
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel})).With("agent", name)
-	run.addSysTool(run.readFileTool())
 	return run, nil
 }
 
@@ -184,7 +179,6 @@ func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*Agen
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel}))
 	run.SetEnableTrace(ctx.EnableTrace())
-	run.addSysTool(run.readFileTool())
 	return run, nil
 }
 
@@ -218,16 +212,6 @@ func (r *AgentRun) SetMaxLLMCalls(maxLLMCalls int) {
 
 func (r *AgentRun) SetTools(tools []AgentTool) {
 	r.tools = tools
-}
-
-func (r *AgentRun) addSysTool(tool AgentTool) {
-	for i := range r.sysTools {
-		if r.sysTools[i].Name == tool.Name {
-			r.sysTools[i] = tool
-			return
-		}
-	}
-	r.sysTools = append(r.sysTools, tool)
 }
 
 func (r *AgentRun) IncludeHistory(enable bool) {

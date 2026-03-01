@@ -34,17 +34,43 @@ func createTestContext(t *testing.T, id, description, instructions string) *Agen
 func TestNew(t *testing.T) {
 	ctx := createTestContext(t, "test-id", "test description", "test instructions")
 
-	if ctx.id != "test-id" {
-		t.Errorf("expected id 'test-id', got '%s'", ctx.id)
+	if ctx.ID() != "test-id" {
+		t.Errorf("expected id 'test-id', got '%s'", ctx.ID())
 	}
-	if ctx.description != "test description" {
-		t.Errorf("expected description 'test description', got '%s'", ctx.description)
+	if desc, ok := ctx.PromptPart(SystemPartKeyDescription); !ok || desc != "test description" {
+		t.Errorf("expected description 'test description', got %q (ok=%v)", desc, ok)
 	}
-	if ctx.instructions != "test instructions" {
-		t.Errorf("expected instructions 'test instructions', got '%s'", ctx.instructions)
+	if inst, ok := ctx.PromptPart(SystemPartKeyInstructions); !ok || inst != "test instructions" {
+		t.Errorf("expected instructions 'test instructions', got %q (ok=%v)", inst, ok)
 	}
 	if ctx.conversationHistory == nil {
 		t.Error("expected conversation history to be initialized")
+	}
+}
+
+func TestSetSystemPart_OrderingUpsertRemove(t *testing.T) {
+	ctx := createTestContext(t, "id", "desc", "inst")
+
+	ctx.SetSystemPart("extra", "v1")
+	parts := ctx.SystemParts()
+	if len(parts) != 3 {
+		t.Fatalf("expected 3 parts (description, instructions, extra), got %d", len(parts))
+	}
+	if parts[2].Key != "extra" || parts[2].Value != "v1" {
+		t.Errorf("expected last part extra=v1, got %s=%s", parts[2].Key, parts[2].Value)
+	}
+
+	ctx.SetSystemPart("extra", "v2")
+	if v, ok := ctx.PromptPart("extra"); !ok || v != "v2" {
+		t.Errorf("upsert: expected extra=v2, got %q (ok=%v)", v, ok)
+	}
+
+	ctx.SetSystemPart("extra", "")
+	if _, ok := ctx.PromptPart("extra"); ok {
+		t.Error("expected extra to be removed when value is empty")
+	}
+	if len(ctx.SystemParts()) != 2 {
+		t.Errorf("expected 2 parts after remove, got %d", len(ctx.SystemParts()))
 	}
 }
 
@@ -191,7 +217,7 @@ func TestRemoveDocumentByPath(t *testing.T) {
 
 func TestChainableMethods(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
-	ctx.SetOutputInstructions("Use JSON")
+	ctx.SetSystemPart(SystemPartKeyOutputInstructions, "Use JSON")
 	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1"), ""); err != nil {
 		t.Fatalf("UploadDocument: %v", err)
 	}
@@ -199,8 +225,8 @@ func TestChainableMethods(t *testing.T) {
 		t.Fatalf("UploadDocument: %v", err)
 	}
 
-	if ctx.outputInstructions != "Use JSON" {
-		t.Errorf("expected output instructions 'Use JSON', got '%s'", ctx.outputInstructions)
+	if out, ok := ctx.PromptPart(SystemPartKeyOutputInstructions); !ok || out != "Use JSON" {
+		t.Errorf("expected output instructions 'Use JSON', got %q (ok=%v)", out, ok)
 	}
 
 	docCount := len(ctx.GetDocuments())
@@ -275,16 +301,16 @@ func TestSetMethods(t *testing.T) {
 
 	ctx.SetDescription("new description").
 		SetInstructions("new instructions").
-		SetOutputInstructions("new output instructions")
+		SetSystemPart(SystemPartKeyOutputInstructions, "new output instructions")
 
-	if ctx.description != "new description" {
-		t.Errorf("expected description 'new description', got '%s'", ctx.description)
+	if desc, ok := ctx.PromptPart(SystemPartKeyDescription); !ok || desc != "new description" {
+		t.Errorf("expected description 'new description', got %q (ok=%v)", desc, ok)
 	}
-	if ctx.instructions != "new instructions" {
-		t.Errorf("expected instructions 'new instructions', got '%s'", ctx.instructions)
+	if inst, ok := ctx.PromptPart(SystemPartKeyInstructions); !ok || inst != "new instructions" {
+		t.Errorf("expected instructions 'new instructions', got %q (ok=%v)", inst, ok)
 	}
-	if ctx.outputInstructions != "new output instructions" {
-		t.Errorf("expected output instructions 'new output instructions', got '%s'", ctx.outputInstructions)
+	if out, ok := ctx.PromptPart(SystemPartKeyOutputInstructions); !ok || out != "new output instructions" {
+		t.Errorf("expected output instructions 'new output instructions', got %q (ok=%v)", out, ok)
 	}
 }
 
@@ -386,64 +412,4 @@ func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 	t.Cleanup(func() {
 		document.UnregisterStore(storeName)
 	})
-}
-
-func TestSkillRegistryAddRemoveAndOrder(t *testing.T) {
-	ctx := createTestContext(t, "id", "desc", "inst")
-
-	err := ctx.AddSkill(Skill{ID: "skill-a", Source: "skills/a.md"})
-	if err != nil {
-		t.Fatalf("AddSkill(skill-a) unexpected error: %v", err)
-	}
-	err = ctx.AddSkill(Skill{ID: "skill-b", Source: "skills/b.md"})
-	if err != nil {
-		t.Fatalf("AddSkill(skill-b) unexpected error: %v", err)
-	}
-	if err := ctx.AddSkill(Skill{ID: "skill-a", Source: "skills/a2.md"}); err == nil {
-		t.Fatal("expected duplicate AddSkill to fail")
-	}
-	if err := ctx.AddSkill(Skill{ID: "", Source: "skills/empty.md"}); err == nil {
-		t.Fatal("expected AddSkill with empty id to fail")
-	}
-
-	skills := ctx.Skills()
-	if len(skills) != 2 {
-		t.Fatalf("expected 2 skills, got %d", len(skills))
-	}
-	if skills[0].ID != "skill-a" || skills[1].ID != "skill-b" {
-		t.Fatalf("unexpected skill order: %+v", skills)
-	}
-
-	if removed := ctx.RemoveSkill("missing"); removed {
-		t.Fatal("expected RemoveSkill(missing) to be false")
-	}
-	if removed := ctx.RemoveSkill("skill-a"); !removed {
-		t.Fatal("expected RemoveSkill(skill-a) to be true")
-	}
-
-	after := ctx.Skills()
-	if len(after) != 1 || after[0].ID != "skill-b" {
-		t.Fatalf("unexpected skills after remove: %+v", after)
-	}
-}
-
-func TestSkillsReturnsCopy(t *testing.T) {
-	ctx := createTestContext(t, "id", "desc", "inst")
-	if err := ctx.AddSkill(Skill{ID: "skill-a", Source: "skills/a.md"}); err != nil {
-		t.Fatalf("AddSkill(skill-a) unexpected error: %v", err)
-	}
-
-	skills := ctx.Skills()
-	if len(skills) != 1 {
-		t.Fatalf("expected 1 skill, got %d", len(skills))
-	}
-	skills[0].Name = "mutated"
-
-	got, ok := ctx.GetSkill("skill-a")
-	if !ok {
-		t.Fatal("expected GetSkill(skill-a) to succeed")
-	}
-	if got.Name == "mutated" {
-		t.Fatal("Skills() should return a defensive copy")
-	}
 }

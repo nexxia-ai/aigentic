@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexxia-ai/aigentic/ai"
 	_ "github.com/nexxia-ai/aigentic/ai/openai"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/run"
 )
@@ -111,7 +112,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetTools(a.AgentTools)
 	ar.SetRetrievers(a.Retrievers)
 	ar.SetStreaming(a.Stream)
-	ar.SetOutputInstructions(a.OutputInstructions)
+	ar.AgentContext().SetSystemPart(ctxt.SystemPartKeyOutputInstructions, a.OutputInstructions)
 	ar.SetLogLevel(a.LogLevel)
 	ar.SetDynamicPlanning(a.DynamicPlanning)
 	for _, agent := range a.Agents {

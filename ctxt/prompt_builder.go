@@ -12,84 +12,9 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 )
 
-const DefaultSystemTemplate = `
-You are an autonomous agent working to complete a task.
+const defaultSystemIntro = `You are an autonomous agent working to complete a task.
 You have to consider all the information you were given and reason about the next step to take.
-
-{{if .Role}}
-The user provided the following description of your role:
-<role>
-{{.Role}}
-</role>
-{{end}}
-
-{{if .Instructions}}
- <instructions>
-{{.Instructions}}
-</instructions>
-{{end}}
-
-{{if .OutputInstructions}}
-<output_instructions>
-{{.OutputInstructions}}
-</output_instructions>
-{{end}}
-
-{{if .Tools}}
-You have access to the following tools:
-<tools>
-{{range .Tools}}<tool>
-{{.Name}}
-{{.Description}}
-</tool>
-{{end}}
-</tools>
-{{end}}
-
-{{if .Skills}}
-You have access to the following skills:
-<available_skills>
-{{range .Skills}}<skill>
-<name>{{.Name}}</name>
-<description>{{.Description}}</description>
-<location>{{.Location}}</location>
-</skill>
-{{end}}</available_skills>
-Skills are executable instructions, not references.
-When a user request matches a skill's name or description, you must load that skill before taking other actions.
-
-Skill loading policy:
-1. Identify the most relevant skill(s) from <available_skills>.
-2. Use read_file with the skill <location> to load the full SKILL content.
-3. Read selected skills before planning, tool calls, or substantive responses.
-4. Do not assume skill behavior from name/description alone.
-5. If multiple skills apply, load all relevant ones; resolve conflicts by priority: system/developer/user instructions, then skill instructions.
-6. If no skill applies, continue normally.
-{{end}}
-
-{{if .Documents}}
-{{range .Documents}}
-<document name="{{.Filename}}">
-{{.Text}}
-</document>
-{{end}}
-{{end}}
-
-{{if .SystemTags}}
-{{range .SystemTags}}<{{.Name}}>{{.Content}}</{{.Name}}>
-{{end}}
-{{end}}`
-
-const (
-	maxSkillsInSystemPrompt       = 50
-	maxSkillDescriptionPromptChar = 200
-)
-
-type skillSummary struct {
-	Name        string
-	Description string
-	Location    string
-}
+`
 
 const DefaultUserTemplate = `
 {{if .HasMessage}}
@@ -109,90 +34,80 @@ File references for this turn:
 `
 
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
+	var b bytes.Buffer
+	b.WriteString(defaultSystemIntro)
+
+	for _, p := range ac.SystemParts() {
+		if p.Value == "" {
+			continue
+		}
+		b.WriteString("\n<")
+		b.WriteString(p.Key)
+		b.WriteString(">\n")
+		b.WriteString(p.Value)
+		b.WriteString("\n</")
+		b.WriteString(p.Key)
+		b.WriteString(">\n")
+	}
+
+	if len(tools) > 0 {
+		b.WriteString("\nYou have access to the following tools:\n<tools>\n")
+		for _, t := range tools {
+			b.WriteString("<tool>\n")
+			b.WriteString(t.Name)
+			b.WriteString("\n")
+			b.WriteString(t.Description)
+			b.WriteString("\n</tool>\n")
+		}
+		b.WriteString("</tools>\n")
+	}
 
 	ws := ac.Workspace()
-	memoryDocs := make([]*document.Document, 0)
 	if ws != nil {
 		docs, err := ws.MemoryFiles()
 		if err != nil {
 			slog.Error("failed to load memory files", "error", err)
-		} else {
-			memoryDocs = docs
-		}
-	}
-
-	docsForTemplate := make([]struct {
-		Filename string
-		Text     string
-	}, 0, len(memoryDocs))
-	for _, doc := range memoryDocs {
-		relPath := doc.FilePath
-		if ws != nil && ws.MemoryDir != "" && ws.LLMDir != "" {
-			absLLM, errLLM := filepath.Abs(ws.LLMDir)
-			absMem, errMem := filepath.Abs(ws.MemoryDir)
-			if errLLM == nil && errMem == nil {
-				fullPath := filepath.Join(absMem, doc.FilePath)
-				if r, err := filepath.Rel(absLLM, fullPath); err == nil {
-					joined := filepath.Join(".", r)
-					prefix := "." + string(filepath.Separator)
-					if !strings.HasPrefix(joined, prefix) {
-						joined = prefix + joined
+		} else if len(docs) > 0 {
+			for _, doc := range docs {
+				relPath := doc.FilePath
+				if ws.MemoryDir != "" && ws.LLMDir != "" {
+					absLLM, errLLM := filepath.Abs(ws.LLMDir)
+					absMem, errMem := filepath.Abs(ws.MemoryDir)
+					if errLLM == nil && errMem == nil {
+						fullPath := filepath.Join(absMem, doc.FilePath)
+						if r, err := filepath.Rel(absLLM, fullPath); err == nil {
+							joined := filepath.Join(".", r)
+							prefix := "." + string(filepath.Separator)
+							if !strings.HasPrefix(joined, prefix) {
+								joined = prefix + joined
+							}
+							relPath = joined
+						}
 					}
-					relPath = joined
 				}
+				b.WriteString("\n<document name=\"")
+				b.WriteString(relPath)
+				b.WriteString("\">\n")
+				b.WriteString(doc.Text())
+				b.WriteString("\n</document>\n")
 			}
 		}
-		docsForTemplate = append(docsForTemplate, struct {
-			Filename string
-			Text     string
-		}{
-			Filename: relPath,
-			Text:     doc.Text(),
-		})
 	}
 
-	systemTags := []tag{}
-	if t := ac.Turn(); t != nil {
-		systemTags = t.systemTags
-	}
-	skills := ac.Skills()
-	summaries := make([]skillSummary, 0, len(skills))
-	for i, skill := range skills {
-		if i >= maxSkillsInSystemPrompt {
-			break
+	if t := ac.Turn(); t != nil && len(t.systemTags) > 0 {
+		b.WriteString("\n")
+		for _, tag := range t.systemTags {
+			b.WriteString("<")
+			b.WriteString(tag.Name)
+			b.WriteString(">")
+			b.WriteString(tag.Content)
+			b.WriteString("</")
+			b.WriteString(tag.Name)
+			b.WriteString(">\n")
 		}
-		desc := strings.TrimSpace(skill.Description)
-		if len(desc) > maxSkillDescriptionPromptChar {
-			desc = desc[:maxSkillDescriptionPromptChar] + "..."
-		}
-		name := strings.TrimSpace(skill.Name)
-		if name == "" {
-			name = strings.TrimSpace(skill.ID)
-		}
-		summaries = append(summaries, skillSummary{
-			Name:        name,
-			Description: desc,
-			Location:    strings.TrimSpace(skill.Source),
-		})
-	}
-	systemVars := map[string]any{
-		"Role":               ac.description,
-		"Instructions":       ac.instructions,
-		"Tools":              tools,
-		"Skills":             summaries,
-		"Documents":          docsForTemplate,
-		"OutputInstructions": ac.outputInstructions,
-		"SystemTags":         systemTags,
 	}
 
-	var systemBuf bytes.Buffer
-	if err := ac.SystemTemplate.Execute(&systemBuf, systemVars); err != nil {
-		return nil, fmt.Errorf("failed to execute system template: %w", err)
-	}
-
-	sysMsg := ai.SystemMessage{Role: ai.SystemRole, Content: systemBuf.String()}
-	return sysMsg, nil
-
+	return ai.SystemMessage{Role: ai.SystemRole, Content: b.String()}, nil
 }
 
 func createDocsMsg(ac *AgentContext) (ai.Message, error) {

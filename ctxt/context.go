@@ -22,42 +22,46 @@ type runMetaData struct {
 	StartedAt time.Time `json:"started_at"`
 }
 
+// PromptPart is a key-value segment of the system prompt, rendered in order.
+type PromptPart struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// Well-known system prompt part keys. Use these with SetSystemPart / PromptPart for consistency.
+const (
+	SystemPartKeyDescription        = "description"
+	SystemPartKeyInstructions       = "instructions"
+	SystemPartKeyOutputInstructions = "output_instructions"
+)
+
 type AgentContext struct {
 	id             string
-	description    string
-	instructions   string
 	name           string
 	summary        string
 	runMeta        *runMetaData
-	SystemTemplate *template.Template
 	UserTemplate   *template.Template
+
+	systemParts []PromptPart
 
 	mutex               sync.RWMutex
 	pendingRefs         []FileRefEntry
 	conversationHistory *ConversationHistory
-	outputInstructions  string
 	currentTurn         *Turn
 	workspace           *Workspace
 	turnCounter         int
 	enableTrace         bool
-	skillsByID          map[string]Skill
-	skillOrder          []string
-}
-
-type Skill struct {
-	ID          string
-	Name        string
-	Description string
-	Source      string
 }
 
 func New(id, description, instructions string, basePath string) (*AgentContext, error) {
 	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
-		id:           id,
-		description:  description,
-		instructions: instructions,
-		runMeta:      m,
+		id:      id,
+		runMeta: m,
+		systemParts: []PromptPart{
+			{Key: SystemPartKeyDescription, Value: description},
+			{Key: SystemPartKeyInstructions, Value: instructions},
+		},
 	}
 
 	if basePath == "" {
@@ -70,7 +74,6 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 	ctx.workspace = ws
 
 	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
-	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
 }
@@ -80,10 +83,12 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 func NewAtPath(id, description, instructions, exactPath string) (*AgentContext, error) {
 	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
-		id:           id,
-		description:  description,
-		instructions: instructions,
-		runMeta:      m,
+		id:      id,
+		runMeta: m,
+		systemParts: []PromptPart{
+			{Key: SystemPartKeyDescription, Value: description},
+			{Key: SystemPartKeyInstructions, Value: instructions},
+		},
 	}
 	if exactPath == "" {
 		return nil, fmt.Errorf("exact path is required")
@@ -94,7 +99,6 @@ func NewAtPath(id, description, instructions, exactPath string) (*AgentContext, 
 	}
 	ctx.workspace = ws
 	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
-	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
 }
@@ -117,14 +121,15 @@ func NewChild(id, description, instructions, privateDir, sharedLLMDir string) (*
 
 	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
-		id:           id,
-		description:  description,
-		instructions: instructions,
-		runMeta:      m,
-		workspace:    ws,
+		id:      id,
+		runMeta: m,
+		workspace: ws,
+		systemParts: []PromptPart{
+			{Key: SystemPartKeyDescription, Value: description},
+			{Key: SystemPartKeyInstructions, Value: instructions},
+		},
 	}
 	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
-	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
 }
@@ -133,19 +138,51 @@ func (r *AgentContext) Workspace() *Workspace {
 	return r.workspace
 }
 
-func (r *AgentContext) SetOutputInstructions(instructions string) *AgentContext {
-	r.outputInstructions = instructions
+func (r *AgentContext) SetSystemPart(key, value string) *AgentContext {
+	if key == "" {
+		return r
+	}
+	r.mutex.Lock()
+	found := -1
+	for i := range r.systemParts {
+		if r.systemParts[i].Key == key {
+			found = i
+			break
+		}
+	}
+	if value == "" {
+		if found >= 0 {
+			r.systemParts = append(r.systemParts[:found], r.systemParts[found+1:]...)
+		}
+	} else if found >= 0 {
+		r.systemParts[found].Value = value
+	} else {
+		r.systemParts = append(r.systemParts, PromptPart{Key: key, Value: value})
+	}
+	r.mutex.Unlock()
 	r.save()
 	return r
 }
 
-func (r *AgentContext) UpdateSystemTemplate(templateStr string) error {
-	tmpl, err := template.New("system").Parse(templateStr)
-	if err != nil {
-		return err
+// PromptPart returns the value for the given system part key and whether it was present.
+func (r *AgentContext) PromptPart(key string) (string, bool) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	for _, p := range r.systemParts {
+		if p.Key == key {
+			return p.Value, true
+		}
 	}
-	r.SystemTemplate = tmpl
-	return nil
+	return "", false
+}
+
+// SystemParts returns a copy of the ordered system prompt parts.
+func (r *AgentContext) SystemParts() []PromptPart {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	out := make([]PromptPart, len(r.systemParts))
+	copy(out, r.systemParts)
+	return out
 }
 
 func (r *AgentContext) UpdateUserTemplate(templateStr string) error {
@@ -158,15 +195,11 @@ func (r *AgentContext) UpdateUserTemplate(templateStr string) error {
 }
 
 func (r *AgentContext) SetDescription(description string) *AgentContext {
-	r.description = description
-	r.save()
-	return r
+	return r.SetSystemPart(SystemPartKeyDescription, description)
 }
 
 func (r *AgentContext) SetInstructions(instructions string) *AgentContext {
-	r.instructions = instructions
-	r.save()
-	return r
+	return r.SetSystemPart(SystemPartKeyInstructions, instructions)
 }
 
 func (r *AgentContext) insertDocuments(docs []*document.Document) []ai.Message {
@@ -378,85 +411,6 @@ func (r *AgentContext) EnableTrace() bool {
 	return r.enableTrace
 }
 
-func (r *AgentContext) AddSkill(skill Skill) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	id := strings.TrimSpace(skill.ID)
-	if id == "" {
-		return fmt.Errorf("skill id is required")
-	}
-	source := strings.TrimSpace(skill.Source)
-	if source == "" {
-		return fmt.Errorf("skill source is required")
-	}
-
-	if r.skillsByID == nil {
-		r.skillsByID = make(map[string]Skill)
-	}
-	if _, exists := r.skillsByID[id]; exists {
-		return fmt.Errorf("skill already exists: %s", id)
-	}
-
-	skill.ID = id
-	skill.Source = source
-	r.skillsByID[id] = skill
-	r.skillOrder = append(r.skillOrder, id)
-	return nil
-}
-
-func (r *AgentContext) RemoveSkill(id string) bool {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	id = strings.TrimSpace(id)
-	if id == "" || r.skillsByID == nil {
-		return false
-	}
-	if _, exists := r.skillsByID[id]; !exists {
-		return false
-	}
-
-	delete(r.skillsByID, id)
-	for i, sid := range r.skillOrder {
-		if sid == id {
-			r.skillOrder = append(r.skillOrder[:i], r.skillOrder[i+1:]...)
-			break
-		}
-	}
-	return true
-}
-
-func (r *AgentContext) Skills() []Skill {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	if len(r.skillOrder) == 0 || r.skillsByID == nil {
-		return nil
-	}
-
-	out := make([]Skill, 0, len(r.skillOrder))
-	for _, id := range r.skillOrder {
-		skill, ok := r.skillsByID[id]
-		if !ok {
-			continue
-		}
-		out = append(out, skill)
-	}
-	return out
-}
-
-func (r *AgentContext) GetSkill(id string) (Skill, bool) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	if r.skillsByID == nil {
-		return Skill{}, false
-	}
-	skill, ok := r.skillsByID[strings.TrimSpace(id)]
-	return skill, ok
-}
-
 func (r *AgentContext) saveRunMeta() {
 	if r.workspace == nil || r.runMeta == nil {
 		return
@@ -572,22 +526,19 @@ func (r *AgentContext) ClearHistory() *AgentContext {
 func (r *AgentContext) ClearAll() *AgentContext {
 	ctx := r.ClearDocuments().
 		ClearHistory().
-		SetOutputInstructions("")
-	ctx.UpdateSystemTemplate(DefaultSystemTemplate)
+		SetSystemPart(SystemPartKeyOutputInstructions, "")
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx
 }
 
 type contextData struct {
-	ID                 string `json:"id"`
-	Description        string `json:"description"`
-	Instructions       string `json:"instructions"`
-	Name               string `json:"name"`
-	Summary            string `json:"summary"`
-	OutputInstructions string `json:"output_instructions"`
-	TurnCounter        int    `json:"turn_counter"`
-	MemoryDir          string `json:"memory_dir"`
-	EnableTrace        bool   `json:"enable_trace"`
+	ID          string       `json:"id"`
+	SystemParts []PromptPart `json:"system_parts"`
+	Name        string       `json:"name"`
+	Summary     string       `json:"summary"`
+	TurnCounter int          `json:"turn_counter"`
+	MemoryDir   string       `json:"memory_dir"`
+	EnableTrace bool         `json:"enable_trace"`
 }
 
 func (r *AgentContext) save() error {
@@ -595,16 +546,19 @@ func (r *AgentContext) save() error {
 		return nil
 	}
 
+	r.mutex.RLock()
+	partsCopy := make([]PromptPart, len(r.systemParts))
+	copy(partsCopy, r.systemParts)
+	r.mutex.RUnlock()
+
 	data := contextData{
-		ID:                 r.id,
-		Description:        r.description,
-		Instructions:       r.instructions,
-		Name:               r.name,
-		Summary:            r.summary,
-		OutputInstructions: r.outputInstructions,
-		TurnCounter:        r.turnCounter,
-		MemoryDir:          r.workspace.MemoryDir,
-		EnableTrace:        r.enableTrace,
+		ID:          r.id,
+		SystemParts: partsCopy,
+		Name:        r.name,
+		Summary:     r.summary,
+		TurnCounter: r.turnCounter,
+		MemoryDir:   r.workspace.MemoryDir,
+		EnableTrace: r.enableTrace,
 	}
 
 	contextFile := filepath.Join(r.workspace.PrivateDir, "context.json")

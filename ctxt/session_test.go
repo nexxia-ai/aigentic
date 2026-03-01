@@ -26,8 +26,8 @@ func TestContextSaveAndLoad(t *testing.T) {
 		t.Fatalf("failed to load context: %v", err)
 	}
 
-	if loadedCtx.ID() != ctx.id {
-		t.Errorf("expected ID %s, got %s", ctx.id, loadedCtx.ID())
+	if loadedCtx.ID() != ctx.ID() {
+		t.Errorf("expected ID %s, got %s", ctx.ID(), loadedCtx.ID())
 	}
 	if loadedCtx.Name() != "Test Session" {
 		t.Errorf("expected Name 'Test Session', got '%s'", loadedCtx.Name())
@@ -35,11 +35,11 @@ func TestContextSaveAndLoad(t *testing.T) {
 	if loadedCtx.Summary() != "Test summary" {
 		t.Errorf("expected Summary 'Test summary', got '%s'", loadedCtx.Summary())
 	}
-	if loadedCtx.description != "test description" {
-		t.Errorf("expected description 'test description', got '%s'", loadedCtx.description)
+	if desc, ok := loadedCtx.PromptPart(SystemPartKeyDescription); !ok || desc != "test description" {
+		t.Errorf("expected description 'test description', got %q (ok=%v)", desc, ok)
 	}
-	if loadedCtx.instructions != "test instructions" {
-		t.Errorf("expected instructions 'test instructions', got '%s'", loadedCtx.instructions)
+	if inst, ok := loadedCtx.PromptPart(SystemPartKeyInstructions); !ok || inst != "test instructions" {
+		t.Errorf("expected instructions 'test instructions', got %q (ok=%v)", inst, ok)
 	}
 }
 

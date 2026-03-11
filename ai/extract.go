@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -18,14 +19,19 @@ const extractToolName = "submit_extraction"
 
 // Extract uses the model to fill key-value slots from text. Slots define the keys and their
 // descriptions; the prompt uses those descriptions so the model knows what to produce per key.
-// Returns one KeyValue per slot in the same order; Value is empty string if the model did not fill it.
-// Relies on a single tool call (submit_extraction) for structured output.
-func Extract(ctx context.Context, model *Model, text string, slots []KeyValue) ([]KeyValue, error) {
+// Returns the LLM content body (for display/notification), one KeyValue per slot in the same order,
+// and an error. Content is accumulated from streaming chunks when onStream is used, or from the
+// response message on the non-streaming path. Relies on a single tool call (submit_extraction) for
+// structured output.
+//
+// onStream is optional: if non-nil, Extract uses streaming and calls onStream with each content chunk;
+// the tool is still invoked once at the end. If onStream is nil, a single non-streaming call is made.
+func Extract(ctx context.Context, model *Model, text string, slots []KeyValue, onStream func(chunk string) error) (content string, result []KeyValue, err error) {
 	if model == nil {
-		return nil, fmt.Errorf("model is required")
+		return "", nil, fmt.Errorf("model is required")
 	}
 	if len(slots) == 0 {
-		return nil, nil
+		return "", nil, nil
 	}
 
 	sysContent := buildExtractSystemPrompt(slots)
@@ -34,21 +40,65 @@ func Extract(ctx context.Context, model *Model, text string, slots []KeyValue) (
 		UserMessage{Role: UserRole, Content: text},
 	}
 	tool := extractTool()
-	resp, err := model.Call(ctx, messages, []Tool{tool})
-	if err != nil {
-		return nil, err
+
+	if onStream != nil && model.callStreamingFunc != nil {
+		slog.Debug("Extract using streaming path")
+		var body strings.Builder
+		send := func(s string) error {
+			if s != "" {
+				body.WriteString(s)
+				return onStream(s)
+			}
+			return nil
+		}
+		chunkFn := func(chunk AIMessage) error {
+			s := chunk.Content
+			if s == "" && len(chunk.Parts) > 0 {
+				for _, p := range chunk.Parts {
+					if p.Type == ContentPartText && p.Text != "" {
+						s = p.Text
+						break
+					}
+				}
+			}
+			if s != "" {
+				slog.Debug("Extract forwarding content chunk to callback", "len", len(s), "preview", truncatePreview(s, 80))
+				return send(s)
+			}
+			return nil
+		}
+		resp, err := model.Stream(ctx, messages, []Tool{tool}, chunkFn)
+		if err != nil {
+			return "", nil, err
+		}
+		// Include any content only present in the final message
+		if rest := messageContent(resp); rest != "" {
+			body.WriteString(rest)
+			_ = onStream(rest)
+		}
+		kv, err := normaliseExtractResult(slots, resp)
+		return body.String(), kv, err
 	}
 
-	return normaliseExtractResult(slots, resp)
+	slog.Debug("Extract using non-streaming path", "streaming_available", model.callStreamingFunc != nil)
+	resp, err := model.Call(ctx, messages, []Tool{tool})
+	if err != nil {
+		return "", nil, err
+	}
+	body := messageContent(resp)
+	if body != "" && onStream != nil {
+		_ = onStream(body)
+	}
+	kv, err := normaliseExtractResult(slots, resp)
+	return body, kv, err
 }
 
 func buildExtractSystemPrompt(slots []KeyValue) string {
 	var b strings.Builder
-	b.WriteString("You are an extraction assistant. Analyze the user message and fill each of the following keys. ")
-	b.WriteString("You must call the submit_extraction tool exactly once with a list of key-value pairs. ")
-	b.WriteString("Include every key; use an empty string for any key you cannot fill. ")
-	b.WriteString("Do not respond with free-form text—only call the tool.\n\n")
-	b.WriteString("Keys to produce (use the description to know what to write for each key):\n\n")
+	b.WriteString("Fill each key from the user message. Use one short phrase or line per key. ")
+	b.WriteString("You may stream a single brief status (e.g. \"Extracting...\") then call submit_extraction immediately. ")
+	b.WriteString("Call submit_extraction exactly once with all keys; use empty string for any key you cannot fill.\n\n")
+	b.WriteString("Keys:\n\n")
 	for _, s := range slots {
 		b.WriteString("- ")
 		b.WriteString(s.Key)
@@ -67,7 +117,7 @@ func extractTool() Tool {
 			"type": "object",
 			"properties": map[string]interface{}{
 				"pairs": map[string]interface{}{
-					"type": "array",
+					"type":        "array",
 					"description": "List of key-value pairs",
 					"items": map[string]interface{}{
 						"type": "object",
@@ -85,6 +135,19 @@ func extractTool() Tool {
 			return &ToolResult{}, nil
 		},
 	}
+}
+
+func messageContent(msg AIMessage) string {
+	s := strings.TrimSpace(msg.Content)
+	if s != "" {
+		return s
+	}
+	for _, p := range msg.Parts {
+		if p.Type == ContentPartText && p.Text != "" {
+			return strings.TrimSpace(p.Text)
+		}
+	}
+	return ""
 }
 
 func normaliseExtractResult(slots []KeyValue, resp AIMessage) ([]KeyValue, error) {
@@ -121,4 +184,11 @@ func normaliseExtractResult(slots []KeyValue, resp AIMessage) ([]KeyValue, error
 		}
 	}
 	return result, nil
+}
+
+func truncatePreview(s string, maxLen int) string {
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

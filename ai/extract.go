@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// KeyValue is a key-value pair for extraction results or slot definitions.
-// Same shape as ctxt.KeyValue; callers can convert when passing to Run().
+// KeyValue is a key-value pair for extraction, turn metadata, and user-prompt enrichment.
+// Used by ai.Extract, Run() metadata, and ctxt turn tags.
 type KeyValue struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`

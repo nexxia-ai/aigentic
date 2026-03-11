@@ -167,7 +167,7 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 }
 
 func createUserMsg(ac *AgentContext, message string) (ai.Message, error) {
-	var turnTags []KeyValue
+	var turnTags []ai.KeyValue
 	var fileRefPaths []string
 	norm := func(p string) string { return filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/")) }
 	seenPath := make(map[string]bool)

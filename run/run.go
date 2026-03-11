@@ -225,7 +225,7 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 	r.includeHistory = enable
 }
 
-func (r *AgentRun) Run(ctx context.Context, message string, metadata []ctxt.KeyValue) {
+func (r *AgentRun) Run(ctx context.Context, message string, metadata []ai.KeyValue) {
 	// Wait for any previous processLoop goroutine to fully exit before
 	// re-initialising shared fields (eventQueue, actionQueue, ctx, etc.).
 	r.processWg.Wait()

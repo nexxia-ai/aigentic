@@ -85,6 +85,13 @@ func (tm *turnMetrics) add(u ai.Usage) {
 	tm.usage.CompletionTokensDetails.RejectedPredictionTokens += u.CompletionTokensDetails.RejectedPredictionTokens
 }
 
+func truncateForLog(s string, maxLen int) string {
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
 func (r *AgentRun) ID() string {
 	return r.id
 }
@@ -218,7 +225,7 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 	r.includeHistory = enable
 }
 
-func (r *AgentRun) Run(ctx context.Context, message string) {
+func (r *AgentRun) Run(ctx context.Context, message string, metadata []ctxt.KeyValue) {
 	// Wait for any previous processLoop goroutine to fully exit before
 	// re-initialising shared fields (eventQueue, actionQueue, ctx, etc.).
 	r.processWg.Wait()
@@ -242,6 +249,19 @@ func (r *AgentRun) Run(ctx context.Context, message string) {
 
 	turn := r.agentContext.StartTurn(message)
 	r.turnMetrics.reset()
+
+	if metadata != nil && len(metadata) > 0 {
+		turn.AppendTurnTags(metadata)
+		keys := make([]string, len(metadata))
+		for i := range metadata {
+			keys[i] = metadata[i].Key
+		}
+		r.Logger.Info("turn metadata set",
+			"run_id", r.id,
+			"user_message", truncateForLog(message, 500),
+			"metadata_keys", keys,
+		)
+	}
 
 	if r.enableTrace {
 		traceFile := filepath.Join(turn.Dir(), "trace.txt")
@@ -323,7 +343,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 				subRun.SetStreaming(true)
 			}
 
-			subRun.Run(r.ctx, input)
+			subRun.Run(r.ctx, input, nil)
 			content, err := subRun.Wait(0)
 
 			if r.enableTrace && err != nil {

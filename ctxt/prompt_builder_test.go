@@ -375,8 +375,8 @@ func TestCreateUserMsg(t *testing.T) {
 			name: "with user tags",
 			setup: func(ac *AgentContext) *AgentContext {
 				ac.StartTurn("Test message")
-				ac.Turn().InjectUserTag("context", "additional context")
-				ac.Turn().InjectUserTag("priority", "high")
+				ac.Turn().InjectTurnTag("context", "additional context")
+				ac.Turn().InjectTurnTag("priority", "high")
 				return ac
 			},
 			message: "Process this",
@@ -389,7 +389,7 @@ func TestCreateUserMsg(t *testing.T) {
 			name: "with message and user tags",
 			setup: func(ac *AgentContext) *AgentContext {
 				ac.StartTurn("Test message")
-				ac.Turn().InjectUserTag("context", "test context")
+				ac.Turn().InjectTurnTag("context", "test context")
 				return ac
 			},
 			message: "Test message",
@@ -676,7 +676,7 @@ func TestBuildPromptWithSystemAndUserTags(t *testing.T) {
 	ac.SetDescription("Test Role")
 	ac.StartTurn("Test message")
 	ac.Turn().InjectSystemTag("tag1", "system tag content")
-	ac.Turn().InjectUserTag("tag2", "user tag content")
+	ac.Turn().InjectTurnTag("tag2", "user tag content")
 
 	msgs, err := ac.BuildPrompt(nil, false)
 	require.NoError(t, err)

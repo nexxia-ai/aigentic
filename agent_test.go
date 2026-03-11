@@ -415,7 +415,7 @@ func TestAgentBatchExecution(t *testing.T) {
 		BatchPolicy: &run.BatchPolicy{MaxConcurrency: 2, ContinueOnError: true},
 	})
 
-	ar.Run(context.Background(), "Process these two documents in batch")
+	ar.Run(context.Background(), "Process these two documents in batch", nil)
 	result, err := ar.Wait(0)
 
 	assert.NoError(t, err)
@@ -496,7 +496,7 @@ func TestAgentPlanExecution(t *testing.T) {
 		},
 	})
 
-	ar.Run(context.Background(), "Run the document pipeline")
+	ar.Run(context.Background(), "Run the document pipeline", nil)
 	result, err := ar.Wait(0)
 
 	assert.NoError(t, err)

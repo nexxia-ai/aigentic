@@ -318,7 +318,7 @@ func runChildStep(ctx context.Context, parentRun *AgentRun, def subAgentDef, pri
 	if parentRun.streaming {
 		childRun.SetStreaming(true)
 	}
-	childRun.Run(ctx, message)
+	childRun.Run(ctx, message, nil)
 	return childRun.Wait(0)
 }
 

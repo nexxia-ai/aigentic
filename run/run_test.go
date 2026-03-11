@@ -416,12 +416,12 @@ func TestAgentRun_ReuseAfterCompletion(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "First message")
+	ar.Run(context.Background(), "First message", nil)
 	content1, err1 := ar.Wait(0)
 	assert.NoError(t, err1)
 	assert.Contains(t, content1, "First response")
 
-	ar.Run(context.Background(), "Second message")
+	ar.Run(context.Background(), "Second message", nil)
 	content2, err2 := ar.Wait(0)
 	assert.NoError(t, err2)
 	assert.Contains(t, content2, "First response")
@@ -443,12 +443,12 @@ func TestAgentRun_ReuseAfterCancel(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "First message")
+	ar.Run(context.Background(), "First message", nil)
 	ar.Cancel()
 
 	time.Sleep(100 * time.Millisecond)
 
-	ar.Run(context.Background(), "Second message")
+	ar.Run(context.Background(), "Second message", nil)
 	content2, err2 := ar.Wait(0)
 	assert.NoError(t, err2)
 	assert.Contains(t, content2, "Response after cancel")
@@ -472,12 +472,12 @@ func TestAgentRun_MemoryPersistenceAcrossRuns(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "First message")
+	ar.Run(context.Background(), "First message", nil)
 	content1, err1 := ar.Wait(0)
 	assert.NoError(t, err1)
 	assert.Contains(t, content1, "Response")
 
-	ar.Run(context.Background(), "Second message")
+	ar.Run(context.Background(), "Second message", nil)
 	content2, err2 := ar.Wait(0)
 	assert.NoError(t, err2)
 	assert.Contains(t, content2, "Response")
@@ -510,7 +510,7 @@ func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
 	ar.SetModel(model1)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "First message")
+	ar.Run(context.Background(), "First message", nil)
 	content1, err1 := ar.Wait(0)
 	assert.NoError(t, err1)
 	assert.Contains(t, content1, "Response from model-1")
@@ -518,7 +518,7 @@ func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
 
 	ar.SetModel(model2)
 
-	ar.Run(context.Background(), "Second message")
+	ar.Run(context.Background(), "Second message", nil)
 	content2, err2 := ar.Wait(0)
 	assert.NoError(t, err2)
 	assert.Contains(t, content2, "Response from model-2")
@@ -546,7 +546,7 @@ func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "hello")
+	ar.Run(context.Background(), "hello", nil)
 	_, err = ar.Wait(0)
 	assert.NoError(t, err)
 
@@ -579,7 +579,7 @@ func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
 	turnData, _ := json.Marshal(childTurn)
 	assert.NoError(t, os.WriteFile(filepath.Join(batchDir, "turn", "turn-000001", "turn.json"), turnData, 0644))
 
-	ar.Run(context.Background(), "/context")
+	ar.Run(context.Background(), "/context", nil)
 	var content string
 	for evt := range ar.eventQueue {
 		if ce, ok := evt.(*event.ContentEvent); ok {
@@ -608,7 +608,7 @@ func TestFormatAigenticStats_ShowsReasoningWhenOnlyChildHasIt(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "hello")
+	ar.Run(context.Background(), "hello", nil)
 	_, _ = ar.Wait(0)
 
 	ws := ar.AgentContext().Workspace()
@@ -630,7 +630,7 @@ func TestFormatAigenticStats_ShowsReasoningWhenOnlyChildHasIt(t *testing.T) {
 	turnData, _ := json.Marshal(childTurn)
 	os.WriteFile(filepath.Join(batchDir, "turn", "turn-000001", "turn.json"), turnData, 0644)
 
-	ar.Run(context.Background(), "/context")
+	ar.Run(context.Background(), "/context", nil)
 	var content string
 	for evt := range ar.eventQueue {
 		if ce, ok := evt.(*event.ContentEvent); ok {

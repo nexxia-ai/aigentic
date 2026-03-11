@@ -1149,7 +1149,7 @@ func TestBatchExecution(t *testing.T, model *ai.Model) {
 		BatchPolicy: &run.BatchPolicy{MaxConcurrency: 3, ContinueOnError: true},
 	})
 
-	ar.Run(context.Background(), "Classify the sentiment of these reviews:\n1. \"This product is great, I love it!\"\n2. \"Terrible experience, awful quality\"\n3. \"It's okay, nothing special\"")
+	ar.Run(context.Background(), "Classify the sentiment of these reviews:\n1. \"This product is great, I love it!\"\n2. \"Terrible experience, awful quality\"\n3. \"It's okay, nothing special\"", nil)
 	result, err := ar.Wait(0)
 	if err != nil {
 		t.Fatalf("agent wait failed: %v", err)
@@ -1231,7 +1231,7 @@ func TestPlanExecution(t *testing.T, model *ai.Model) {
 		},
 	})
 
-	ar.Run(context.Background(), "Assess the risk of company 'Nexxia'")
+	ar.Run(context.Background(), "Assess the risk of company 'Nexxia'", nil)
 	result, err := ar.Wait(0)
 	if err != nil {
 		t.Fatalf("agent wait failed: %v", err)

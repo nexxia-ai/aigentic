@@ -28,6 +28,13 @@ type PromptPart struct {
 	Value string `json:"value"`
 }
 
+// KeyValue is a generic key-value pair for prompts, metadata, or configuration.
+// Used for turn-level user-prompt enrichment (TurnTags) and Run() metadata.
+type KeyValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 // Well-known system prompt part keys. Use these with SetSystemPart / PromptPart for consistency.
 const (
 	SystemPartKeyDescription        = "description"

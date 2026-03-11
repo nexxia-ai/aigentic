@@ -51,7 +51,7 @@ type Turn struct {
 	Hidden       bool            `json:"hidden"`
 	Usage        ai.Usage        `json:"usage,omitempty"`
 	systemTags   []tag
-	userTags     []tag
+	turnTags     []KeyValue
 }
 
 func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) *Turn {
@@ -66,8 +66,8 @@ func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) 
 		TraceFile:    "",
 		Timestamp:    time.Now(),
 		AgentName:    agentName,
-		systemTags:   make([]tag, 0),
-		userTags:     make([]tag, 0),
+		systemTags: make([]tag, 0),
+		turnTags:   make([]KeyValue, 0),
 	}
 }
 
@@ -155,11 +155,23 @@ func (t *Turn) SystemTags() []TagEntry {
 	return result
 }
 
-func (t *Turn) InjectUserTag(tagName string, content string) {
-	t.userTags = append(t.userTags, tag{
-		Name:    tagName,
-		Content: content,
-	})
+func (t *Turn) InjectTurnTag(tagName string, content string) {
+	t.turnTags = append(t.turnTags, KeyValue{Key: tagName, Value: content})
+}
+
+// AppendTurnTags appends key-value pairs to the turn's user-prompt list (e.g. from Run() metadata).
+func (t *Turn) AppendTurnTags(kv []KeyValue) {
+	t.turnTags = append(t.turnTags, kv...)
+}
+
+// TurnTags returns the turn's key-value list for the user prompt (caller metadata + InjectTurnTag).
+func (t *Turn) TurnTags() []KeyValue {
+	if t.turnTags == nil {
+		return nil
+	}
+	out := make([]KeyValue, len(t.turnTags))
+	copy(out, t.turnTags)
+	return out
 }
 
 func (t *Turn) GetDocuments() []*document.Document {
@@ -252,7 +264,7 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		Reply      *messageJSON   `json:"reply,omitempty"`
 		Documents  []documentJSON `json:"documents"`
 		SystemTags []tag          `json:"system_tags"`
-		UserTags   []tag          `json:"user_tags"`
+		TurnTags   []KeyValue     `json:"turn_tags"`
 	}{
 		Alias:      (*Alias)(t),
 		Request:    request,
@@ -260,7 +272,7 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		Reply:      reply,
 		Documents:  documents,
 		SystemTags: t.systemTags,
-		UserTags:   t.userTags,
+		TurnTags:   t.turnTags,
 	})
 }
 
@@ -315,6 +327,7 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		Reply      *messageJSON   `json:"reply,omitempty"`
 		Documents  []documentJSON `json:"documents"`
 		SystemTags []tag          `json:"system_tags"`
+		TurnTags   []KeyValue     `json:"turn_tags"`
 		UserTags   []tag          `json:"user_tags"`
 	}{
 		Alias: (*Alias)(t),
@@ -358,10 +371,15 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		t.systemTags = make([]tag, 0)
 	}
 
-	if aux.UserTags != nil {
-		t.userTags = aux.UserTags
+	if aux.TurnTags != nil {
+		t.turnTags = aux.TurnTags
+	} else if aux.UserTags != nil {
+		t.turnTags = make([]KeyValue, len(aux.UserTags))
+		for i, tag := range aux.UserTags {
+			t.turnTags[i] = KeyValue{Key: tag.Name, Value: tag.Content}
+		}
 	} else {
-		t.userTags = make([]tag, 0)
+		t.turnTags = make([]KeyValue, 0)
 	}
 
 	if aux.FileRefs != nil {

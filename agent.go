@@ -88,7 +88,7 @@ func (a Agent) Start(message string) (*run.AgentRun, error) {
 	if err != nil {
 		return nil, err
 	}
-	ar.Run(context.Background(), message)
+	ar.Run(context.Background(), message, nil)
 	return ar, nil
 }
 

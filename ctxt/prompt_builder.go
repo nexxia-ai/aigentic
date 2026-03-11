@@ -17,13 +17,13 @@ You have to consider all the information you were given and reason about the nex
 `
 
 const DefaultUserTemplate = `
-{{if .HasMessage}}
-{{.Message}} 
+{{if .TurnTags}}
+{{range .TurnTags}}<{{.Key}}>{{.Value}}</{{.Key}}>
+{{end}}
 {{end}}
 
-{{if .UserTags}}
-{{range .UserTags}}<{{.Name}}>{{.Content}}</{{.Name}}>
-{{end}}
+{{if .HasMessage}}
+{{.Message}} 
 {{end}}
 
 {{if .FileRefs}}
@@ -167,12 +167,12 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 }
 
 func createUserMsg(ac *AgentContext, message string) (ai.Message, error) {
-	userTags := []tag{}
+	var turnTags []KeyValue
 	var fileRefPaths []string
 	norm := func(p string) string { return filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/")) }
 	seenPath := make(map[string]bool)
 	if t := ac.Turn(); t != nil {
-		userTags = t.userTags
+		turnTags = t.TurnTags()
 		for _, ref := range t.FileRefs {
 			p := norm(ref.Path)
 			if p != "" && !seenPath[p] {
@@ -184,7 +184,7 @@ func createUserMsg(ac *AgentContext, message string) (ai.Message, error) {
 	userVars := map[string]any{
 		"Message":    message,
 		"HasMessage": message != "",
-		"UserTags":   userTags,
+		"TurnTags":   turnTags,
 		"FileRefs":   fileRefPaths,
 	}
 	var userBuf bytes.Buffer

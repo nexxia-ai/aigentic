@@ -49,7 +49,8 @@ type AgentContext struct {
 	conversationHistory *ConversationHistory
 	currentTurn         *Turn
 	workspace           *Workspace
-	turnCounter         int
+	basePath            string
+	ledger              *Ledger
 	enableTrace         bool
 }
 
@@ -67,20 +68,27 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 	if basePath == "" {
 		return nil, fmt.Errorf("context base path is required")
 	}
-	ws, err := NewWorkspace(basePath, id)
+	absBase, err := filepath.Abs(basePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create workspace: %s: %w", basePath, err)
+		return nil, fmt.Errorf("base path: %w", err)
+	}
+	ctx.basePath = absBase
+	runDir := RunDir(absBase, id)
+	ws, err := newWorkspaceAtRunDir(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workspace: %w", err)
 	}
 	ctx.workspace = ws
-
-	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
+	ctx.ledger = NewLedger(absBase)
+	conversationPath := filepath.Join(runDir, aigenticDirName, "conversation.json")
+	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
 }
 
-// NewAtPath creates an AgentContext at an exact path without timestamp prefix.
-// Used by the orchestrator for single-instance agents.
-func NewAtPath(id, description, instructions, exactPath string) (*AgentContext, error) {
+// NewAtPath creates an AgentContext at an exact run path.
+// runDir is the run root (basePath/runs/{id}/). BasePath is derived for ledger access.
+func NewAtPath(id, description, instructions, runDir string) (*AgentContext, error) {
 	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
 		id:      id,
@@ -90,30 +98,51 @@ func NewAtPath(id, description, instructions, exactPath string) (*AgentContext, 
 			{Key: SystemPartKeyInstructions, Value: instructions},
 		},
 	}
-	if exactPath == "" {
-		return nil, fmt.Errorf("exact path is required")
+	if runDir == "" {
+		return nil, fmt.Errorf("run path is required")
 	}
-	ws, err := NewWorkspaceAtPath(exactPath)
+	absRunDir, err := filepath.Abs(runDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create workspace at path: %w", err)
+		return nil, fmt.Errorf("run path: %w", err)
+	}
+	parentDir := filepath.Dir(absRunDir)
+	grandparentDir := filepath.Dir(parentDir)
+	var basePath string
+	if filepath.Base(grandparentDir) == "runs" {
+		basePath = filepath.Dir(grandparentDir)
+	} else {
+		basePath = grandparentDir
+	}
+	ctx.basePath = basePath
+	ws, err := newWorkspaceAtRunDir(absRunDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workspace: %w", err)
 	}
 	ctx.workspace = ws
-	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
+	ctx.ledger = NewLedger(basePath)
+	conversationPath := filepath.Join(absRunDir, aigenticDirName, "conversation.json")
+	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
 }
 
-// NewChild creates a child AgentContext with its own _private/ directory but sharing the
-// given llm/ directory. Used by batch and plan tools to give each child its own turns
-// while sharing uploads, output, and memory with the parent and siblings.
-func NewChild(id, description, instructions, privateDir, sharedLLMDir string) (*AgentContext, error) {
+// NewChild creates a child AgentContext with its own directory but sharing the
+// given llm/ directory. Used by batch and plan tools. basePath is the ledger base (same as parent).
+func NewChild(id, description, instructions, privateDir, sharedLLMDir, basePath string) (*AgentContext, error) {
 	if privateDir == "" {
 		return nil, fmt.Errorf("child private dir is required")
 	}
 	if sharedLLMDir == "" {
 		return nil, fmt.Errorf("shared LLM dir is required")
 	}
+	if basePath == "" {
+		return nil, fmt.Errorf("base path is required")
+	}
 
+	absBase, err := filepath.Abs(basePath)
+	if err != nil {
+		return nil, fmt.Errorf("base path: %w", err)
+	}
 	ws, err := newChildWorkspace(privateDir, sharedLLMDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create child workspace: %w", err)
@@ -121,21 +150,32 @@ func NewChild(id, description, instructions, privateDir, sharedLLMDir string) (*
 
 	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
-		id:      id,
-		runMeta: m,
+		id:        id,
+		runMeta:   m,
 		workspace: ws,
+		basePath:  absBase,
+		ledger:    NewLedger(absBase),
 		systemParts: []PromptPart{
 			{Key: SystemPartKeyDescription, Value: description},
 			{Key: SystemPartKeyInstructions, Value: instructions},
 		},
 	}
-	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
+	conversationPath := filepath.Join(privateDir, "conversation.json")
+	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
 }
 
 func (r *AgentContext) Workspace() *Workspace {
 	return r.workspace
+}
+
+func (r *AgentContext) BasePath() string {
+	return r.basePath
+}
+
+func (r *AgentContext) Ledger() *Ledger {
+	return r.ledger
 }
 
 func (r *AgentContext) SetSystemPart(key, value string) *AgentContext {
@@ -330,8 +370,9 @@ func (r *AgentContext) GetDocument(path string) *document.Document {
 }
 
 func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *AgentContext {
-	if history == nil {
-		history = NewConversationHistory(r.workspace)
+	if history == nil && r.ledger != nil && r.workspace != nil {
+		conversationPath := filepath.Join(r.workspace.PrivateDir, "conversation.json")
+		history = NewConversationHistory(r.ledger, conversationPath)
 	}
 	r.conversationHistory = history
 	return r
@@ -357,10 +398,6 @@ func (r *AgentContext) GetHistory() *ConversationHistory {
 
 func (r *AgentContext) ConversationHistory() *ConversationHistory {
 	return r.conversationHistory
-}
-
-func (r *AgentContext) ShouldCompact(config CompactionConfig) bool {
-	return len(r.conversationHistory.DaysToCompact(config)) > 0
 }
 
 func (r *AgentContext) ID() string {
@@ -461,22 +498,22 @@ func (r *AgentContext) SetSummary(summary string) *AgentContext {
 }
 
 func (r *AgentContext) newTurn() *Turn {
-	r.turnCounter++
-	turnID := fmt.Sprintf("turn-%06d", r.turnCounter)
-	turn := NewTurn(r, "", "", turnID)
-
-	if r.workspace != nil {
-		turnDir := filepath.Join(r.workspace.TurnDir, turn.TurnID)
-		if err := os.MkdirAll(turnDir, 0755); err != nil {
-			slog.Error("failed to create turn directory", "error", err)
-		}
-	}
-
-	return turn
+	return NewTurn(r, "", "", "")
 }
 
 func (r *AgentContext) StartTurn(userMessage string) *Turn {
-	r.currentTurn = r.newTurn()
+	turn := r.newTurn()
+	if r.ledger != nil {
+		turnID, dirPath, err := r.ledger.PrepareTurn(time.Now())
+		if err != nil {
+			slog.Error("failed to prepare turn", "error", err)
+		} else {
+			turn.TurnID = turnID
+			turn.SetLedgerDir(dirPath)
+			turn.RunID = r.id
+		}
+	}
+	r.currentTurn = turn
 	r.currentTurn.UserMessage = userMessage
 	r.currentTurn.Request = ai.UserMessage{Role: ai.UserRole, Content: userMessage}
 	r.currentTurn.FileRefs = append(r.currentTurn.FileRefs, r.pendingRefs...)
@@ -536,8 +573,6 @@ type contextData struct {
 	SystemParts []PromptPart `json:"system_parts"`
 	Name        string       `json:"name"`
 	Summary     string       `json:"summary"`
-	TurnCounter int          `json:"turn_counter"`
-	MemoryDir   string       `json:"memory_dir"`
 	EnableTrace bool         `json:"enable_trace"`
 }
 
@@ -556,8 +591,6 @@ func (r *AgentContext) save() error {
 		SystemParts: partsCopy,
 		Name:        r.name,
 		Summary:     r.summary,
-		TurnCounter: r.turnCounter,
-		MemoryDir:   r.workspace.MemoryDir,
 		EnableTrace: r.enableTrace,
 	}
 

@@ -213,5 +213,8 @@ func streamChatAPI(ctx context.Context, client openai.Client, model *ai.Model, m
 		}
 	}
 
+	if finalMessage.Role == "" {
+		finalMessage.Role = ai.AssistantRole
+	}
 	return finalMessage, nil
 }

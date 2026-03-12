@@ -352,10 +352,10 @@ func TestExecuteBatch_PersistsResult(t *testing.T) {
 	_, err := executeBatch(ar, input, policy)
 	require.NoError(t, err)
 
-	// Check that result.json was persisted under _private/batch/<batchID>/
+	// Check that result.json was persisted under _aigentic/batch/<batchID>/
 	ws := ar.AgentContext().Workspace()
 	require.NotNil(t, ws)
-	batchDir := filepath.Join(ws.RootDir, "_private", "batch")
+	batchDir := filepath.Join(ws.RootDir, "_aigentic", "batch")
 	entries, err := os.ReadDir(batchDir)
 	require.NoError(t, err)
 	assert.NotEmpty(t, entries, "batch directory should have at least one entry")
@@ -676,10 +676,10 @@ func TestExecutePlan_PersistsPlanJSON(t *testing.T) {
 	_, err := executePlan(ar, plan, args)
 	require.NoError(t, err)
 
-	// Verify plan.json was persisted under _private/plan/<planID>/
+	// Verify plan.json was persisted under _aigentic/plan/<planID>/
 	ws := ar.AgentContext().Workspace()
 	require.NotNil(t, ws)
-	planDir := filepath.Join(ws.RootDir, "_private", "plan")
+	planDir := filepath.Join(ws.RootDir, "_aigentic", "plan")
 	entries, err := os.ReadDir(planDir)
 	require.NoError(t, err)
 	assert.NotEmpty(t, entries)

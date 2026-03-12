@@ -1,83 +1,121 @@
 package ctxt
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-type ConversationHistory struct {
-	turns     []Turn
-	summaries []CompactionSummary
-	mutex     sync.RWMutex
-	workspace *Workspace
+type conversationFile struct {
+	TurnRefs []string `json:"turn_refs"`
 }
 
-func NewConversationHistory(workspace *Workspace) *ConversationHistory {
+type ConversationHistory struct {
+	turnRefs         []string
+	conversationPath string
+	ledger           *Ledger
+	mutex            sync.RWMutex
+}
+
+func NewConversationHistory(ledger *Ledger, conversationPath string) *ConversationHistory {
 	h := &ConversationHistory{
-		turns:     make([]Turn, 0),
-		summaries: make([]CompactionSummary, 0),
-		workspace: workspace,
+		turnRefs:         make([]string, 0),
+		conversationPath: conversationPath,
+		ledger:           ledger,
 	}
-	if workspace != nil {
-		turns := loadTurnsFromDir(workspace.TurnDir)
-		summaries, _ := workspace.LoadSummaries()
-		h.mutex.Lock()
-		h.turns = turns
-		if summaries != nil {
-			h.summaries = summaries
+	if ledger != nil && conversationPath != "" {
+		if refs := loadConversationRefs(conversationPath); refs != nil {
+			h.turnRefs = refs
 		}
-		h.mutex.Unlock()
 	}
 	return h
 }
 
-func loadTurnsFromDir(turnDir string) []Turn {
-	entries, err := os.ReadDir(turnDir)
+func loadConversationRefs(path string) []string {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		slog.Warn("failed to read turns directory", "dir", turnDir, "error", err)
+		slog.Warn("failed to read conversation", "path", path, "error", err)
 		return nil
 	}
-	var turnDirs []string
-	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), "turn-") {
-			turnDirs = append(turnDirs, e.Name())
-		}
+	var cf conversationFile
+	if err := json.Unmarshal(data, &cf); err != nil {
+		slog.Warn("failed to parse conversation", "path", path, "error", err)
+		return nil
 	}
-	sort.Strings(turnDirs)
+	if cf.TurnRefs == nil {
+		return nil
+	}
+	return cf.TurnRefs
+}
 
+func (h *ConversationHistory) saveConversation() {
+	if h.ledger == nil || h.conversationPath == "" {
+		return
+	}
+	dir := filepath.Dir(h.conversationPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		slog.Error("failed to create conversation dir", "dir", dir, "error", err)
+		return
+	}
+	h.mutex.RLock()
+	refs := make([]string, len(h.turnRefs))
+	copy(refs, h.turnRefs)
+	h.mutex.RUnlock()
+
+	cf := conversationFile{TurnRefs: refs}
+	data, err := json.MarshalIndent(cf, "", "  ")
+	if err != nil {
+		slog.Error("failed to marshal conversation", "error", err)
+		return
+	}
+	if err := os.WriteFile(h.conversationPath, data, 0644); err != nil {
+		slog.Error("failed to write conversation", "path", h.conversationPath, "error", err)
+	}
+}
+
+func (h *ConversationHistory) Ledger() *Ledger {
+	return h.ledger
+}
+
+func (h *ConversationHistory) SetTurnLimit(limit int) {
+	_ = limit
+}
+
+func (h *ConversationHistory) resolveTurns(limit int) []Turn {
+	h.mutex.RLock()
+	refs := h.turnRefs
+	h.mutex.RUnlock()
+
+	if h.ledger == nil || len(refs) == 0 {
+		return nil
+	}
+	start := 0
+	if limit > 0 && len(refs) > limit {
+		start = len(refs) - limit
+	}
 	var turns []Turn
-	for _, name := range turnDirs {
-		path := filepath.Join(turnDir, name, "turn.json")
-		var turn Turn
-		if err := turn.loadFromFile(path); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			slog.Warn("failed to load turn file", "path", path, "error", err)
+	for i := start; i < len(refs); i++ {
+		t, err := h.ledger.Get(refs[i])
+		if err != nil {
+			slog.Warn("failed to resolve turn", "turnID", refs[i], "error", err)
 			continue
 		}
-		turns = append(turns, turn)
+		turns = append(turns, *t)
 	}
 	return turns
 }
 
-func (h *ConversationHistory) GetMessages() []ai.Message {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
+func (h *ConversationHistory) getMessages(limit int) []ai.Message {
+	turns := h.resolveTurns(limit)
 	var messages []ai.Message
-	for i := 0; i < len(h.turns); i++ {
-		turn := h.turns[i]
+	for _, turn := range turns {
 		if turn.Hidden {
 			continue
 		}
@@ -93,36 +131,41 @@ func (h *ConversationHistory) GetMessages() []ai.Message {
 	return messages
 }
 
-func (h *ConversationHistory) appendTurn(turn Turn) {
-	h.mutex.Lock()
-	h.turns = append(h.turns, turn)
-	h.mutex.Unlock()
+func (h *ConversationHistory) GetMessages() []ai.Message {
+	return h.getMessages(0)
+}
 
-	if h.workspace != nil {
-		turn.saveToFile()
+func (h *ConversationHistory) appendTurn(turn Turn) {
+	if h.ledger == nil {
+		return
 	}
+	if err := h.ledger.Append(&turn); err != nil {
+		slog.Error("failed to append turn to ledger", "turnID", turn.TurnID, "error", err)
+		return
+	}
+	h.mutex.Lock()
+	h.turnRefs = append(h.turnRefs, turn.TurnID)
+	h.mutex.Unlock()
+	h.saveConversation()
 }
 
 func (h *ConversationHistory) Clear() {
 	h.mutex.Lock()
-	defer h.mutex.Unlock()
-
-	h.turns = make([]Turn, 0)
+	h.turnRefs = make([]string, 0)
+	h.mutex.Unlock()
+	h.saveConversation()
 }
 
 func (h *ConversationHistory) Len() int {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
-
-	return len(h.turns)
+	return len(h.turnRefs)
 }
 
 func (h *ConversationHistory) FindByTraceFile(traceFile string) []Turn {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
+	turns := h.resolveTurns(0)
 	var result []Turn
-	for _, turn := range h.turns {
+	for _, turn := range turns {
 		if turn.TraceFile == traceFile {
 			result = append(result, turn)
 		}
@@ -131,34 +174,21 @@ func (h *ConversationHistory) FindByTraceFile(traceFile string) []Turn {
 }
 
 func (h *ConversationHistory) GetTurns() []Turn {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
-	result := make([]Turn, len(h.turns))
-	copy(result, h.turns)
-	return result
+	return h.resolveTurns(0)
 }
 
 func (h *ConversationHistory) Last(n int) []Turn {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
-	turns := h.turns
+	turns := h.resolveTurns(0)
 	if n > 0 && len(turns) > n {
 		turns = turns[len(turns)-n:]
 	}
-
-	result := make([]Turn, len(turns))
-	copy(result, turns)
-	return result
+	return turns
 }
 
 func (h *ConversationHistory) FilterByAgent(name string) []Turn {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
+	turns := h.resolveTurns(0)
 	var result []Turn
-	for _, turn := range h.turns {
+	for _, turn := range turns {
 		if turn.AgentName == name {
 			result = append(result, turn)
 		}
@@ -167,106 +197,12 @@ func (h *ConversationHistory) FilterByAgent(name string) []Turn {
 }
 
 func (h *ConversationHistory) ExcludeHidden() []Turn {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
+	turns := h.resolveTurns(0)
 	var result []Turn
-	for _, turn := range h.turns {
+	for _, turn := range turns {
 		if !turn.Hidden {
 			result = append(result, turn)
 		}
 	}
 	return result
-}
-
-func (h *ConversationHistory) GetSummaries() []CompactionSummary {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
-	result := make([]CompactionSummary, len(h.summaries))
-	copy(result, h.summaries)
-	return result
-}
-
-func (h *ConversationHistory) DaysToCompact(config CompactionConfig) []DayGroup {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
-	cutoff := time.Now().AddDate(0, 0, -config.KeepRecentDays)
-	cutoff = time.Date(cutoff.Year(), cutoff.Month(), cutoff.Day(), 0, 0, 0, 0, cutoff.Location())
-
-	byDate := make(map[string]DayGroup)
-	for _, turn := range h.turns {
-		if turn.Hidden {
-			continue
-		}
-		day := time.Date(turn.Timestamp.Year(), turn.Timestamp.Month(), turn.Timestamp.Day(), 0, 0, 0, 0, turn.Timestamp.Location())
-		if day.Before(cutoff) {
-			key := day.Format("2006-01-02")
-			g := byDate[key]
-			g.Date = day
-			g.Turns = append(g.Turns, turn)
-			byDate[key] = g
-		}
-	}
-
-	var result []DayGroup
-	for _, g := range byDate {
-		result = append(result, g)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Date.Before(result[j].Date)
-	})
-	return result
-}
-
-func (h *ConversationHistory) ArchiveDay(day DayGroup, summary CompactionSummary) error {
-	if h.workspace == nil {
-		return nil
-	}
-
-	h.mutex.Lock()
-	turnIDs := make(map[string]bool)
-	for _, t := range day.Turns {
-		turnIDs[t.TurnID] = true
-	}
-	var kept []Turn
-	for _, t := range h.turns {
-		if !turnIDs[t.TurnID] {
-			kept = append(kept, t)
-		}
-	}
-	h.turns = kept
-	h.summaries = append(h.summaries, summary)
-	h.mutex.Unlock()
-
-	if err := h.workspace.ArchiveTurns(day.Turns, day.Date); err != nil {
-		return err
-	}
-
-	summaries := h.GetSummaries()
-	if err := h.workspace.SaveSummaries(summaries); err != nil {
-		return err
-	}
-
-	month := day.Date.Format("2006-01")
-	existing, _ := h.workspace.LoadArchiveIndex(month)
-	entries := make([]ArchiveIndexEntry, len(existing))
-	copy(entries, existing)
-	for _, t := range day.Turns {
-		content := ""
-		if t.Reply != nil {
-			_, content = t.Reply.Value()
-			if len(content) > 200 {
-				content = content[:200] + "..."
-			}
-		}
-		entries = append(entries, ArchiveIndexEntry{
-			TurnID:      t.TurnID,
-			Date:       day.Date,
-			UserMessage: t.UserMessage,
-			Summary:    content,
-		})
-	}
-	return h.workspace.SaveArchiveIndex(month, entries)
 }

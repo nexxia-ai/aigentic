@@ -5,72 +5,117 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type Session struct {
-	ID      string
-	Name    string
-	Summary string
-	Path    string
+	ID        string
+	Name      string
+	Summary   string
+	Path      string
+	AgentName string
+	PackageID string
+	StartedAt time.Time
 }
 
-func ListSessions(baseDir string) ([]Session, error) {
+func deriveBasePath(runDir string) string {
+	parentDir := filepath.Dir(runDir)
+	grandparentDir := filepath.Dir(parentDir)
+	if filepath.Base(parentDir) == "runs" {
+		return grandparentDir
+	}
+	if filepath.Base(grandparentDir) == "runs" {
+		return filepath.Dir(grandparentDir)
+	}
+	return parentDir
+}
+
+func sessionRunDirs(baseDir string) ([]string, error) {
 	absBaseDir, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	entries, err := os.ReadDir(absBaseDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []Session{}, nil
+	runDirs := make([]string, 0)
+	runsDir := filepath.Join(absBaseDir, "runs")
+	if entries, err := os.ReadDir(runsDir); err == nil {
+		for _, shardEntry := range entries {
+			if !shardEntry.IsDir() {
+				continue
+			}
+			shardDir := filepath.Join(runsDir, shardEntry.Name())
+			if _, err := os.Stat(filepath.Join(shardDir, aigenticDirName, "context.json")); err == nil {
+				runDirs = append(runDirs, shardDir)
+				continue
+			}
+			runEntries, err := os.ReadDir(shardDir)
+			if err != nil {
+				continue
+			}
+			for _, runEntry := range runEntries {
+				if !runEntry.IsDir() {
+					continue
+				}
+				runDirs = append(runDirs, filepath.Join(shardDir, runEntry.Name()))
+			}
 		}
-		return nil, fmt.Errorf("failed to read base directory: %w", err)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to read runs directory: %w", err)
+	}
+
+	return runDirs, nil
+}
+
+func ListSessions(baseDir string) ([]Session, error) {
+	runDirs, err := sessionRunDirs(baseDir)
+	if err != nil {
+		return nil, err
 	}
 
 	var sessions []Session
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		sessionDir := filepath.Join(absBaseDir, entry.Name())
-		contextFile := filepath.Join(sessionDir, "_private", "main", "context.json")
-
-		if _, err := os.Stat(contextFile); os.IsNotExist(err) {
-			continue
-		}
-
-		var data contextData
-		file, err := os.Open(contextFile)
+	for _, runDir := range runDirs {
+		session, err := loadSession(runDir)
 		if err != nil {
 			continue
 		}
-
-		if err := json.NewDecoder(file).Decode(&data); err != nil {
-			file.Close()
-			continue
-		}
-		file.Close()
-
-		sessions = append(sessions, Session{
-			ID:      data.ID,
-			Name:    data.Name,
-			Summary: data.Summary,
-			Path:    sessionDir,
-		})
+		sessions = append(sessions, *session)
 	}
 
 	return sessions, nil
 }
 
-func LoadContext(sessionDir string) (*AgentContext, error) {
-	absSessionDir, err := filepath.Abs(sessionDir)
+func FindSession(baseDir, runID string) (*Session, error) {
+	absBaseDir, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	ws, err := loadWorkspace(absSessionDir)
+	if shard := RunIDShard(runID); shard != "" {
+		session, err := loadSession(RunDir(absBaseDir, runID))
+		if err == nil && session.ID == runID {
+			return session, nil
+		}
+	}
+
+	sessions, err := ListSessions(absBaseDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, session := range sessions {
+		if session.ID == runID {
+			return &session, nil
+		}
+	}
+	return nil, fmt.Errorf("run not found: %s", runID)
+}
+
+func LoadContext(runDir string) (*AgentContext, error) {
+	absRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	ws, err := loadWorkspace(absRunDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load workspace: %w", err)
 	}
@@ -87,22 +132,72 @@ func LoadContext(sessionDir string) (*AgentContext, error) {
 		return nil, fmt.Errorf("failed to decode context: %w", err)
 	}
 
-	ws.MemoryDir = data.MemoryDir
+	basePath := deriveBasePath(absRunDir)
 
 	ctx := &AgentContext{
-		id:                 data.ID,
-		name:               data.Name,
-		summary:            data.Summary,
-		systemParts:        data.SystemParts,
-		turnCounter:        data.TurnCounter,
-		workspace:          ws,
-		enableTrace:        data.EnableTrace,
+		id:          data.ID,
+		name:        data.Name,
+		summary:     data.Summary,
+		systemParts: data.SystemParts,
+		workspace:   ws,
+		basePath:    basePath,
+		ledger:      NewLedger(basePath),
+		enableTrace: data.EnableTrace,
 	}
 
 	loadRunMeta(ctx, ws.PrivateDir)
-	ctx.conversationHistory = NewConversationHistory(ctx.workspace)
+	conversationPath := filepath.Join(ws.PrivateDir, "conversation.json")
+	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	ctx.currentTurn = ctx.newTurn()
 
 	return ctx, nil
+}
+
+func loadSession(runDir string) (*Session, error) {
+	privateDir := filepath.Join(runDir, aigenticDirName)
+	contextFile := filepath.Join(privateDir, "context.json")
+	file, err := os.Open(contextFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var data contextData
+	if err := json.NewDecoder(file).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	session := &Session{
+		ID:      data.ID,
+		Name:    data.Name,
+		Summary: data.Summary,
+		Path:    runDir,
+	}
+	if err := loadSessionRunMeta(session, privateDir); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func loadSessionRunMeta(session *Session, privateDir string) error {
+	if session == nil {
+		return fmt.Errorf("session is required")
+	}
+	data, err := os.ReadFile(filepath.Join(privateDir, "run_meta.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var meta runMetaData
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return err
+	}
+	session.AgentName = meta.AgentName
+	session.PackageID = meta.PackageID
+	session.StartedAt = meta.StartedAt
+	return nil
 }

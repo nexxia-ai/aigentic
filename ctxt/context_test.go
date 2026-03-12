@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/stretchr/testify/require"
 )
 
 // withTempWorkingDir switches to a temp working directory for the test and restores it afterward.
@@ -256,8 +258,7 @@ func TestClearMethods(t *testing.T) {
 		{
 			name: "clear history",
 			setup: func(ctx *AgentContext) {
-				ctx.GetHistory().appendTurn(Turn{})
-				ctx.GetHistory().appendTurn(Turn{})
+				appendTestTurns(ctx, 2)
 			},
 			clear:     func(ctx *AgentContext) { ctx.ClearHistory() },
 			check:     func(ctx *AgentContext) int { return ctx.GetHistory().Len() },
@@ -284,7 +285,7 @@ func TestClearAll(t *testing.T) {
 		t.Fatalf("UploadDocument: %v", err)
 	}
 
-	ctx.GetHistory().appendTurn(Turn{})
+	appendTestTurns(ctx, 1)
 
 	ctx.ClearAll()
 
@@ -314,18 +315,37 @@ func TestSetMethods(t *testing.T) {
 	}
 }
 
+func appendTestTurns(ctx *AgentContext, n int) {
+	ledger := ctx.Ledger()
+	if ledger == nil {
+		return
+	}
+	for i := 0; i < n; i++ {
+		turnID, _, err := ledger.PrepareTurn(time.Now())
+		if err != nil {
+			return
+		}
+		ctx.GetHistory().appendTurn(Turn{TurnID: turnID})
+	}
+}
+
 func TestHistoryQuery(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
+	ledger := ctx.Ledger()
+	require.NotNil(t, ledger)
 
 	turn1 := Turn{AgentName: "agent1", Hidden: false}
 	turn2 := Turn{AgentName: "agent2", Hidden: false}
 	turn3 := Turn{AgentName: "agent1", Hidden: true}
 	turn4 := Turn{AgentName: "agent1", Hidden: false}
-
-	ctx.GetHistory().appendTurn(turn1)
-	ctx.GetHistory().appendTurn(turn2)
-	ctx.GetHistory().appendTurn(turn3)
-	ctx.GetHistory().appendTurn(turn4)
+	for _, turn := range []Turn{turn1, turn2, turn3, turn4} {
+		turnID, _, err := ledger.PrepareTurn(time.Now())
+		if err != nil {
+			t.Fatalf("PrepareTurn: %v", err)
+		}
+		turn.TurnID = turnID
+		ctx.GetHistory().appendTurn(turn)
+	}
 
 	tests := []struct {
 		name      string

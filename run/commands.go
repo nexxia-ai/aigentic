@@ -28,13 +28,12 @@ type runMetaStats struct {
 	AgentName string `json:"agent_name"`
 }
 
-func discoverChildTurns(ws *ctxt.Workspace) []childTurnStats {
-	if ws == nil {
+func discoverChildTurns(ledger *ctxt.Ledger, runRoot string) []childTurnStats {
+	if ledger == nil || runRoot == "" {
 		return nil
 	}
-	root := ws.RootDir
-	batchBase := filepath.Join(root, "_private", "batch")
-	planBase := filepath.Join(root, "_private", "plan")
+	batchBase := filepath.Join(runRoot, "_aigentic", "batch")
+	planBase := filepath.Join(runRoot, "_aigentic", "plan")
 	var out []childTurnStats
 	for _, base := range []string{batchBase, planBase} {
 		entries, err := os.ReadDir(base)
@@ -57,21 +56,44 @@ func discoverChildTurns(ws *ctxt.Workspace) []childTurnStats {
 				if !e2.IsDir() {
 					continue
 				}
-				childPrivateDir := filepath.Join(subDir, e2.Name())
-				turnDir := filepath.Join(childPrivateDir, "turn")
-				agentName := loadRunMetaAgentName(childPrivateDir)
-				turns := loadTurnsFromTurnDir(turnDir)
-				for i := range turns {
-					if turns[i].AgentName == "" {
-						turns[i].AgentName = agentName
+				childDir := filepath.Join(subDir, e2.Name())
+				agentName := loadRunMetaAgentName(childDir)
+				refs := loadConversationRefs(filepath.Join(childDir, "conversation.json"))
+				for _, turnID := range refs {
+					turn, err := ledger.Get(turnID)
+					if err != nil {
+						continue
 					}
-					out = append(out, turns[i])
+					stats := childTurnStats{
+						TurnID:    turn.TurnID,
+						Timestamp: turn.Timestamp,
+						AgentName: agentName,
+						Usage:     turn.Usage,
+					}
+					if stats.AgentName == "" && turn.AgentName != "" {
+						stats.AgentName = turn.AgentName
+					}
+					out = append(out, stats)
 				}
 			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Timestamp.Before(out[j].Timestamp) })
 	return out
+}
+
+func loadConversationRefs(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var cf struct {
+		TurnRefs []string `json:"turn_refs"`
+	}
+	if json.Unmarshal(data, &cf) != nil || cf.TurnRefs == nil {
+		return nil
+	}
+	return cf.TurnRefs
 }
 
 func loadRunMetaAgentName(privateDir string) string {
@@ -84,40 +106,6 @@ func loadRunMetaAgentName(privateDir string) string {
 		return ""
 	}
 	return m.AgentName
-}
-
-func loadTurnsFromTurnDir(turnDir string) []childTurnStats {
-	entries, err := os.ReadDir(turnDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return nil
-	}
-	var turnDirs []string
-	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), "turn-") {
-			turnDirs = append(turnDirs, e.Name())
-		}
-	}
-	sort.Strings(turnDirs)
-	var turns []childTurnStats
-	for _, name := range turnDirs {
-		path := filepath.Join(turnDir, name, "turn.json")
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			continue
-		}
-		var t childTurnStats
-		if json.Unmarshal(data, &t) != nil {
-			continue
-		}
-		turns = append(turns, t)
-	}
-	return turns
 }
 
 func parseAigenticCommand(message string) (rest string, cmd string, ok bool) {
@@ -170,7 +158,10 @@ func (r *AgentRun) formatAigenticStats() string {
 
 	turns := history.GetTurns()
 	turnCount := len(turns)
-	childTurns := discoverChildTurns(r.agentContext.Workspace())
+	var childTurns []childTurnStats
+	if ws := r.agentContext.Workspace(); ws != nil && r.agentContext.Ledger() != nil {
+		childTurns = discoverChildTurns(r.agentContext.Ledger(), ws.RootDir)
+	}
 
 	var totalIn, totalOut, totalCached, totalReasoning int
 	var lastUsage ai.Usage

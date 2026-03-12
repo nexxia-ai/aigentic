@@ -2,7 +2,6 @@ package ctxt
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -17,7 +16,7 @@ import (
 const memoryStoreName = "memory_files"
 
 // Workspace manages the filesystem layout and I/O operations for an agent's execution directory.
-// It owns llm/, _private/main/ (or _private/batch|plan/<runid>/ for children), and turn/.
+// It owns llm/, _aigentic/, and turn/.
 type Workspace struct {
 	RootDir    string
 	LLMDir     string
@@ -46,6 +45,32 @@ func NewWorkspaceAtPath(exactPath string) (*Workspace, error) {
 	return newWorkspaceAt(absPath)
 }
 
+const aigenticDirName = "_aigentic"
+
+// newWorkspaceAtRunDir creates a workspace for a persisted run directory.
+// Run private state lives under runDir/_aigentic/.
+func newWorkspaceAtRunDir(runDir string) (*Workspace, error) {
+	absRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("run dir: %w", err)
+	}
+	llmDir := filepath.Join(absRunDir, "llm")
+	privateDir := filepath.Join(absRunDir, aigenticDirName)
+	w := &Workspace{
+		RootDir:    absRunDir,
+		LLMDir:     llmDir,
+		PrivateDir: privateDir,
+		MemoryDir:  "",
+		UploadDir:  filepath.Join(llmDir, "uploads"),
+		OutputDir:  filepath.Join(llmDir, "output"),
+		TurnDir:    filepath.Join(privateDir, "turn"),
+	}
+	if err := w.init(); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
 // newChildWorkspace creates a workspace for a child agent that has its own _private/ directory
 // but shares the parent's llm/ directory (uploads, output, memory).
 func newChildWorkspace(privateDir, sharedLLMDir string) (*Workspace, error) {
@@ -59,7 +84,7 @@ func newChildWorkspace(privateDir, sharedLLMDir string) (*Workspace, error) {
 	}
 
 	w := &Workspace{
-		RootDir:    filepath.Dir(absPrivate), // parent of _private
+		RootDir:    absPrivate,
 		LLMDir:     absLLM,
 		PrivateDir: absPrivate,
 		MemoryDir:  "",
@@ -68,8 +93,7 @@ func newChildWorkspace(privateDir, sharedLLMDir string) (*Workspace, error) {
 		TurnDir:    filepath.Join(absPrivate, "turn"),
 	}
 
-	// Only create the private directories; the shared llm/ dirs already exist.
-	privateDirs := []string{absPrivate, w.TurnDir}
+	privateDirs := []string{absPrivate}
 	for _, dir := range privateDirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -131,7 +155,9 @@ func (w *Workspace) init() error {
 		w.PrivateDir,
 		w.UploadDir,
 		w.OutputDir,
-		w.TurnDir,
+	}
+	if w.TurnDir != "" {
+		dirs = append(dirs, w.TurnDir)
 	}
 	if w.MemoryDir != "" {
 		dirs = append(dirs, w.MemoryDir)
@@ -184,27 +210,12 @@ func (w *Workspace) MemoryStoreName() string {
 	return memoryStoreName
 }
 
-func loadWorkspace(sessionDir string) (*Workspace, error) {
-	sessionDir, err := filepath.Abs(sessionDir)
+func loadWorkspace(runDir string) (*Workspace, error) {
+	absRunDir, err := filepath.Abs(runDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
-
-	rootDir := sessionDir
-	llmDir := filepath.Join(rootDir, "llm")
-	privateDir := filepath.Join(rootDir, "_private", "main")
-
-	ws := &Workspace{
-		RootDir:    rootDir,
-		LLMDir:     llmDir,
-		PrivateDir: privateDir,
-		MemoryDir:  "",
-		UploadDir:  filepath.Join(llmDir, "uploads"),
-		OutputDir:  filepath.Join(llmDir, "output"),
-		TurnDir:    filepath.Join(privateDir, "turn"),
-	}
-
-	return ws, nil
+	return newWorkspaceAtRunDir(absRunDir)
 }
 
 func (w *Workspace) uploadStore() (*document.LocalStore, error) {
@@ -403,123 +414,4 @@ func (w *Workspace) GetUploadDocuments() []*document.Document {
 		docs = append(docs, doc)
 	}
 	return docs
-}
-
-// ArchiveDir returns the path to the archive directory (_private/archive/).
-func (w *Workspace) ArchiveDir() string {
-	if w == nil {
-		return ""
-	}
-	return filepath.Join(w.PrivateDir, "archive")
-}
-
-// ArchiveTurns moves turn directories to archive/YYYY-MM/YYYY-MM-DD/.
-// Uses atomic temp-dir + rename for safety.
-func (w *Workspace) ArchiveTurns(turns []Turn, date time.Time) error {
-	if w == nil || len(turns) == 0 {
-		return nil
-	}
-	month := date.Format("2006-01")
-	day := date.Format("2006-01-02")
-	destDir := filepath.Join(w.ArchiveDir(), month, day)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return fmt.Errorf("create archive dir: %w", err)
-	}
-	tmpDir := filepath.Join(w.PrivateDir, ".archive-tmp-"+day)
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	for _, turn := range turns {
-		src := filepath.Join(w.TurnDir, turn.TurnID)
-		dst := filepath.Join(tmpDir, turn.TurnID)
-		if err := os.Rename(src, dst); err != nil {
-			if !os.IsNotExist(err) {
-				return fmt.Errorf("move turn %s: %w", turn.TurnID, err)
-			}
-		}
-	}
-
-	entries, _ := os.ReadDir(tmpDir)
-	for _, e := range entries {
-		if e.IsDir() {
-			src := filepath.Join(tmpDir, e.Name())
-			dst := filepath.Join(destDir, e.Name())
-			if err := os.Rename(src, dst); err != nil {
-				return fmt.Errorf("move %s to archive: %w", e.Name(), err)
-			}
-		}
-	}
-	return nil
-}
-
-// SaveSummaries persists compaction summaries to _private/summaries.json.
-func (w *Workspace) SaveSummaries(summaries []CompactionSummary) error {
-	if w == nil {
-		return nil
-	}
-	path := filepath.Join(w.PrivateDir, "summaries.json")
-	out, err := json.MarshalIndent(summaries, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal summaries: %w", err)
-	}
-	return os.WriteFile(path, out, 0644)
-}
-
-// LoadSummaries loads compaction summaries from _private/summaries.json.
-func (w *Workspace) LoadSummaries() ([]CompactionSummary, error) {
-	if w == nil {
-		return nil, nil
-	}
-	path := filepath.Join(w.PrivateDir, "summaries.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read summaries: %w", err)
-	}
-	var summaries []CompactionSummary
-	if err := json.Unmarshal(data, &summaries); err != nil {
-		return nil, fmt.Errorf("parse summaries: %w", err)
-	}
-	return summaries, nil
-}
-
-// SaveArchiveIndex writes the per-month search index to archive/YYYY-MM/index.json.
-func (w *Workspace) SaveArchiveIndex(month string, entries []ArchiveIndexEntry) error {
-	if w == nil {
-		return nil
-	}
-	dir := filepath.Join(w.ArchiveDir(), month)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create archive month dir: %w", err)
-	}
-	path := filepath.Join(dir, "index.json")
-	out, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal index: %w", err)
-	}
-	return os.WriteFile(path, out, 0644)
-}
-
-// LoadArchiveIndex reads the per-month search index from archive/YYYY-MM/index.json.
-func (w *Workspace) LoadArchiveIndex(month string) ([]ArchiveIndexEntry, error) {
-	if w == nil {
-		return nil, nil
-	}
-	path := filepath.Join(w.ArchiveDir(), month, "index.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read index: %w", err)
-	}
-	var entries []ArchiveIndexEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("parse index: %w", err)
-	}
-	return entries, nil
 }

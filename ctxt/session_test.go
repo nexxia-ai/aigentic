@@ -3,6 +3,7 @@ package ctxt
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
 )
@@ -338,9 +339,23 @@ func TestLoadContextMetadataWithHistory(t *testing.T) {
 	}
 }
 
-func TestLoadContextNoRunMeta(t *testing.T) {
+func TestFindSessionRequiresShardedRunID(t *testing.T) {
 	baseDir := t.TempDir()
-	ctx, err := New("legacy-no-meta", "desc", "inst", baseDir)
+	if _, err := FindSession(baseDir, "invalid-run-id"); err == nil {
+		t.Fatal("expected error for invalid run id")
+	}
+}
+
+func TestNewRunIDUsesZeroShardForZeroTime(t *testing.T) {
+	runID := NewRunID(time.Time{})
+	if got := RunIDShard(runID); got != "00000000" {
+		t.Fatalf("expected zero-time shard %q, got %q", "00000000", got)
+	}
+}
+
+func TestFindSessionAllowsMissingRunMeta(t *testing.T) {
+	baseDir := t.TempDir()
+	ctx, err := New("missing-meta", "desc", "inst", baseDir)
 	if err != nil {
 		t.Fatalf("failed to create context: %v", err)
 	}
@@ -350,16 +365,14 @@ func TestLoadContextNoRunMeta(t *testing.T) {
 		t.Fatalf("failed to save: %v", err)
 	}
 
-	sessionPath := ctx.Workspace().RootDir
-	loaded, err := LoadContext(sessionPath)
+	session, err := FindSession(baseDir, ctx.ID())
 	if err != nil {
-		t.Fatalf("failed to load context: %v", err)
+		t.Fatalf("expected session lookup to succeed without metadata: %v", err)
 	}
-
-	if got := loaded.RunAgentName(); got != "" {
-		t.Errorf("RunAgentName (legacy): expected empty, got %q", got)
+	if session.ID != ctx.ID() {
+		t.Fatalf("expected session ID %q, got %q", ctx.ID(), session.ID)
 	}
-	if got := loaded.RunPackageID(); got != "" {
-		t.Errorf("RunPackageID (legacy): expected empty, got %q", got)
+	if session.AgentName != "" || session.PackageID != "" {
+		t.Fatalf("expected empty metadata when run_meta.json is missing, got agent=%q package=%q", session.AgentName, session.PackageID)
 	}
 }

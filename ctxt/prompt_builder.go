@@ -33,6 +33,8 @@ File references for this turn:
 {{end}}
 `
 
+const promptHistoryTurnLimit = 100
+
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 	var b bytes.Buffer
 	b.WriteString(defaultSystemIntro)
@@ -207,19 +209,9 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		msgs = append(msgs, sysMsg)
 	}
 
-	// Add compaction summaries (if any) between system message and history
-	if r.conversationHistory != nil {
-		for _, s := range r.conversationHistory.GetSummaries() {
-			msgs = append(msgs, ai.UserMessage{
-				Role:    ai.UserRole,
-				Content: fmt.Sprintf("[Summary for %s]: %s", s.Date.Format("2006-01-02"), s.Summary),
-			})
-		}
-	}
-
 	// Add history messages before user message
 	if includeHistory && r.conversationHistory != nil {
-		historyMessages := r.conversationHistory.GetMessages()
+		historyMessages := r.conversationHistory.getMessages(promptHistoryTurnLimit)
 		msgs = append(msgs, historyMessages...)
 	}
 

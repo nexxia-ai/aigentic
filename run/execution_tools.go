@@ -195,7 +195,7 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 	// Persist intermediate results under _private/batch/<batchID>/
 	batchDir := ""
 	if ws != nil {
-		batchDir = filepath.Join(ws.RootDir, "_private", "batch", batchID)
+		batchDir = filepath.Join(ws.RootDir, "_aigentic", "batch", batchID)
 		os.MkdirAll(batchDir, 0755)
 	}
 
@@ -302,7 +302,7 @@ func executeBatch(parentRun *AgentRun, input batchInput, policy *BatchPolicy) (*
 
 func runChildStep(ctx context.Context, parentRun *AgentRun, def subAgentDef, privateDir, stepID, message string) (string, error) {
 	ws := parentRun.AgentContext().Workspace()
-	childCtx, err := ctxt.NewChild(def.name+"-"+stepID, def.description, def.instructions, privateDir, ws.LLMDir)
+	childCtx, err := ctxt.NewChild(def.name+"-"+stepID, def.description, def.instructions, privateDir, ws.LLMDir, parentRun.AgentContext().BasePath())
 	if err != nil {
 		return "", fmt.Errorf("failed to create child context: %w", err)
 	}
@@ -338,7 +338,7 @@ func buildMessageWithUpstream(base string, upstream map[string]stepResult) strin
 
 func runChildAgent(ctx context.Context, parentRun *AgentRun, def subAgentDef, itemID, message, batchID string, itemIndex int, timeoutPerItem int) (string, error) {
 	ws := parentRun.AgentContext().Workspace()
-	privateDir := filepath.Join(ws.RootDir, "_private", "batch", batchID, strconv.Itoa(itemIndex))
+	privateDir := filepath.Join(ws.RootDir, "_aigentic", "batch", batchID, strconv.Itoa(itemIndex))
 	var itemCtx context.Context
 	var itemCancel context.CancelFunc
 	if timeoutPerItem > 0 {
@@ -709,7 +709,7 @@ func executePlan(parentRun *AgentRun, plan PlanDef, args map[string]interface{})
 	ws := parentRun.AgentContext().Workspace()
 	planDir := ""
 	if ws != nil {
-		planDir = filepath.Join(ws.RootDir, "_private", "plan", planID)
+		planDir = filepath.Join(ws.RootDir, "_aigentic", "plan", planID)
 		os.MkdirAll(planDir, 0755)
 	}
 
@@ -719,7 +719,7 @@ func executePlan(parentRun *AgentRun, plan PlanDef, args map[string]interface{})
 			return stepResult{Status: "failed", Error: fmt.Sprintf("unknown sub-agent: %s", step.SubAgent)}, nil
 		}
 		message := buildMessageWithUpstream(step.Message, upstream)
-		privateDir := filepath.Join(ws.RootDir, "_private", "plan", planID, step.ID)
+		privateDir := filepath.Join(ws.RootDir, "_aigentic", "plan", planID, step.ID)
 		content, err := runChildStep(ctx, parentRun, def, privateDir, step.ID, message)
 		if err != nil {
 			return stepResult{Status: "failed", Error: err.Error()}, nil
@@ -936,7 +936,7 @@ func executeCreatePlan(r *AgentRun, input createPlanInput) (*ToolCallResult, err
 	// Persist frozen plan under _private/plan/<planID>/
 	ws := r.AgentContext().Workspace()
 	if ws != nil {
-		planDir := filepath.Join(ws.RootDir, "_private", "plan", planID)
+		planDir := filepath.Join(ws.RootDir, "_aigentic", "plan", planID)
 		os.MkdirAll(planDir, 0755)
 
 		planData := map[string]interface{}{
@@ -1021,7 +1021,7 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 		}, nil
 	}
 
-	planDir := filepath.Join(ws.RootDir, "_private", "plan", planID)
+	planDir := filepath.Join(ws.RootDir, "_aigentic", "plan", planID)
 	planFile := filepath.Join(planDir, "plan.json")
 	data, err := os.ReadFile(planFile)
 	if err != nil {
@@ -1088,7 +1088,7 @@ func executeStoredPlan(parentRun *AgentRun, planID string) (*ToolCallResult, err
 			}
 		}
 		message := buildMessageWithUpstream(step.Instructions, upstream)
-		privateDir := filepath.Join(ws.RootDir, "_private", "plan", planID, step.ID)
+		privateDir := filepath.Join(ws.RootDir, "_aigentic", "plan", planID, step.ID)
 		content, err := runChildStep(ctx, parentRun, def, privateDir, step.ID, message)
 		if err != nil {
 			return stepResult{Status: "failed", Error: err.Error()}, nil

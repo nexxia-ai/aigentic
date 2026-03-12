@@ -88,6 +88,7 @@ func streamResponsesAPI(ctx context.Context, client openai.Client, model *ai.Mod
 	defer stream.Close()
 
 	var finalMessage ai.AIMessage
+	finalMessage.Role = ai.AssistantRole
 	var accumulatedContent strings.Builder
 	var accumulatedThink strings.Builder
 	var toolCallsMap = make(map[string]*ai.ToolCall)

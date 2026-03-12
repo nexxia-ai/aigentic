@@ -2,6 +2,7 @@ package ctxt
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -830,6 +831,50 @@ func TestBuildPromptUploadedDocuments(t *testing.T) {
 		}
 	}
 	assert.True(t, docsMsgFound, "Should have documents message listing uploaded ref1.pdf and ref2.txt")
+}
+
+func TestBuildPromptLimitsHistoryToLatest100Turns(t *testing.T) {
+	ac, err := New("test-id", "", "", t.TempDir())
+	require.NoError(t, err)
+
+	for i := 0; i < 105; i++ {
+		ac.StartTurn(fmt.Sprintf("history-%03d", i))
+		ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: fmt.Sprintf("reply-%03d", i)})
+	}
+	ac.StartTurn("current")
+
+	msgs, err := ac.BuildPrompt(nil, true)
+	require.NoError(t, err)
+
+	historyUsers := 0
+	historyReplies := 0
+	for _, msg := range msgs {
+		switch m := msg.(type) {
+		case ai.UserMessage:
+			if strings.Contains(m.Content, "history-") {
+				historyUsers++
+				assert.NotContains(t, m.Content, "history-000")
+				assert.NotContains(t, m.Content, "history-001")
+				assert.NotContains(t, m.Content, "history-002")
+				assert.NotContains(t, m.Content, "history-003")
+				assert.NotContains(t, m.Content, "history-004")
+			}
+		case ai.AIMessage:
+			if strings.Contains(m.Content, "reply-") {
+				historyReplies++
+				assert.NotContains(t, m.Content, "reply-000")
+				assert.NotContains(t, m.Content, "reply-001")
+				assert.NotContains(t, m.Content, "reply-002")
+				assert.NotContains(t, m.Content, "reply-003")
+				assert.NotContains(t, m.Content, "reply-004")
+			}
+		}
+	}
+
+	assert.Equal(t, 100, historyUsers)
+	assert.Equal(t, 100, historyReplies)
+	assert.Equal(t, 105, len(ac.GetHistory().GetTurns()))
+	assert.Equal(t, 210, len(ac.GetHistory().GetMessages()))
 }
 
 func TestBuildPromptEmptyUserMessage(t *testing.T) {

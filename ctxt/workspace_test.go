@@ -73,6 +73,9 @@ func TestEnvVars_EmptyMemoryDir_OmitsAGENT_MEMORY_DIR(t *testing.T) {
 		t.Fatalf("NewWorkspace: %v", err)
 	}
 	m := w.EnvVars()
+	if got := m["AGENT_TURN_DIR"]; got == "" {
+		t.Fatal("EnvVars should include a non-empty AGENT_TURN_DIR")
+	}
 	if _, ok := m["AGENT_MEMORY_DIR"]; ok {
 		t.Error("EnvVars should not include AGENT_MEMORY_DIR when MemoryDir is empty")
 	}

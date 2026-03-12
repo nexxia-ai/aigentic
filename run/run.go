@@ -127,7 +127,7 @@ func (r *AgentRun) SetRetrievers(retrievers []Retriever) {
 }
 
 func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, error) {
-	runID := uuid.New().String()
+	runID := ctxt.NewRunID(time.Now())
 	sessionID := uuid.New().String()
 
 	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
@@ -162,7 +162,7 @@ func NewAgentRun(name, description, instructions, baseDir string) (*AgentRun, er
 }
 
 func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*AgentRun, error) {
-	runID := uuid.New().String()
+	runID := ctx.ID()
 	sessionID := ctx.ID()
 
 	run := &AgentRun{
@@ -186,6 +186,18 @@ func Continue(ctx *ctxt.AgentContext, model *ai.Model, tools []AgentTool) (*Agen
 	run.logLevel.Set(slog.LevelError)
 	run.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &run.logLevel}))
 	run.SetEnableTrace(ctx.EnableTrace())
+	return run, nil
+}
+
+func Load(runDir string, model *ai.Model, tools []AgentTool) (*AgentRun, error) {
+	agentCtx, err := ctxt.LoadContext(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load context: %w", err)
+	}
+	run, err := Continue(agentCtx, model, tools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to continue run: %w", err)
+	}
 	return run, nil
 }
 
@@ -250,7 +262,7 @@ func (r *AgentRun) Run(ctx context.Context, message string, metadata []ai.KeyVal
 	turn := r.agentContext.StartTurn(message)
 	r.turnMetrics.reset()
 
-	if metadata != nil && len(metadata) > 0 {
+	if len(metadata) > 0 {
 		turn.AppendTurnTags(metadata)
 		keys := make([]string, len(metadata))
 		for i := range metadata {

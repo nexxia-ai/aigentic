@@ -3,7 +3,6 @@ package ctxt
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -38,7 +37,9 @@ type TagEntry struct {
 
 type Turn struct {
 	TurnID       string          `json:"turn_id"`
+	RunID        string          `json:"run_id,omitempty"`
 	agentContext *AgentContext   `json:"-"`
+	ledgerDir    string          `json:"-"` // set by PrepareTurn for Dir()
 	Request      ai.Message      `json:"-"`
 	UserMessage  string          `json:"user_message"`
 	messages     []ai.Message    `json:"-"`
@@ -91,27 +92,11 @@ func (t *Turn) AddDocument(toolID string, doc *document.Document) error {
 }
 
 func (t *Turn) Dir() string {
-	return filepath.Join(t.agentContext.Workspace().TurnDir, t.TurnID)
+	return t.ledgerDir
 }
 
-func (t *Turn) saveToFile() {
-	if t.agentContext == nil {
-		return
-	}
-	dir := t.Dir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		slog.Error("failed to create turn directory", "dir", dir, "error", err)
-		return
-	}
-	path := filepath.Join(dir, "turn.json")
-	data, err := json.MarshalIndent(t, "", "  ")
-	if err != nil {
-		slog.Error("failed to marshal turn", "turnId", t.TurnID, "error", err)
-		return
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		slog.Error("failed to write turn file", "path", path, "error", err)
-	}
+func (t *Turn) SetLedgerDir(dir string) {
+	t.ledgerDir = dir
 }
 
 func (t *Turn) loadFromFile(turnJSONPath string) error {
@@ -182,6 +167,15 @@ func (t *Turn) GetDocuments() []*document.Document {
 	return docs
 }
 
+func lastAssistantMessage(msgs []ai.Message) ai.Message {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if m, ok := msgs[i].(ai.AIMessage); ok && (m.Role == ai.AssistantRole || m.Role == "") {
+			return m
+		}
+	}
+	return nil
+}
+
 func (t *Turn) MarshalJSON() ([]byte, error) {
 	type Alias Turn
 
@@ -230,14 +224,12 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		request = messageToJSON(t.Request)
 	}
 
-	var reply *messageJSON
-	if t.Reply != nil {
-		reply = messageToJSON(t.Reply)
-	}
-
 	messages := make([]*messageJSON, len(t.messages))
 	for i, msg := range t.messages {
 		messages[i] = messageToJSON(msg)
+	}
+	if len(messages) == 0 && t.Reply != nil {
+		messages = []*messageJSON{messageToJSON(t.Reply)}
 	}
 
 	documents := make([]documentJSON, len(t.Documents))
@@ -261,7 +253,7 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		*Alias
 		Request    *messageJSON   `json:"request"`
 		Messages   []*messageJSON `json:"messages"`
-		Reply      *messageJSON   `json:"reply,omitempty"`
+		Reply      *messageJSON   `json:"-"`
 		Documents  []documentJSON `json:"documents"`
 		SystemTags []tag          `json:"system_tags"`
 		TurnTags   []ai.KeyValue  `json:"turn_tags"`
@@ -269,7 +261,7 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		Alias:      (*Alias)(t),
 		Request:    request,
 		Messages:   messages,
-		Reply:      reply,
+		Reply:      nil,
 		Documents:  documents,
 		SystemTags: t.systemTags,
 		TurnTags:   t.turnTags,
@@ -340,14 +332,11 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		t.Request = jsonToMessage(aux.Request)
 	}
 
-	if aux.Reply != nil {
-		t.Reply = jsonToMessage(aux.Reply)
-	}
-
 	t.messages = make([]ai.Message, len(aux.Messages))
 	for i, mj := range aux.Messages {
 		t.messages[i] = jsonToMessage(mj)
 	}
+	t.Reply = lastAssistantMessage(t.messages)
 
 	t.Documents = make([]documentEntry, len(aux.Documents))
 	for i, dj := range aux.Documents {

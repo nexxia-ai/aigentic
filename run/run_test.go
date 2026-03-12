@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/event"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type noOpTrace struct{}
@@ -551,33 +553,38 @@ func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
 	assert.NoError(t, err)
 
 	ws := ar.AgentContext().Workspace()
+	ledger := ar.AgentContext().Ledger()
 	assert.NotNil(t, ws)
+	assert.NotNil(t, ledger)
 	root := ws.RootDir
-	batchDir := filepath.Join(root, "_private", "batch", "bid", "0")
-	assert.NoError(t, os.MkdirAll(filepath.Join(batchDir, "turn", "turn-000001"), 0755))
+	batchDir := filepath.Join(root, "_aigentic", "batch", "bid", "0")
+	assert.NoError(t, os.MkdirAll(batchDir, 0755))
 
 	runMeta := map[string]string{"agent_name": "subagent"}
 	runMetaData, _ := json.Marshal(runMeta)
 	assert.NoError(t, os.WriteFile(filepath.Join(batchDir, "run_meta.json"), runMetaData, 0644))
 
 	parentTurns := ar.AgentContext().GetHistory().GetTurns()
-	var childTs string
+	var childTs time.Time
 	if len(parentTurns) > 0 {
-		childTs = parentTurns[0].Timestamp.Add(time.Second).Format(time.RFC3339)
+		childTs = parentTurns[0].Timestamp.Add(time.Second)
 	} else {
-		childTs = time.Now().Format(time.RFC3339)
+		childTs = time.Now()
 	}
-	childTurn := map[string]interface{}{
-		"turn_id":    "turn-000001",
-		"timestamp":  childTs,
-		"agent_name": "subagent",
-		"usage": map[string]interface{}{
-			"prompt_tokens":     10,
-			"completion_tokens": 20,
-		},
+	turnID, _, err := ledger.PrepareTurn(childTs)
+	require.NoError(t, err)
+	childTurn := ctxt.Turn{
+		TurnID:       turnID,
+		UserMessage:  "child",
+		Timestamp:    childTs,
+		AgentName:    "subagent",
+		Usage:        ai.Usage{PromptTokens: 10, CompletionTokens: 20},
 	}
-	turnData, _ := json.Marshal(childTurn)
-	assert.NoError(t, os.WriteFile(filepath.Join(batchDir, "turn", "turn-000001", "turn.json"), turnData, 0644))
+	assert.NoError(t, ledger.Append(&childTurn))
+
+	convFile := filepath.Join(batchDir, "conversation.json")
+	convData, _ := json.Marshal(map[string]interface{}{"turn_refs": []string{turnID}})
+	assert.NoError(t, os.WriteFile(convFile, convData, 0644))
 
 	ar.Run(context.Background(), "/context", nil)
 	var content string
@@ -612,23 +619,25 @@ func TestFormatAigenticStats_ShowsReasoningWhenOnlyChildHasIt(t *testing.T) {
 	_, _ = ar.Wait(0)
 
 	ws := ar.AgentContext().Workspace()
-	batchDir := filepath.Join(ws.RootDir, "_private", "batch", "r1", "0")
-	assert.NoError(t, os.MkdirAll(filepath.Join(batchDir, "turn", "turn-000001"), 0755))
+	ledger := ar.AgentContext().Ledger()
+	require.NotNil(t, ledger)
+	batchDir := filepath.Join(ws.RootDir, "_aigentic", "batch", "r1", "0")
+	assert.NoError(t, os.MkdirAll(batchDir, 0755))
 	os.WriteFile(filepath.Join(batchDir, "run_meta.json"), []byte(`{"agent_name":"sub"}`), 0644)
-	childTurn := map[string]interface{}{
-		"turn_id":    "turn-000001",
-		"timestamp":  time.Now().Format(time.RFC3339),
-		"agent_name": "sub",
-		"usage": map[string]interface{}{
-			"prompt_tokens":     1,
-			"completion_tokens": 1,
-			"completion_tokens_details": map[string]interface{}{
-				"reasoning_tokens": 5,
-			},
-		},
+	turnID, _, err := ledger.PrepareTurn(time.Now())
+	require.NoError(t, err)
+	u := ai.Usage{PromptTokens: 1, CompletionTokens: 1}
+	u.CompletionTokensDetails.ReasoningTokens = 5
+	childTurn := ctxt.Turn{
+		TurnID:      turnID,
+		UserMessage: "child",
+		Timestamp:   time.Now(),
+		AgentName:   "sub",
+		Usage:       u,
 	}
-	turnData, _ := json.Marshal(childTurn)
-	os.WriteFile(filepath.Join(batchDir, "turn", "turn-000001", "turn.json"), turnData, 0644)
+	assert.NoError(t, ledger.Append(&childTurn))
+	convData, _ := json.Marshal(map[string]interface{}{"turn_refs": []string{turnID}})
+	os.WriteFile(filepath.Join(batchDir, "conversation.json"), convData, 0644)
 
 	ar.Run(context.Background(), "/context", nil)
 	var content string

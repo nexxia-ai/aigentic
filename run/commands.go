@@ -24,10 +24,6 @@ type childTurnStats struct {
 	Usage     ai.Usage  `json:"usage,omitempty"`
 }
 
-type runMetaStats struct {
-	AgentName string `json:"agent_name"`
-}
-
 func discoverChildTurns(ledger *ctxt.Ledger, runRoot string) []childTurnStats {
 	if ledger == nil || runRoot == "" {
 		return nil
@@ -57,7 +53,8 @@ func discoverChildTurns(ledger *ctxt.Ledger, runRoot string) []childTurnStats {
 					continue
 				}
 				childDir := filepath.Join(subDir, e2.Name())
-				agentName := loadRunMetaAgentName(childDir)
+				meta := loadRunMeta(childDir)
+				agentName := metaString(meta, "agent_name")
 				refs := loadConversationRefs(filepath.Join(childDir, "conversation.json"))
 				for _, turnID := range refs {
 					turn, err := ledger.Get(turnID)
@@ -96,16 +93,28 @@ func loadConversationRefs(path string) []string {
 	return cf.TurnRefs
 }
 
-func loadRunMetaAgentName(privateDir string) string {
+func loadRunMeta(privateDir string) map[string]interface{} {
 	data, err := os.ReadFile(filepath.Join(privateDir, "run_meta.json"))
 	if err != nil {
-		return ""
+		return nil
 	}
-	var m runMetaStats
+	var m map[string]interface{}
 	if json.Unmarshal(data, &m) != nil {
+		return nil
+	}
+	return m
+}
+
+func metaString(meta map[string]interface{}, key string) string {
+	if meta == nil {
 		return ""
 	}
-	return m.AgentName
+	v, ok := meta[key]
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
 }
 
 func parseAigenticCommand(message string) (rest string, cmd string, ok bool) {

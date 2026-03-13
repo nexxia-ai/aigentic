@@ -5,17 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 type Session struct {
-	ID        string
-	Name      string
-	Summary   string
-	Path      string
-	AgentName string
-	PackageID string
-	StartedAt time.Time
+	ID      string
+	Name    string
+	Summary string
+	Path    string
+	Meta    map[string]interface{}
 }
 
 func deriveBasePath(runDir string) string {
@@ -192,12 +189,10 @@ func loadSessionRunMeta(session *Session, privateDir string) error {
 		return err
 	}
 
-	var meta runMetaData
+	var meta map[string]interface{}
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return err
 	}
-	session.AgentName = meta.AgentName
-	session.PackageID = meta.PackageID
-	session.StartedAt = meta.StartedAt
+	session.Meta = meta
 	return nil
 }

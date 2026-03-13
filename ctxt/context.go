@@ -16,12 +16,6 @@ import (
 	"github.com/nexxia-ai/aigentic/document"
 )
 
-type runMetaData struct {
-	AgentName string    `json:"agent_name"`
-	PackageID string    `json:"package_id"`
-	StartedAt time.Time `json:"started_at"`
-}
-
 // PromptPart is a key-value segment of the system prompt, rendered in order.
 type PromptPart struct {
 	Key   string `json:"key"`
@@ -39,7 +33,7 @@ type AgentContext struct {
 	id             string
 	name           string
 	summary        string
-	runMeta        *runMetaData
+	runMeta        map[string]interface{}
 	UserTemplate   *template.Template
 
 	systemParts []PromptPart
@@ -55,10 +49,9 @@ type AgentContext struct {
 }
 
 func New(id, description, instructions string, basePath string) (*AgentContext, error) {
-	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
 		id:      id,
-		runMeta: m,
+		runMeta: make(map[string]interface{}),
 		systemParts: []PromptPart{
 			{Key: SystemPartKeyDescription, Value: description},
 			{Key: SystemPartKeyInstructions, Value: instructions},
@@ -89,10 +82,9 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 // NewAtPath creates an AgentContext at an exact run path.
 // runDir is the run root (basePath/runs/{id}/). BasePath is derived for ledger access.
 func NewAtPath(id, description, instructions, runDir string) (*AgentContext, error) {
-	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
 		id:      id,
-		runMeta: m,
+		runMeta: make(map[string]interface{}),
 		systemParts: []PromptPart{
 			{Key: SystemPartKeyDescription, Value: description},
 			{Key: SystemPartKeyInstructions, Value: instructions},
@@ -148,10 +140,9 @@ func NewChild(id, description, instructions, privateDir, sharedLLMDir, basePath 
 		return nil, fmt.Errorf("failed to create child workspace: %w", err)
 	}
 
-	m := &runMetaData{AgentName: id, PackageID: "", StartedAt: time.Now()}
 	ctx := &AgentContext{
 		id:        id,
-		runMeta:   m,
+		runMeta:   make(map[string]interface{}),
 		workspace: ws,
 		basePath:  absBase,
 		ledger:    NewLedger(absBase),
@@ -408,34 +399,20 @@ func (r *AgentContext) Name() string {
 	return r.name
 }
 
-func (r *AgentContext) SetMeta(agentName, packageID string) {
+func (r *AgentContext) SetMeta(key string, value interface{}) {
 	if r.runMeta == nil {
-		r.runMeta = &runMetaData{StartedAt: time.Now()}
+		r.runMeta = make(map[string]interface{})
 	}
-	r.runMeta.AgentName = agentName
-	r.runMeta.PackageID = packageID
+	r.runMeta[key] = value
 	r.saveRunMeta()
 }
 
-func (r *AgentContext) RunAgentName() string {
-	if r.runMeta != nil {
-		return r.runMeta.AgentName
+func (r *AgentContext) GetMeta(key string) (interface{}, bool) {
+	if r.runMeta == nil {
+		return nil, false
 	}
-	return ""
-}
-
-func (r *AgentContext) RunPackageID() string {
-	if r.runMeta != nil {
-		return r.runMeta.PackageID
-	}
-	return ""
-}
-
-func (r *AgentContext) RunStartedAt() time.Time {
-	if r.runMeta != nil {
-		return r.runMeta.StartedAt
-	}
-	return time.Time{}
+	v, ok := r.runMeta[key]
+	return v, ok
 }
 
 func (r *AgentContext) SetEnableTrace(enable bool) *AgentContext {
@@ -449,7 +426,7 @@ func (r *AgentContext) EnableTrace() bool {
 }
 
 func (r *AgentContext) saveRunMeta() {
-	if r.workspace == nil || r.runMeta == nil {
+	if r.workspace == nil || r.runMeta == nil || len(r.runMeta) == 0 {
 		return
 	}
 	path := filepath.Join(r.workspace.PrivateDir, "run_meta.json")
@@ -473,12 +450,12 @@ func loadRunMeta(ctx *AgentContext, privateDir string) {
 		slog.Warn("failed to read run metadata", "path", path, "error", err)
 		return
 	}
-	var meta runMetaData
+	var meta map[string]interface{}
 	if err := json.Unmarshal(data, &meta); err != nil {
 		slog.Warn("failed to parse run metadata", "path", path, "error", err)
 		return
 	}
-	ctx.runMeta = &meta
+	ctx.runMeta = meta
 }
 
 func (r *AgentContext) Summary() string {

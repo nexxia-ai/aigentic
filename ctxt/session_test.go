@@ -289,7 +289,9 @@ func TestLoadContextRestoresMetadata(t *testing.T) {
 		t.Fatalf("failed to create context: %v", err)
 	}
 
-	ctx.SetMeta("executive-assistant", "executive-assistant-1.0.0")
+	ctx.SetMeta("agent_name", "executive-assistant")
+	ctx.SetMeta("package_id", "executive-assistant-1.0.0")
+	ctx.SetMeta("started_at", time.Now().Format(time.RFC3339))
 	if err := ctx.save(); err != nil {
 		t.Fatalf("failed to save: %v", err)
 	}
@@ -300,14 +302,16 @@ func TestLoadContextRestoresMetadata(t *testing.T) {
 		t.Fatalf("failed to load context: %v", err)
 	}
 
-	if got := loaded.RunAgentName(); got != "executive-assistant" {
-		t.Errorf("RunAgentName: expected %q, got %q", "executive-assistant", got)
+	if v, ok := loaded.GetMeta("agent_name"); !ok || v.(string) != "executive-assistant" {
+		t.Errorf("agent_name: expected executive-assistant, got %v", v)
 	}
-	if got := loaded.RunPackageID(); got != "executive-assistant-1.0.0" {
-		t.Errorf("RunPackageID: expected %q, got %q", "executive-assistant-1.0.0", got)
+	if v, ok := loaded.GetMeta("package_id"); !ok || v.(string) != "executive-assistant-1.0.0" {
+		t.Errorf("package_id: expected executive-assistant-1.0.0, got %v", v)
 	}
-	if loaded.RunStartedAt().IsZero() {
-		t.Error("RunStartedAt: expected non-zero timestamp")
+	if v, ok := loaded.GetMeta("started_at"); !ok {
+		t.Error("started_at: expected non-empty")
+	} else if s, ok := v.(string); !ok || s == "" {
+		t.Error("started_at: expected non-empty RFC3339 string")
 	}
 }
 
@@ -318,7 +322,8 @@ func TestLoadContextMetadataWithHistory(t *testing.T) {
 		t.Fatalf("failed to create context: %v", err)
 	}
 
-	ctx.SetMeta("support-agent", "support-agent-1.0.0")
+	ctx.SetMeta("agent_name", "support-agent")
+	ctx.SetMeta("package_id", "support-agent-1.0.0")
 	ctx.StartTurn("Hello")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Hi"})
 
@@ -328,11 +333,11 @@ func TestLoadContextMetadataWithHistory(t *testing.T) {
 		t.Fatalf("failed to load context: %v", err)
 	}
 
-	if got := loaded.RunAgentName(); got != "support-agent" {
-		t.Errorf("RunAgentName after reload: expected %q, got %q", "support-agent", got)
+	if v, ok := loaded.GetMeta("agent_name"); !ok || v.(string) != "support-agent" {
+		t.Errorf("agent_name after reload: expected support-agent, got %v", v)
 	}
-	if got := loaded.RunPackageID(); got != "support-agent-1.0.0" {
-		t.Errorf("RunPackageID after reload: expected %q, got %q", "support-agent-1.0.0", got)
+	if v, ok := loaded.GetMeta("package_id"); !ok || v.(string) != "support-agent-1.0.0" {
+		t.Errorf("package_id after reload: expected support-agent-1.0.0, got %v", v)
 	}
 	if loaded.GetHistory().Len() != 1 {
 		t.Errorf("expected 1 turn in history, got %d", loaded.GetHistory().Len())
@@ -372,7 +377,7 @@ func TestFindSessionAllowsMissingRunMeta(t *testing.T) {
 	if session.ID != ctx.ID() {
 		t.Fatalf("expected session ID %q, got %q", ctx.ID(), session.ID)
 	}
-	if session.AgentName != "" || session.PackageID != "" {
-		t.Fatalf("expected empty metadata when run_meta.json is missing, got agent=%q package=%q", session.AgentName, session.PackageID)
+	if session.Meta != nil && len(session.Meta) > 0 {
+		t.Fatalf("expected empty metadata when run_meta.json is missing, got %v", session.Meta)
 	}
 }

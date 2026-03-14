@@ -10,6 +10,15 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
+const defaultFileMimeType = "application/octet-stream"
+
+func fileDataURI(mimeType string, data []byte) string {
+	if mimeType == "" {
+		mimeType = defaultFileMimeType
+	}
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(data))
+}
+
 func toChatMessages(msgs []ai.Message) ([]openai.ChatCompletionMessageParamUnion, error) {
 	result := make([]openai.ChatCompletionMessageParamUnion, 0, len(msgs))
 	for _, msg := range msgs {
@@ -71,8 +80,10 @@ func toChatUserMessage(msg ai.UserMessage) (openai.ChatCompletionMessageParamUni
 					fileParam.FileID = openai.Opt(part.FileID)
 				}
 				if len(part.Data) > 0 {
-					fileData := base64.StdEncoding.EncodeToString(part.Data)
-					fileParam.FileData = openai.Opt(fileData)
+					fileParam.FileData = openai.Opt(fileDataURI(part.MimeType, part.Data))
+					if part.Name != "" {
+						fileParam.Filename = openai.Opt(part.Name)
+					}
 				}
 				parts = append(parts, openai.FileContentPart(fileParam))
 			}
@@ -272,8 +283,10 @@ func toResponsesUserItem(msg ai.UserMessage) (responses.ResponseInputItemUnionPa
 					fileParam.FileID = openai.Opt(part.FileID)
 				}
 				if len(part.Data) > 0 {
-					fileData := base64.StdEncoding.EncodeToString(part.Data)
-					fileParam.FileData = openai.Opt(fileData)
+					fileParam.FileData = openai.Opt(fileDataURI(part.MimeType, part.Data))
+					if part.Name != "" {
+						fileParam.Filename = openai.Opt(part.Name)
+					}
 				}
 				parts = append(parts, responses.ResponseInputContentUnionParam{
 					OfInputFile: &fileParam,

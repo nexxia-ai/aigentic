@@ -56,6 +56,10 @@ func (l *Ledger) Append(turn *Turn) error {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write turn file: %w", err)
 	}
+	turn.SetLedgerDir(dirPath)
+	if err := turn.saveMeta(); err != nil {
+		return fmt.Errorf("write turn meta file: %w", err)
+	}
 	return nil
 }
 

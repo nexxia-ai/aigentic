@@ -28,31 +28,30 @@ func NewConversationHistory(ledger *Ledger, conversationPath string) *Conversati
 		ledger:           ledger,
 	}
 	if ledger != nil && conversationPath != "" {
-		if refs := loadConversationRefs(conversationPath); refs != nil {
+		if refs, _ := LoadConversationRefs(conversationPath); refs != nil {
 			h.turnRefs = refs
 		}
 	}
 	return h
 }
 
-func loadConversationRefs(path string) []string {
+// LoadConversationRefs reads turn_refs from a conversation.json file.
+func LoadConversationRefs(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, nil
 		}
-		slog.Warn("failed to read conversation", "path", path, "error", err)
-		return nil
+		return nil, err
 	}
 	var cf conversationFile
 	if err := json.Unmarshal(data, &cf); err != nil {
-		slog.Warn("failed to parse conversation", "path", path, "error", err)
-		return nil
+		return nil, err
 	}
 	if cf.TurnRefs == nil {
-		return nil
+		return nil, nil
 	}
-	return cf.TurnRefs
+	return cf.TurnRefs, nil
 }
 
 func (h *ConversationHistory) saveConversation() {

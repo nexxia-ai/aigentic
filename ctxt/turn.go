@@ -36,21 +36,22 @@ type TagEntry struct {
 }
 
 type Turn struct {
-	TurnID       string          `json:"turn_id"`
-	RunID        string          `json:"run_id,omitempty"`
-	agentContext *AgentContext   `json:"-"`
-	ledgerDir    string          `json:"-"` // set by PrepareTurn for Dir()
-	Request      ai.Message      `json:"-"`
-	UserMessage  string          `json:"user_message"`
-	messages     []ai.Message    `json:"-"`
-	Reply        ai.Message      `json:"-"`
-	Documents    []documentEntry `json:"-"`
-	FileRefs     []FileRefEntry  `json:"file_refs"`
-	TraceFile    string          `json:"trace_file"`
-	Timestamp    time.Time       `json:"timestamp"`
-	AgentName    string          `json:"agent_name"`
-	Hidden       bool            `json:"hidden"`
-	Usage        ai.Usage        `json:"usage,omitempty"`
+	TurnID       string            `json:"turn_id"`
+	RunID        string            `json:"run_id,omitempty"`
+	agentContext *AgentContext     `json:"-"`
+	ledgerDir    string            `json:"-"` // set by PrepareTurn for Dir()
+	Request      ai.Message        `json:"-"`
+	UserMessage  string            `json:"user_message"`
+	messages     []ai.Message      `json:"-"`
+	Reply        ai.Message        `json:"-"`
+	Documents    []documentEntry   `json:"-"`
+	FileRefs     []FileRefEntry    `json:"file_refs"`
+	TraceFile    string            `json:"trace_file"`
+	Timestamp    time.Time         `json:"timestamp"`
+	AgentName    string            `json:"agent_name"`
+	Hidden       bool              `json:"hidden"`
+	Usage        ai.Usage          `json:"usage,omitempty"`
+	meta         map[string]string `json:"-"`
 	systemTags   []tag
 	turnTags     []ai.KeyValue
 }
@@ -67,8 +68,8 @@ func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) 
 		TraceFile:    "",
 		Timestamp:    time.Now(),
 		AgentName:    agentName,
-		systemTags: make([]tag, 0),
-		turnTags:   make([]ai.KeyValue, 0),
+		systemTags:   make([]tag, 0),
+		turnTags:     make([]ai.KeyValue, 0),
 	}
 }
 
@@ -108,8 +109,60 @@ func (t *Turn) loadFromFile(turnJSONPath string) error {
 		return err
 	}
 	turnDir := filepath.Dir(turnJSONPath)
+	t.ledgerDir = turnDir
 	t.TraceFile = filepath.Join(turnDir, "trace.txt")
+	return t.loadMeta()
+}
+
+func (t *Turn) metaPath() string {
+	if t.ledgerDir == "" {
+		return ""
+	}
+	return filepath.Join(t.ledgerDir, "meta.json")
+}
+
+func (t *Turn) loadMeta() error {
+	path := t.metaPath()
+	if path == "" {
+		t.meta = nil
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.meta = nil
+			return nil
+		}
+		return err
+	}
+	var meta map[string]string
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return err
+	}
+	if len(meta) == 0 {
+		t.meta = nil
+		return nil
+	}
+	t.meta = meta
 	return nil
+}
+
+func (t *Turn) saveMeta() error {
+	path := t.metaPath()
+	if path == "" {
+		return nil
+	}
+	if len(t.meta) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	data, err := json.MarshalIndent(t.meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 func (t *Turn) DeleteDocument(doc *document.Document) error {
@@ -147,6 +200,36 @@ func (t *Turn) InjectTurnTag(tagName string, content string) {
 // AppendTurnTags appends key-value pairs to the turn's user-prompt list (e.g. from Run() metadata).
 func (t *Turn) AppendTurnTags(kv []ai.KeyValue) {
 	t.turnTags = append(t.turnTags, kv...)
+}
+
+// SetMeta merges meta into the turn's metadata. Empty string deletes the key.
+func (t *Turn) SetMeta(meta map[string]string) {
+	if t.meta == nil {
+		t.meta = make(map[string]string)
+	}
+	for k, v := range meta {
+		if v == "" {
+			delete(t.meta, k)
+		} else {
+			t.meta[k] = v
+		}
+	}
+	if len(t.meta) == 0 {
+		t.meta = nil
+	}
+	_ = t.saveMeta()
+}
+
+// Meta returns a copy of the turn's metadata, or nil if empty.
+func (t *Turn) Meta() map[string]string {
+	if len(t.meta) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(t.meta))
+	for k, v := range t.meta {
+		out[k] = v
+	}
+	return out
 }
 
 // TurnTags returns the turn's key-value list for the user prompt (caller metadata + InjectTurnTag).

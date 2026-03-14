@@ -1,7 +1,10 @@
 package ctxt
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/stretchr/testify/assert"
@@ -190,4 +193,59 @@ func TestConversationTurnAddDocumentWithDifferentToolIDs(t *testing.T) {
 	assert.Equal(t, "tool1", turn.Documents[0].ToolID)
 	assert.Equal(t, doc, turn.Documents[1].Document)
 	assert.Equal(t, "tool2", turn.Documents[1].ToolID)
+}
+
+func TestLedgerAppendPersistsTurnMetaSidecar(t *testing.T) {
+	basePath := t.TempDir()
+	ledger := NewLedger(basePath)
+
+	turnID, dirPath, err := ledger.PrepareTurn(time.Now())
+	assert.NoError(t, err)
+
+	turn := NewTurn(nil, "test message", "agent1", turnID)
+	turn.Timestamp = time.Now()
+	turn.SetLedgerDir(dirPath)
+	turn.SetMeta(map[string]string{"source": "caller"})
+
+	assert.NoError(t, ledger.Append(turn))
+
+	metaData, err := os.ReadFile(filepath.Join(dirPath, "meta.json"))
+	assert.NoError(t, err)
+	assert.JSONEq(t, `{"source":"caller"}`, string(metaData))
+
+	loaded, err := ledger.Get(turnID)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"source": "caller"}, loaded.Meta())
+}
+
+func TestSetMetaPersistsToSidecarWhenLedgerDirKnown(t *testing.T) {
+	basePath := t.TempDir()
+	ledger := NewLedger(basePath)
+
+	turnID, dirPath, err := ledger.PrepareTurn(time.Now())
+	assert.NoError(t, err)
+
+	turn := NewTurn(nil, "test message", "agent1", turnID)
+	turn.Timestamp = time.Now()
+	turn.SetLedgerDir(dirPath)
+
+	turn.SetMeta(map[string]string{"status": "updated"})
+
+	metaData, err := os.ReadFile(filepath.Join(dirPath, "meta.json"))
+	assert.NoError(t, err)
+	assert.JSONEq(t, `{"status":"updated"}`, string(metaData))
+
+	assert.NoError(t, ledger.Append(turn))
+
+	loaded, err := ledger.Get(turnID)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"status": "updated"}, loaded.Meta())
+
+	turn.SetMeta(map[string]string{"status": ""})
+
+	loaded, err = ledger.Get(turnID)
+	assert.NoError(t, err)
+	assert.Nil(t, loaded.Meta())
+	_, err = os.Stat(filepath.Join(dirPath, "meta.json"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }

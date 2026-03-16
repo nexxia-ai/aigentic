@@ -16,7 +16,7 @@ import (
 const memoryStoreName = "memory_files"
 
 // Workspace manages the filesystem layout and I/O operations for an agent's execution directory.
-// It owns llm/, _aigentic/, and turn/.
+// It owns llm/ and _aigentic/.
 type Workspace struct {
 	RootDir    string
 	LLMDir     string
@@ -24,7 +24,6 @@ type Workspace struct {
 	MemoryDir  string
 	UploadDir  string
 	OutputDir  string
-	TurnDir    string
 }
 
 func NewWorkspace(baseDir, agentID string) (*Workspace, error) {
@@ -63,7 +62,6 @@ func newWorkspaceAtRunDir(runDir string) (*Workspace, error) {
 		MemoryDir:  "",
 		UploadDir:  filepath.Join(llmDir, "uploads"),
 		OutputDir:  filepath.Join(llmDir, "output"),
-		TurnDir:    filepath.Join(privateDir, "turn"),
 	}
 	if err := w.init(); err != nil {
 		return nil, err
@@ -90,7 +88,6 @@ func newChildWorkspace(privateDir, sharedLLMDir string) (*Workspace, error) {
 		MemoryDir:  "",
 		UploadDir:  filepath.Join(absLLM, "uploads"),
 		OutputDir:  filepath.Join(absLLM, "output"),
-		TurnDir:    filepath.Join(absPrivate, "turn"),
 	}
 
 	privateDirs := []string{absPrivate}
@@ -113,7 +110,6 @@ func newWorkspaceAt(rootDir string) (*Workspace, error) {
 		MemoryDir:  "",
 		UploadDir:  filepath.Join(llmDir, "uploads"),
 		OutputDir:  filepath.Join(llmDir, "output"),
-		TurnDir:    filepath.Join(privateDir, "turn"),
 	}
 	if err := w.init(); err != nil {
 		return nil, err
@@ -156,9 +152,6 @@ func (w *Workspace) init() error {
 		w.UploadDir,
 		w.OutputDir,
 	}
-	if w.TurnDir != "" {
-		dirs = append(dirs, w.TurnDir)
-	}
 	if w.MemoryDir != "" {
 		dirs = append(dirs, w.MemoryDir)
 	}
@@ -198,7 +191,6 @@ func (w *Workspace) EnvVars() map[string]string {
 		"AGENT_PRIVATE_DIR": w.PrivateDir,
 		"AGENT_UPLOAD_DIR":  w.UploadDir,
 		"AGENT_OUTPUT_DIR":  w.OutputDir,
-		"AGENT_TURN_DIR":    w.TurnDir,
 	}
 	if w.MemoryDir != "" {
 		m["AGENT_MEMORY_DIR"] = w.MemoryDir

@@ -93,10 +93,11 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	if currentResult != nil && len(currentResult.FileRefs) > 0 {
 		turn := r.AgentContext().Turn()
 		if turn != nil {
-			for _, ref := range currentResult.FileRefs {
+			for i := range currentResult.FileRefs {
+				ref := &currentResult.FileRefs[i]
 				if !ref.Ephemeral {
-					ref.UserUpload = false
-					turn.FileRefs = append(turn.FileRefs, ref)
+					ref.ToolID = act.ToolCallID
+					turn.AddFile(*ref)
 				}
 			}
 		}
@@ -107,7 +108,7 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		response = formatToolResponse(currentResult.Result)
 	}
 
-	var fileRefs []ctxt.FileRefEntry
+	var fileRefs []ctxt.FileRef
 	if currentResult != nil && len(currentResult.FileRefs) > 0 {
 		fileRefs = currentResult.FileRefs
 	}
@@ -169,7 +170,7 @@ func formatToolResponse(result *ai.ToolResult) string {
 	return strings.Join(parts, "\n")
 }
 
-func appendFileRefsToToolResponse(r *AgentRun, response string, refs []ctxt.FileRefEntry) string {
+func appendFileRefsToToolResponse(r *AgentRun, response string, refs []ctxt.FileRef) string {
 	if len(refs) == 0 {
 		return response
 	}
@@ -191,9 +192,9 @@ func appendFileRefsToToolResponse(r *AgentRun, response string, refs []ctxt.File
 		if !ref.IncludeInPrompt {
 			continue
 		}
-		doc := ac.GetDocument(ref.Path)
-		if doc == nil {
-			slog.Warn("failed to load file for tool response", "path", ref.Path)
+		doc, err := ctxt.OpenFileRef(ref)
+		if err != nil {
+			slog.Warn("failed to load file for tool response", "path", ref.Path, "error", err)
 			continue
 		}
 		text := doc.Text()
@@ -281,6 +282,7 @@ func (r *AgentRun) groupToolCalls(toolCalls []ai.ToolCall, msg ai.AIMessage, exi
 			AIMessage:     &msg,
 			Responses:     make(map[string]ai.ToolMessage),
 			UserResponses: make(map[string]string),
+			FileRefs:      make(map[string][]ctxt.FileRef),
 		}
 	}
 

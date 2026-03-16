@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,17 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 )
+
+func argumentsToString(args responses.ResponseOutputItemUnionArguments) string {
+	if args.OfString != "" {
+		return args.OfString
+	}
+	if args.OfResponseToolSearchCallArguments != nil {
+		b, _ := json.Marshal(args.OfResponseToolSearchCallArguments)
+		return string(b)
+	}
+	return ""
+}
 
 func callResponsesAPI(ctx context.Context, client openai.Client, model *ai.Model, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 	inputItems, err := toResponsesInput(messages)
@@ -143,7 +155,7 @@ func streamResponsesAPI(ctx context.Context, client openai.Client, model *ai.Mod
 					ID:   evt.Item.CallID,
 					Type: "function",
 					Name: evt.Item.Name,
-					Args: evt.Item.Arguments,
+					Args: argumentsToString(evt.Item.Arguments),
 				}
 			}
 
@@ -161,7 +173,7 @@ func streamResponsesAPI(ctx context.Context, client openai.Client, model *ai.Mod
 							ID:   outputItem.CallID,
 							Type: "function",
 							Name: outputItem.Name,
-							Args: outputItem.Arguments,
+							Args: argumentsToString(outputItem.Arguments),
 						}
 					}
 				}

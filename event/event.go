@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/ctxt"
 )
 
 // Event interface identify types that can be sent to the event channel
@@ -60,7 +60,7 @@ type ToolResponseEvent struct {
 	ToolCallID string
 	ToolName   string
 	Content    string
-	Documents  []*document.Document
+	Files      []ctxt.FileRef
 }
 
 func (e *ToolResponseEvent) ID() string { return e.RunID }

@@ -13,7 +13,7 @@ import (
 
 type ToolCallResult struct {
 	Result   *ai.ToolResult
-	FileRefs []ctxt.FileRefEntry
+	FileRefs []ctxt.FileRef
 	Terminal bool
 }
 

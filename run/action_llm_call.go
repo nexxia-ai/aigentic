@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/document"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/event"
 )
 
@@ -147,6 +147,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 					AIMessage:     &chunkMsg,
 					Responses:     make(map[string]ai.ToolMessage),
 					UserResponses: make(map[string]string),
+					FileRefs:      make(map[string][]ctxt.FileRef),
 				}
 			}
 			// Process tool calls using the shared group
@@ -178,23 +179,18 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			for _, tc := range r.currentStreamGroup.AIMessage.ToolCalls {
 				if response, exists := r.currentStreamGroup.Responses[tc.ID]; exists {
 					turn.AddMessage(response)
-					var docs []*document.Document
-					for _, entry := range turn.Documents {
-						if entry.ToolID == tc.ID || entry.ToolID == "" {
-							docs = append(docs, entry.Document)
-						}
-					}
+					files := filesForToolEvent(r.currentStreamGroup, tc.ID, turn)
 					userContent := r.currentStreamGroup.UserResponses[tc.ID]
-					event := &event.ToolResponseEvent{
+					ev := &event.ToolResponseEvent{
 						RunID:      r.id,
 						AgentName:  r.AgentName(),
 						SessionID:  r.sessionID,
 						ToolCallID: response.ToolCallID,
 						ToolName:   response.ToolName,
 						Content:    userContent,
-						Documents:  docs,
+						Files:      files,
 					}
-					r.queueEvent(event)
+					r.queueEvent(ev)
 				}
 			}
 

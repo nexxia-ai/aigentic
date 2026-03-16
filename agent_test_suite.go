@@ -1,7 +1,6 @@
 package aigentic
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -167,19 +166,6 @@ func RunIntegrationTestSuite(t *testing.T, suite IntegrationTestSuite) {
 			TestMemoryPersistence(t, suite.NewModel())
 		})
 
-		t.Run("BatchExecution", func(t *testing.T) {
-			if shouldSkipTest("BatchExecution") {
-				t.Skipf("Skipping BatchExecution test for %s", suite.Name)
-			}
-			TestBatchExecution(t, suite.NewModel())
-		})
-
-		t.Run("PlanExecution", func(t *testing.T) {
-			if shouldSkipTest("PlanExecution") {
-				t.Skipf("Skipping PlanExecution test for %s", suite.Name)
-			}
-			TestPlanExecution(t, suite.NewModel())
-		})
 	})
 }
 
@@ -339,7 +325,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.agent.Documents = tt.attachments
+			tt.agent.Files = FileAttachmentsFromDocuments(tt.attachments)
 			for _, tool := range tt.tools {
 				tt.agent.AgentTools = append(tt.agent.AgentTools, run.WrapTool(tool))
 			}
@@ -412,7 +398,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 			for _, tool := range test.tools {
 				agent.AgentTools = append(agent.AgentTools, run.WrapTool(tool))
 			}
-			agent.Documents = test.attachments
+			agent.Files = FileAttachmentsFromDocuments(test.attachments)
 			agentRun, err := agent.Start(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
@@ -471,7 +457,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			for _, tool := range test.tools {
 				test.agent.AgentTools = append(test.agent.AgentTools, run.WrapTool(tool))
 			}
-			test.agent.Documents = test.attachments
+			test.agent.Files = FileAttachmentsFromDocuments(test.attachments)
 			agentRun, err := test.agent.Start(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
@@ -671,7 +657,7 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 				Description:  tc.description,
 				Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
 				EnableTrace:  true,
-				Documents:    tc.attachments,
+				Files:        FileAttachmentsFromDocuments(tc.attachments),
 			}
 
 			agentRun, err := agent.Start("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")
@@ -1103,144 +1089,4 @@ func TestMemoryPersistence(t *testing.T, model *ai.Model) {
 	assert.Contains(t, finalContent, "Nexxia")
 	assert.Contains(t, finalContent, "Phoenix")
 	assert.Equal(t, 2, counter, "Should have made 2 tool calls")
-}
-
-func TestBatchExecution(t *testing.T, model *ai.Model) {
-	type ClassifyInput struct {
-		Text string `json:"text" description:"The text to classify"`
-	}
-
-	classifyTool := run.NewTool(
-		"classify_sentiment",
-		"Classify the sentiment of the given text as POSITIVE, NEGATIVE, or NEUTRAL",
-		func(agentRun *run.AgentRun, input ClassifyInput) (string, error) {
-			lower := strings.ToLower(input.Text)
-			if strings.Contains(lower, "great") || strings.Contains(lower, "love") || strings.Contains(lower, "excellent") {
-				return "POSITIVE", nil
-			}
-			if strings.Contains(lower, "terrible") || strings.Contains(lower, "hate") || strings.Contains(lower, "awful") {
-				return "NEGATIVE", nil
-			}
-			return "NEUTRAL", nil
-		},
-	)
-
-	agent := Agent{
-		Name: "batch-coordinator",
-		Model: model,
-		Description: "You are a coordinator that processes items in batch using sub-agents. " +
-			"When asked to classify reviews, use the agent_batch tool with sub_agent='classifier' and provide each review as a batch item.",
-		Instructions: "Use the agent_batch tool to process all reviews concurrently. " +
-			"Each item should have a unique item_id and the review text as the message. " +
-			"After batch completes, summarise the results showing each review's sentiment.",
-		EnableTrace: true,
-	}
-
-	ar, err := agent.New()
-	if err != nil {
-		t.Fatalf("failed to create agent: %v", err)
-	}
-
-	ar.AddSubAgent("classifier", "Classifies sentiment of text",
-		"You classify sentiment. Use the classify_sentiment tool on the input text. Return exactly: SENTIMENT: <result>",
-		model, []run.AgentTool{classifyTool})
-
-	run.AddExecutionTools(ar, run.ExecutionToolsConfig{
-		BatchPolicy: &run.BatchPolicy{MaxConcurrency: 3, ContinueOnError: true},
-	})
-
-	ar.Run(context.Background(), "Classify the sentiment of these reviews:\n1. \"This product is great, I love it!\"\n2. \"Terrible experience, awful quality\"\n3. \"It's okay, nothing special\"", nil)
-	result, err := ar.Wait(0)
-	if err != nil {
-		t.Fatalf("agent wait failed: %v", err)
-	}
-
-	assert.NotEmpty(t, result)
-	t.Logf("Batch result: %s", result)
-	// The result should mention sentiments
-	lower := strings.ToLower(result)
-	assert.True(t,
-		strings.Contains(lower, "positive") || strings.Contains(lower, "negative") || strings.Contains(lower, "neutral"),
-		"Result should contain at least one sentiment classification")
-}
-
-func TestPlanExecution(t *testing.T, model *ai.Model) {
-	type LookupInput struct {
-		Name string `json:"name" description:"Company name to look up"`
-	}
-
-	lookupTool := run.NewTool(
-		"lookup_company_details",
-		"Look up company details by name. Returns company info.",
-		func(agentRun *run.AgentRun, input LookupInput) (string, error) {
-			if strings.EqualFold(strings.TrimSpace(input.Name), "Nexxia") {
-				return "COMPANY: Nexxia; INDUSTRY: Technology; REVENUE: $50M; EMPLOYEES: 200", nil
-			}
-			return "COMPANY: " + input.Name + "; INDUSTRY: Unknown; REVENUE: N/A; EMPLOYEES: N/A", nil
-		},
-	)
-
-	type ScoreInput struct {
-		CompanyInfo string `json:"company_info" description:"Company information to score"`
-	}
-
-	scoreTool := run.NewTool(
-		"score_risk",
-		"Score a company risk based on its profile. Returns RISK: LOW|MEDIUM|HIGH.",
-		func(agentRun *run.AgentRun, input ScoreInput) (string, error) {
-			if strings.Contains(input.CompanyInfo, "Technology") && strings.Contains(input.CompanyInfo, "$50M") {
-				return "RISK: LOW; REASON: Established technology company with solid revenue", nil
-			}
-			return "RISK: HIGH; REASON: Insufficient data for assessment", nil
-		},
-	)
-
-	agent := Agent{
-		Name:  "plan-coordinator",
-		Model: model,
-		Description: "You are a risk assessment coordinator. When asked to assess a company, " +
-			"use the company_assessment plan tool which will first research the company, then score its risk.",
-		Instructions: "Use the company_assessment tool with the company name as input for the 'research' step. " +
-			"After the plan completes, present the final risk assessment to the user.",
-		EnableTrace: true,
-	}
-
-	ar, err := agent.New()
-	if err != nil {
-		t.Fatalf("failed to create agent: %v", err)
-	}
-
-	ar.AddSubAgent("researcher", "Researches company details",
-		"You research companies. Use the lookup_company_details tool with the company name. Return all company details found.",
-		model, []run.AgentTool{lookupTool})
-
-	ar.AddSubAgent("scorer", "Scores company risk",
-		"You score company risk. Use the score_risk tool with the company information from upstream steps. Return the risk assessment.",
-		model, []run.AgentTool{scoreTool})
-
-	run.AddExecutionTools(ar, run.ExecutionToolsConfig{
-		Plans: []run.PlanDef{
-			{
-				Name:        "company-assessment",
-				Description: "Research a company then score its risk",
-				Steps: []run.PlanStep{
-					{ID: "research", SubAgent: "researcher"},
-					{ID: "score", SubAgent: "scorer", DependsOn: []string{"research"}},
-				},
-			},
-		},
-	})
-
-	ar.Run(context.Background(), "Assess the risk of company 'Nexxia'", nil)
-	result, err := ar.Wait(0)
-	if err != nil {
-		t.Fatalf("agent wait failed: %v", err)
-	}
-
-	assert.NotEmpty(t, result)
-	t.Logf("Plan result: %s", result)
-	lower := strings.ToLower(result)
-	assert.True(t,
-		strings.Contains(lower, "risk") || strings.Contains(lower, "nexxia"),
-		"Result should mention risk assessment or the company name")
 }

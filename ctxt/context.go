@@ -1,7 +1,6 @@
 package ctxt
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -30,16 +29,16 @@ const (
 )
 
 type AgentContext struct {
-	id             string
-	name           string
-	summary        string
-	runMeta        map[string]interface{}
-	UserTemplate   *template.Template
+	id           string
+	name         string
+	summary      string
+	runMeta      map[string]interface{}
+	UserTemplate *template.Template
 
 	systemParts []PromptPart
 
 	mutex               sync.RWMutex
-	pendingRefs         []FileRefEntry
+	pendingRefs         []FileRef
 	conversationHistory *ConversationHistory
 	currentTurn         *Turn
 	workspace           *Workspace
@@ -314,50 +313,51 @@ func (r *AgentContext) insertDocuments(docs []*document.Document) []ai.Message {
 	return msgs
 }
 
-func (r *AgentContext) UploadDocument(path string, content []byte, mimeType string, includeInNextTurn ...bool) error {
-	if r.workspace == nil {
-		return fmt.Errorf("workspace not set")
+// AddFile registers a FileRef for the next turn.
+func (r *AgentContext) AddFile(ref FileRef) error {
+	if ref.MimeType == "" {
+		ref.MimeType = document.DetectMimeTypeFromPath(ref.Path)
 	}
-	normPath, err := r.workspace.UploadDocument(path, content, mimeType)
-	if err != nil {
-		return err
-	}
-	inc := false
-	if len(includeInNextTurn) > 0 {
-		inc = includeInNextTurn[0]
-	}
+	r.upsertPendingRef(ref)
+	return nil
+}
+
+// AddFileRef registers a file reference for the next turn.
+func (r *AgentContext) AddFileRef(path string, includeInPrompt bool, mimeType string) error {
 	mime := mimeType
 	if mime == "" {
-		mime = document.DetectMimeTypeFromPath(normPath)
+		mime = document.DetectMimeTypeFromPath(path)
 	}
-	for i := range r.pendingRefs {
-		if r.pendingRefs[i].Path != normPath {
-			continue
-		}
-		slog.Error("duplicated file ref in upload", "path", normPath)
-		return nil
-	}
-	r.pendingRefs = append(r.pendingRefs, FileRefEntry{
-		Path:            normPath,
-		IncludeInPrompt: inc,
+	r.upsertPendingRef(FileRef{
+		Path:            path,
+		IncludeInPrompt: includeInPrompt,
 		MimeType:        mime,
-		UserUpload:      true,
 	})
 	return nil
 }
 
-func (r *AgentContext) RemoveDocument(path string) error {
-	if r.workspace == nil {
-		return fmt.Errorf("workspace not set")
+func (r *AgentContext) upsertPendingRef(ref FileRef) {
+	for i := range r.pendingRefs {
+		if r.pendingRefs[i].Path != ref.Path || r.pendingRefs[i].BasePath != ref.BasePath {
+			continue
+		}
+		if ref.BasePath != "" {
+			r.pendingRefs[i].BasePath = ref.BasePath
+		}
+		if ref.MimeType != "" {
+			r.pendingRefs[i].MimeType = ref.MimeType
+		}
+		if ref.ToolID != "" {
+			r.pendingRefs[i].ToolID = ref.ToolID
+		}
+		r.pendingRefs[i].IncludeInPrompt = r.pendingRefs[i].IncludeInPrompt || ref.IncludeInPrompt
+		r.pendingRefs[i].Ephemeral = r.pendingRefs[i].Ephemeral || ref.Ephemeral
+		if meta := ref.Meta(); len(meta) > 0 {
+			r.pendingRefs[i].SetMeta(meta)
+		}
+		return
 	}
-	return r.workspace.RemoveDocument(path)
-}
-
-func (r *AgentContext) GetDocument(path string) *document.Document {
-	if r.workspace == nil {
-		return nil
-	}
-	return r.workspace.GetDocument(path)
+	r.pendingRefs = append(r.pendingRefs, ref)
 }
 
 func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *AgentContext {
@@ -367,20 +367,6 @@ func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *Age
 	}
 	r.conversationHistory = history
 	return r
-}
-
-func (r *AgentContext) GetDocuments() []*document.Document {
-	if r.workspace == nil {
-		return []*document.Document{}
-	}
-	return r.workspace.GetDocuments()
-}
-
-func (r *AgentContext) GetUploadDocuments() []*document.Document {
-	if r.workspace == nil {
-		return []*document.Document{}
-	}
-	return r.workspace.GetUploadDocuments()
 }
 
 func (r *AgentContext) GetHistory() *ConversationHistory {
@@ -493,7 +479,9 @@ func (r *AgentContext) StartTurn(userMessage string) *Turn {
 	r.currentTurn = turn
 	r.currentTurn.UserMessage = userMessage
 	r.currentTurn.Request = ai.UserMessage{Role: ai.UserRole, Content: userMessage}
-	r.currentTurn.FileRefs = append(r.currentTurn.FileRefs, r.pendingRefs...)
+	for _, f := range r.pendingRefs {
+		r.currentTurn.AddFile(f)
+	}
 	r.pendingRefs = nil
 	return r.currentTurn
 }
@@ -517,29 +505,13 @@ func (r *AgentContext) Turn() *Turn {
 	return r.currentTurn
 }
 
-func (r *AgentContext) ClearDocuments() *AgentContext {
-	store, err := r.workspace.uploadStore()
-	if err != nil {
-		return r
-	}
-	ids, err := store.List(context.Background())
-	if err != nil {
-		return r
-	}
-	for _, id := range ids {
-		_ = document.Delete(context.Background(), store.ID(), id)
-	}
-	return r
-}
-
 func (r *AgentContext) ClearHistory() *AgentContext {
 	r.conversationHistory.Clear()
 	return r
 }
 
 func (r *AgentContext) ClearAll() *AgentContext {
-	ctx := r.ClearDocuments().
-		ClearHistory().
+	ctx := r.ClearHistory().
 		SetSystemPart(SystemPartKeyOutputInstructions, "")
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx

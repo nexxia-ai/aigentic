@@ -3,14 +3,26 @@ package run
 import (
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/ctxt"
-	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 )
 
-func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string, fileRefs []ctxt.FileRefEntry) {
+func filesForToolEvent(group *ToolCallGroup, toolCallID string, turn *ctxt.Turn) []ctxt.FileRef {
+	if group.FileRefs != nil {
+		if refs := group.FileRefs[toolCallID]; len(refs) > 0 {
+			return refs
+		}
+	}
+	return turn.FilesForTool(toolCallID)
+}
+
+func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string, fileRefs []ctxt.FileRef) {
 	// Store original content for user-facing display
 	action.Group.UserResponses[action.ToolCallID] = content
-	
+	if action.Group.FileRefs == nil {
+		action.Group.FileRefs = make(map[string][]ctxt.FileRef)
+	}
+	action.Group.FileRefs[action.ToolCallID] = fileRefs
+
 	// For LLM: include file content in the tool message
 	llmContent := content
 	if len(fileRefs) > 0 {
@@ -36,23 +48,18 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string,
 		for _, tc := range action.Group.AIMessage.ToolCalls {
 			if response, exists := action.Group.Responses[tc.ID]; exists {
 				turn.AddMessage(response)
-				var docs []*document.Document
-				for _, entry := range turn.Documents {
-					if entry.ToolID == tc.ID || entry.ToolID == "" {
-						docs = append(docs, entry.Document)
-					}
-				}
+				files := filesForToolEvent(action.Group, tc.ID, turn)
 				userContent := action.Group.UserResponses[tc.ID]
-				event := &event.ToolResponseEvent{
+				ev := &event.ToolResponseEvent{
 					RunID:      r.id,
 					AgentName:  r.AgentName(),
 					SessionID:  r.sessionID,
 					ToolCallID: response.ToolCallID,
 					ToolName:   response.ToolName,
 					Content:    userContent,
-					Documents:  docs,
+					Files:      files,
 				}
-				r.queueEvent(event)
+				r.queueEvent(ev)
 			}
 		}
 

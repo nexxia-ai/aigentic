@@ -24,8 +24,8 @@ github.com/mark3labs/mcp-go v0.43.0 h1:lgiKcWMddh4sngbU+hoWOZ9iAe/qp/m851RQpj3Y7
 github.com/mark3labs/mcp-go v0.43.0/go.mod h1:YnJfOL382MIWDx1kMY+2zsRHU/q78dBg9aFb8W6Thdw=
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e h1:fD57ERR4JtEqsWbfPhv4DMiApHyliiK5xCTNVSPiaAs=
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
-github.com/openai/openai-go/v3 v3.16.0 h1:VdqS+GFZgAvEOBcWNyvLVwPlYEIboW5xwiUCcLrVf8c=
-github.com/openai/openai-go/v3 v3.16.0/go.mod h1:cdufnVK14cWcT9qA1rRtrXx4FTRsgbDPW7Ia7SS5cZo=
+github.com/openai/openai-go/v3 v3.28.0 h1:2+FfrCVMdGXSQrBv1tLWtokm+BU7+3hJ/8rAHPQ63KM=
+github.com/openai/openai-go/v3 v3.28.0/go.mod h1:cdufnVK14cWcT9qA1rRtrXx4FTRsgbDPW7Ia7SS5cZo=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rogpeppe/go-internal v1.11.0 h1:cWPaGQEPrBb5/AsnsZesgZZ9yb1OQ+GOISoDNXVBh4M=

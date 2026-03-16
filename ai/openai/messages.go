@@ -385,7 +385,7 @@ func fromResponsesOutput(resp *responses.Response) ai.AIMessage {
 					ID:   outputItem.CallID,
 					Type: "function",
 					Name: outputItem.Name,
-					Args: outputItem.Arguments,
+					Args: argumentsToString(outputItem.Arguments),
 				})
 			}
 		}

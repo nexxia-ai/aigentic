@@ -196,10 +196,14 @@ go run github.com/nexxia-ai/aigentic-examples/tools@latest
 
 #### Advanced Tools with File References
 
-Tools can register files to be automatically included in the next turn's prompt using `ToolCallResult`. You can either call `ctx.UploadDocument()` to register files for the next turn, or return `FileRefs` in `ToolCallResult` to include content in the current turn's tool response and optionally later prompts; returning `FileRefs` is often sufficient.
+Tools can register files to be automatically included in the next turn's prompt using `ToolCallResult`. Return `FileRefs` in `ToolCallResult` to include content in the current turn's tool response and optionally later prompts. Paths are relative to the run workspace `llm/` directory.
 
 ```go
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/run"
@@ -221,18 +225,12 @@ func createReportGeneratorTool() run.AgentTool {
 		},
 		Execute: func(run *run.AgentRun, args map[string]interface{}) (*run.ToolCallResult, error) {
 			title := args["title"].(string)
-			
-			// Generate report content
 			reportContent := fmt.Sprintf("# %s\n\nReport content here...", title)
-			
-			// Save to file
-			ctx := run.AgentContext()
-			err := ctx.UploadDocument("output/report.md", []byte(reportContent), "text/markdown", true)
-			if err != nil {
-				return nil, err
-			}
-			
-			// Return result with file reference
+			// Write to workspace output dir; path is relative to llm/
+			ws := run.AgentContext().Workspace()
+			outPath := filepath.Join(ws.LLMDir, "output", "report.md")
+			_ = os.MkdirAll(filepath.Dir(outPath), 0755)
+			_ = os.WriteFile(outPath, []byte(reportContent), 0644)
 			return &run.ToolCallResult{
 				Result: &ai.ToolResult{
 					Content: []ai.ToolContent{{
@@ -240,7 +238,7 @@ func createReportGeneratorTool() run.AgentTool {
 						Content: "Report generated successfully at output/report.md",
 					}},
 				},
-				FileRefs: []ctxt.FileRefEntry{
+				FileRefs: []ctxt.FileRef{
 					{Path: "output/report.md", IncludeInPrompt: true},
 				},
 			}, nil
@@ -250,13 +248,13 @@ func createReportGeneratorTool() run.AgentTool {
 }
 ```
 
-When `IncludeInPrompt` is `true`, the file content is automatically injected into the next turn's context. `FileRefEntry` also supports `Ephemeral` (include only in this tool response, do not persist to turn history) and `MimeType` (for prompt injection). Set `ToolCallResult.Terminal` to `true` when the tool should end the run after execution (e.g. show-card style tools); no further LLM call is made.
+When `IncludeInPrompt` is `true`, the file content is automatically injected into the next turn's context. `FileRef` also supports `Ephemeral` (include only in this tool response, do not persist to turn history) and `MimeType` (for prompt injection). Set `ToolCallResult.Terminal` to `true` when the tool should end the run after execution (e.g. show-card style tools); no further LLM call is made.
 
 ### Document Usage
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/documents)
 
-Native document support with enhanced MIME type detection for text, code, and binary files. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents. Documents passed via `Agent.Documents` are stored in the run filesystem under `llm/uploads`.
+Native document support with enhanced MIME type detection for text, code, and binary files. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents. Files passed via `Agent.Files` are path-based refs; use `FileAttachmentsFromDocuments` to convert documents. Paths are resolved relative to the run workspace `llm/` directory.
 
 ```go
 package main
@@ -283,7 +281,7 @@ func main() {
 		Name:         "DocumentAnalyst",
 		Description:  "Analyzes documents and extracts insights",
 		Instructions: "Analyze the provided documents and summarize key findings.",
-		Documents:    []*document.Document{doc},
+		Files:        aigentic.FileAttachmentsFromDocuments([]*document.Document{doc}),
 	}
 
 	response, err := agent.Execute("What are the main points in this document?")
@@ -294,12 +292,12 @@ func main() {
 }
 ```
 
-If you have several documents, pass them via the `Documents` field; they are uploaded to the run filesystem and listed in the prompt for the LLM to reference.
+If you have several documents, convert them with `FileAttachmentsFromDocuments` and pass via the `Files` field; they are listed in the prompt for the LLM to reference.
 
 ```go
 agent := aigentic.Agent{
     ...
-    Documents: []*document.Document{doc},
+    Files: aigentic.FileAttachmentsFromDocuments([]*document.Document{doc1, doc2}),
     ...
 }
 ```
@@ -541,6 +539,12 @@ agent := aigentic.Agent{
 ```
 
 Create custom tools using `run.NewTool()` for type-safe tool definitions with automatic schema generation. For advanced use cases, tools can return `*run.ToolCallResult` directly to include file references.
+
+---
+
+## Migration Notes
+
+**Execution tools (batch, plans, dynamic planning)** were removed from the framework and moved to the orchestrator (`aigentic-desktop/orchestrator/tools`). Use `run.NewChildRun` and `ctxt.NewChild` for custom batch/plan implementations. **Agent.Documents** was replaced by **Agent.Files** (`[]ctxt.FileRef`); use `FileAttachmentsFromDocuments` to convert documents.
 
 ---
 

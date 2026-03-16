@@ -33,6 +33,38 @@ func createTestContext(t *testing.T, id, description, instructions string) *Agen
 	return ctx
 }
 
+func writeTestDocument(ctx *AgentContext, path string, content []byte) (string, error) {
+	ws := ctx.Workspace()
+	if ws == nil {
+		return "", os.ErrInvalid
+	}
+	fullPath := filepath.Join(ws.LLMDir, filepath.FromSlash(filepath.ToSlash(path)))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(fullPath, content, 0644); err != nil {
+		return "", err
+	}
+	return fullPath, nil
+}
+
+func attachTestDocument(ctx *AgentContext, path string, content []byte, mimeType string, includeInPrompt bool) error {
+	fullPath, err := writeTestDocument(ctx, path, content)
+	if err != nil {
+		return err
+	}
+	if mimeType == "" {
+		mimeType = document.DetectMimeTypeFromPath(fullPath)
+	}
+	ref := FileRef{
+		Path:            fullPath,
+		MimeType:        mimeType,
+		IncludeInPrompt: includeInPrompt,
+	}
+	ref.SetMeta(map[string]string{"visible_to_user": "true"})
+	return ctx.AddFile(ref)
+}
+
 func TestNew(t *testing.T) {
 	ctx := createTestContext(t, "test-id", "test description", "test instructions")
 
@@ -76,164 +108,64 @@ func TestSetSystemPart_OrderingUpsertRemove(t *testing.T) {
 	}
 }
 
-func TestUploadDocument(t *testing.T) {
-	tests := []struct {
-		name    string
-		uploads []struct {
-			path    string
-			content []byte
-		}
-		wantCount int
-	}{
-		{
-			name: "add single document",
-			uploads: []struct {
-				path    string
-				content []byte
-			}{{"uploads/test.pdf", []byte("content")}},
-			wantCount: 1,
-		},
-		{
-			name: "add multiple documents",
-			uploads: []struct {
-				path    string
-				content []byte
-			}{
-				{"uploads/test1.pdf", []byte("content1")},
-				{"uploads/test2.txt", []byte("content2")},
-				{"uploads/test3.png", []byte("content3")},
-			},
-			wantCount: 3,
-		},
-	}
+func TestChildContextAddFileRefCarriesIntoTurn(t *testing.T) {
+	baseDir := t.TempDir()
+	parent, err := New("parent-run", "desc", "inst", baseDir)
+	require.NoError(t, err)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := createTestContext(t, "id", "desc", "inst")
-			for _, u := range tt.uploads {
-				if err := ctx.UploadDocument(u.path, u.content, ""); err != nil {
-					t.Fatalf("UploadDocument: %v", err)
-				}
-			}
+	fullPath, err := writeTestDocument(parent, "uploads/test.png", []byte("image-bytes"))
+	require.NoError(t, err)
 
-			got := len(ctx.GetDocuments())
-			if got != tt.wantCount {
-				t.Errorf("expected %d documents, got %d", tt.wantCount, got)
-			}
-		})
-	}
+	privateDir := filepath.Join(parent.Workspace().PrivateDir, "batch", "item-0")
+	child, err := NewChild("child-run", "child desc", "child inst", privateDir, parent.Workspace().LLMDir, parent.BasePath())
+	require.NoError(t, err)
+
+	err = child.AddFileRef(fullPath, true, "image/png")
+	require.NoError(t, err)
+
+	turn := child.StartTurn("Process uploads/test.png")
+	require.Len(t, turn.Files, 1)
+	require.Equal(t, fullPath, turn.Files[0].Path)
+	require.True(t, turn.Files[0].IncludeInPrompt)
+	require.Equal(t, "image/png", turn.Files[0].MimeType)
 }
 
-func TestRemoveDocument(t *testing.T) {
-	tests := []struct {
-		name  string
-		setup []struct {
-			path    string
-			content []byte
-		}
-		remove    string
-		wantErr   bool
-		wantCount int
-	}{
-		{
-			name: "remove existing document",
-			setup: []struct {
-				path    string
-				content []byte
-			}{{"uploads/test.pdf", []byte("content")}},
-			remove:    "uploads/test.pdf",
-			wantErr:   false,
-			wantCount: 0,
-		},
-		{
-			name: "remove non-existing document",
-			setup: []struct {
-				path    string
-				content []byte
-			}{{"uploads/test.pdf", []byte("content")}},
-			remove:    "uploads/other.pdf",
-			wantErr:   true,
-			wantCount: 1,
-		},
-		{
-			name: "remove from middle",
-			setup: []struct {
-				path    string
-				content []byte
-			}{{"uploads/test1.pdf", []byte("c1")}, {"uploads/test2.pdf", []byte("c2")}, {"uploads/test3.pdf", []byte("c3")}},
-			remove:    "uploads/test2.pdf",
-			wantErr:   false,
-			wantCount: 2,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := createTestContext(t, "id", "desc", "inst")
-			for _, u := range tt.setup {
-				if err := ctx.UploadDocument(u.path, u.content, ""); err != nil {
-					t.Fatalf("UploadDocument: %v", err)
-				}
-			}
-
-			err := ctx.RemoveDocument(tt.remove)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("RemoveDocument() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			got := len(ctx.GetDocuments())
-			if got != tt.wantCount {
-				t.Errorf("expected %d documents, got %d", tt.wantCount, got)
-			}
-		})
-	}
-}
-
-func TestRemoveDocumentByPath(t *testing.T) {
+func TestAttachDocumentAndAddFileRefDedupesPendingRef(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
-	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1"), ""); err != nil {
-		t.Fatalf("UploadDocument: %v", err)
-	}
-	if err := ctx.UploadDocument("uploads/test2.pdf", []byte("content2"), ""); err != nil {
-		t.Fatalf("UploadDocument: %v", err)
-	}
 
-	err := ctx.RemoveDocument("uploads/test1.pdf")
-	if err != nil {
-		t.Errorf("RemoveDocument() error = %v", err)
+	fullPath, err := writeTestDocument(ctx, "uploads/test.png", []byte("image-bytes"))
+	require.NoError(t, err)
+	ref := FileRef{
+		Path:            fullPath,
+		MimeType:        "image/png",
+		IncludeInPrompt: true,
 	}
+	ref.SetMeta(map[string]string{"visible_to_user": "true"})
+	err = ctx.AddFile(ref)
+	require.NoError(t, err)
+	err = ctx.AddFileRef(fullPath, true, "")
+	require.NoError(t, err)
 
-	docs := ctx.GetDocuments()
-	if len(docs) != 1 {
-		t.Errorf("expected 1 document, got %d", len(docs))
-	}
-	if len(docs) > 0 && docs[0].ID() != "uploads/test2.pdf" {
-		t.Errorf("expected remaining document to be uploads/test2.pdf, got %s", docs[0].ID())
-	}
-
-	err = ctx.RemoveDocument("uploads/nonexistent")
-	if err == nil {
-		t.Error("expected error when removing non-existent document")
-	}
+	turn := ctx.StartTurn("Process uploads/test.png")
+	require.Len(t, turn.Files, 1)
+	require.Equal(t, fullPath, turn.Files[0].Path)
+	require.True(t, turn.Files[0].IncludeInPrompt)
+	require.Equal(t, "image/png", turn.Files[0].MimeType)
+	require.Equal(t, "true", turn.Files[0].GetMeta("visible_to_user"))
 }
 
 func TestChainableMethods(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
 	ctx.SetSystemPart(SystemPartKeyOutputInstructions, "Use JSON")
-	if err := ctx.UploadDocument("uploads/test1.pdf", []byte("content1"), ""); err != nil {
-		t.Fatalf("UploadDocument: %v", err)
+	if err := attachTestDocument(ctx, "uploads/test1.pdf", []byte("content1"), "", false); err != nil {
+		t.Fatalf("attachTestDocument: %v", err)
 	}
-	if err := ctx.UploadDocument("uploads/test2.pdf", []byte("content2"), ""); err != nil {
-		t.Fatalf("UploadDocument: %v", err)
+	if err := attachTestDocument(ctx, "uploads/test2.pdf", []byte("content2"), "", false); err != nil {
+		t.Fatalf("attachTestDocument: %v", err)
 	}
 
 	if out, ok := ctx.PromptPart(SystemPartKeyOutputInstructions); !ok || out != "Use JSON" {
 		t.Errorf("expected output instructions 'Use JSON', got %q (ok=%v)", out, ok)
-	}
-
-	docCount := len(ctx.GetDocuments())
-	if docCount != 2 {
-		t.Errorf("expected 2 documents, got %d", docCount)
 	}
 }
 
@@ -245,16 +177,6 @@ func TestClearMethods(t *testing.T) {
 		check     func(*AgentContext) int
 		wantCount int
 	}{
-		{
-			name: "clear documents",
-			setup: func(ctx *AgentContext) {
-				_ = ctx.UploadDocument("uploads/test1.pdf", []byte("c"), "")
-				_ = ctx.UploadDocument("uploads/test2.pdf", []byte("c"), "")
-			},
-			clear:     func(ctx *AgentContext) { ctx.ClearDocuments() },
-			check:     func(ctx *AgentContext) int { return len(ctx.GetDocuments()) },
-			wantCount: 0,
-		},
 		{
 			name: "clear history",
 			setup: func(ctx *AgentContext) {
@@ -281,17 +203,10 @@ func TestClearMethods(t *testing.T) {
 
 func TestClearAll(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
-	if err := ctx.UploadDocument("uploads/test.pdf", []byte("content"), ""); err != nil {
-		t.Fatalf("UploadDocument: %v", err)
-	}
-
 	appendTestTurns(ctx, 1)
 
 	ctx.ClearAll()
 
-	if len(ctx.GetDocuments()) != 0 {
-		t.Errorf("expected 0 documents after ClearAll, got %d", len(ctx.GetDocuments()))
-	}
 	if ctx.GetHistory().Len() != 0 {
 		t.Errorf("expected 0 history turns after ClearAll, got %d", ctx.GetHistory().Len())
 	}

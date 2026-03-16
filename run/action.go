@@ -26,7 +26,7 @@ func (*toolCallAction) isAction() {}
 type toolResponseAction struct {
 	request  *toolCallAction
 	response string
-	fileRefs []ctxt.FileRefEntry
+	fileRefs []ctxt.FileRef
 }
 
 func (*toolResponseAction) isAction() {}

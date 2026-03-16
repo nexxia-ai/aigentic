@@ -2,9 +2,9 @@ package ctxt
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -113,50 +113,26 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 }
 
 func createDocsMsg(ac *AgentContext) (ai.Message, error) {
-	docs := ac.GetDocuments()
 	turn := ac.Turn()
-
-	if len(docs) == 0 && (turn == nil || len(turn.FileRefs) == 0) {
+	if turn == nil || len(turn.Files) == 0 {
 		return nil, nil
 	}
 
 	seenPath := make(map[string]bool)
 	norm := func(p string) string { return filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/")) }
 
-	var allDocs []*document.Document
-	for _, doc := range docs {
-		if doc != nil && doc.Filename != "" {
-			id := norm(doc.ID())
-			if id != "" && !seenPath[id] {
-				seenPath[id] = true
-				allDocs = append(allDocs, doc)
-			}
-		}
-	}
-
 	var promptBuf bytes.Buffer
 	promptBuf.WriteString("The following documents are available in this session:\n")
-	for _, doc := range allDocs {
-		mimeType := doc.MimeType
-		if mimeType == "" {
-			mimeType = "unknown"
+	for _, ref := range turn.Files {
+		p := norm(ref.Path)
+		if p == "" || seenPath[p] {
+			continue
 		}
-		promptBuf.WriteString(fmt.Sprintf("  %s, Filename: %s, Type: %s\n", doc.ID(), doc.Filename, mimeType))
-	}
-
-	// Show FileRefs with MimeType when available
-	if turn != nil {
-		for _, ref := range turn.FileRefs {
-			p := norm(ref.Path)
-			if p == "" || seenPath[p] {
-				continue
-			}
-			seenPath[p] = true
-			if ref.MimeType != "" {
-				promptBuf.WriteString(fmt.Sprintf("  %s, Type: %s\n", ref.Path, ref.MimeType))
-			} else {
-				promptBuf.WriteString(fmt.Sprintf("  %s\n", ref.Path))
-			}
+		seenPath[p] = true
+		if ref.MimeType != "" {
+			promptBuf.WriteString(fmt.Sprintf("  %s, Type: %s\n", ref.Path, ref.MimeType))
+		} else {
+			promptBuf.WriteString(fmt.Sprintf("  %s\n", ref.Path))
 		}
 	}
 
@@ -175,7 +151,7 @@ func createUserMsg(ac *AgentContext, message string) (ai.Message, error) {
 	seenPath := make(map[string]bool)
 	if t := ac.Turn(); t != nil {
 		turnTags = t.TurnTags()
-		for _, ref := range t.FileRefs {
+		for _, ref := range t.Files {
 			p := norm(ref.Path)
 			if p != "" && !seenPath[p] {
 				seenPath[p] = true
@@ -229,20 +205,13 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		msgs = append(msgs, userMsg)
 	}
 
-	// Add documents second (including memory files)
-	msgs = append(msgs, r.insertDocuments(r.Turn().GetDocuments())...)
-
-	// Add ephemeral document content for FileRefs with IncludeInPrompt
-	for _, ref := range r.currentTurn.FileRefs {
-		if !ref.IncludeInPrompt {
-			continue
-		}
-		doc, err := r.openDocumentByPath(ref.Path)
+	// Add document content for files with IncludeInPrompt
+	for _, ref := range r.currentTurn.PromptFiles() {
+		doc, err := OpenFileRef(ref)
 		if err != nil {
 			slog.Warn("failed to open file for prompt", "path", ref.Path, "error", err)
 			continue
 		}
-		// Use Python-provided MIME type if available
 		if ref.MimeType != "" {
 			doc.MimeType = ref.MimeType
 		}
@@ -255,13 +224,26 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	return msgs, nil
 }
 
-func (r *AgentContext) openDocumentByPath(path string) (*document.Document, error) {
-	if r.workspace == nil {
-		return nil, fmt.Errorf("workspace not set")
+func OpenFileRef(ref FileRef) (*document.Document, error) {
+	resolvedPath := strings.TrimSpace(ref.Path)
+	if strings.TrimSpace(ref.BasePath) != "" && !filepath.IsAbs(resolvedPath) {
+		resolvedPath = filepath.Join(ref.BasePath, filepath.FromSlash(resolvedPath))
 	}
-	store, err := r.workspace.llmStore()
+	if resolvedPath == "" {
+		return nil, fmt.Errorf("file path not set")
+	}
+	data, err := os.ReadFile(resolvedPath)
 	if err != nil {
 		return nil, err
 	}
-	return document.Open(context.Background(), store.ID(), path)
+	name := filepath.Base(resolvedPath)
+	if name == "." || name == "" || name == string(filepath.Separator) {
+		name = filepath.Base(resolvedPath)
+	}
+	doc := document.NewInMemoryDocument("", name, data, nil)
+	doc.FilePath = resolvedPath
+	if ref.MimeType != "" {
+		doc.MimeType = ref.MimeType
+	}
+	return doc, nil
 }

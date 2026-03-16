@@ -5,7 +5,7 @@ go 1.24.3
 require (
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.43.0
-	github.com/openai/openai-go/v3 v3.16.0
+	github.com/openai/openai-go/v3 v3.28.0
 	github.com/stretchr/testify v1.11.1
 	gopkg.in/yaml.v3 v3.0.1
 )

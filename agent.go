@@ -14,6 +14,36 @@ import (
 	"github.com/nexxia-ai/aigentic/run"
 )
 
+// FileAttachmentsFromDocuments converts documents to file refs for agent runs.
+func FileAttachmentsFromDocuments(docs []*document.Document) []ctxt.FileRef {
+	var out []ctxt.FileRef
+	for _, doc := range docs {
+		if doc == nil {
+			continue
+		}
+		basePath := ""
+		path := doc.FilePath
+		if path == "" {
+			path = doc.Filename
+		}
+		if path == "" {
+			path = doc.ID()
+		}
+		if filepath.IsAbs(path) {
+			basePath = filepath.Dir(path)
+			path = filepath.Base(path)
+		}
+		ref := ctxt.FileRef{
+			BasePath:        basePath,
+			Path:            path,
+			MimeType:        doc.MimeType,
+			IncludeInPrompt: true,
+		}
+		out = append(out, ref)
+	}
+	return out
+}
+
 // ContextFunction is a function that provides dynamic context for the agent.
 // It receives the AgentRun and returns a context string to be included in every LLM call.
 // If an error occurs, the error message will be included in the context.
@@ -25,10 +55,6 @@ type Agent struct {
 	Name       string
 	Agents     []Agent
 	AgentTools []run.AgentTool
-
-	// DynamicPlanning enables runtime plan creation.
-	// When true, the platform injects a planner sub-agent, create_plan, and execute_plan tools.
-	DynamicPlanning bool
 
 	// Description should contain a description of the agent's role and capabilities.
 	// It will be added to the system prompt. If this is a sub-agent, the Description is passed to the parent agent.
@@ -57,9 +83,8 @@ type Agent struct {
 	Retries int
 	Stream  bool
 
-	// Documents contains a list of documents to be embedded in the agent's context.
-	// You must manage the document sizes so they don't exceed the model's context window.
-	Documents []*document.Document
+	// Files contains file refs to attach when starting a run.
+	Files []ctxt.FileRef
 
 	EnableTrace bool
 
@@ -114,26 +139,13 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetStreaming(a.Stream)
 	ar.AgentContext().SetSystemPart(ctxt.SystemPartKeyOutputInstructions, a.OutputInstructions)
 	ar.SetLogLevel(a.LogLevel)
-	ar.SetDynamicPlanning(a.DynamicPlanning)
 	for _, agent := range a.Agents {
 		ar.AddSubAgent(agent.Name, agent.Description, agent.Instructions, agent.Model, agent.AgentTools)
 	}
 
-	for _, doc := range a.Documents {
-		content, err := doc.Bytes()
-		if err != nil {
-			slog.Warn("failed to read document for upload", "filename", doc.Filename, "error", err)
-			continue
-		}
-		path := "uploads/" + doc.Filename
-		if path == "uploads/" {
-			path = "uploads/" + filepath.Base(doc.FilePath)
-		}
-		if path == "uploads/" {
-			path = "uploads/" + doc.ID()
-		}
-		if err := ar.AgentContext().UploadDocument(path, content, ""); err != nil {
-			slog.Warn("failed to upload document", "path", path, "error", err)
+	for _, f := range a.Files {
+		if err := ar.AgentContext().AddFile(f); err != nil {
+			slog.Warn("failed to attach file", "path", f.Path, "error", err)
 		}
 	}
 	ar.IncludeHistory(a.IncludeHistory)

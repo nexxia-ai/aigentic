@@ -8,22 +8,7 @@ import (
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
-	"github.com/nexxia-ai/aigentic/document"
 )
-
-type documentEntry struct {
-	Document *document.Document `json:"-"`
-	ToolID   string             `json:"tool_id"`
-}
-
-type FileRefEntry struct {
-	Path            string `json:"path"`
-	FileID          string `json:"file_id,omitempty"`
-	IncludeInPrompt bool   `json:"include_in_prompt"`
-	MimeType        string `json:"mime_type,omitempty"`
-	Ephemeral       bool   `json:"ephemeral"`
-	UserUpload      bool   `json:"user_upload"`
-}
 
 type tag struct {
 	Name    string `json:"name"`
@@ -44,8 +29,7 @@ type Turn struct {
 	UserMessage  string            `json:"user_message"`
 	messages     []ai.Message      `json:"-"`
 	Reply        ai.Message        `json:"-"`
-	Documents    []documentEntry   `json:"-"`
-	FileRefs     []FileRefEntry    `json:"file_refs"`
+	Files        []FileRef         `json:"files"`
 	TraceFile    string            `json:"trace_file"`
 	Timestamp    time.Time         `json:"timestamp"`
 	AgentName    string            `json:"agent_name"`
@@ -63,8 +47,7 @@ func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) 
 		Request:      ai.UserMessage{Role: ai.UserRole, Content: userMessage},
 		UserMessage:  userMessage,
 		messages:     make([]ai.Message, 0),
-		Documents:    make([]documentEntry, 0),
-		FileRefs:     make([]FileRefEntry, 0),
+		Files:        make([]FileRef, 0),
 		TraceFile:    "",
 		Timestamp:    time.Now(),
 		AgentName:    agentName,
@@ -77,18 +60,46 @@ func (t *Turn) AddMessage(msg ai.Message) {
 	t.messages = append(t.messages, msg)
 }
 
-func (t *Turn) AddDocument(toolID string, doc *document.Document) error {
-	if doc == nil {
-		return fmt.Errorf("document cannot be nil")
+func (t *Turn) AddFile(ref FileRef) {
+	t.Files = append(t.Files, ref)
+}
+
+func (t *Turn) PromptFiles() []FileRef {
+	var out []FileRef
+	for _, f := range t.Files {
+		if f.IncludeInPrompt {
+			out = append(out, f)
+		}
 	}
+	return out
+}
 
-	entry := documentEntry{
-		Document: doc,
-		ToolID:   toolID,
+func (t *Turn) FilesForTool(toolID string) []FileRef {
+	var out []FileRef
+	for _, f := range t.Files {
+		if f.ToolID == toolID {
+			out = append(out, f)
+		}
 	}
+	return out
+}
 
-	t.Documents = append(t.Documents, entry)
+func (t *Turn) SetFileMeta(path string, meta map[string]string) error {
+	for i := range t.Files {
+		if t.Files[i].Path == path {
+			t.Files[i].SetMeta(meta)
+			return nil
+		}
+	}
+	return fmt.Errorf("file not found: %s", path)
+}
 
+func (t *Turn) FileMeta(path string) map[string]string {
+	for i := range t.Files {
+		if t.Files[i].Path == path {
+			return t.Files[i].Meta()
+		}
+	}
 	return nil
 }
 
@@ -165,19 +176,6 @@ func (t *Turn) saveMeta() error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func (t *Turn) DeleteDocument(doc *document.Document) error {
-	if doc == nil {
-		return fmt.Errorf("document cannot be nil")
-	}
-	for i := range t.Documents {
-		if t.Documents[i].Document.ID() == doc.ID() {
-			t.Documents = append(t.Documents[:i], t.Documents[i+1:]...)
-			return nil
-		}
-	}
-	return nil
-}
-
 func (t *Turn) InjectSystemTag(tagName string, content string) {
 	t.systemTags = append(t.systemTags, tag{
 		Name:    tagName,
@@ -197,12 +195,10 @@ func (t *Turn) InjectTurnTag(tagName string, content string) {
 	t.turnTags = append(t.turnTags, ai.KeyValue{Key: tagName, Value: content})
 }
 
-// AppendTurnTags appends key-value pairs to the turn's user-prompt list (e.g. from Run() metadata).
 func (t *Turn) AppendTurnTags(kv []ai.KeyValue) {
 	t.turnTags = append(t.turnTags, kv...)
 }
 
-// SetMeta merges meta into the turn's metadata. Empty string deletes the key.
 func (t *Turn) SetMeta(meta map[string]string) {
 	if t.meta == nil {
 		t.meta = make(map[string]string)
@@ -220,7 +216,6 @@ func (t *Turn) SetMeta(meta map[string]string) {
 	_ = t.saveMeta()
 }
 
-// Meta returns a copy of the turn's metadata, or nil if empty.
 func (t *Turn) Meta() map[string]string {
 	if len(t.meta) == 0 {
 		return nil
@@ -232,7 +227,6 @@ func (t *Turn) Meta() map[string]string {
 	return out
 }
 
-// TurnTags returns the turn's key-value list for the user prompt (caller metadata + InjectTurnTag).
 func (t *Turn) TurnTags() []ai.KeyValue {
 	if t.turnTags == nil {
 		return nil
@@ -240,14 +234,6 @@ func (t *Turn) TurnTags() []ai.KeyValue {
 	out := make([]ai.KeyValue, len(t.turnTags))
 	copy(out, t.turnTags)
 	return out
-}
-
-func (t *Turn) GetDocuments() []*document.Document {
-	docs := make([]*document.Document, len(t.Documents))
-	for i, docEntry := range t.Documents {
-		docs[i] = docEntry.Document
-	}
-	return docs
 }
 
 func lastAssistantMessage(msgs []ai.Message) ai.Message {
@@ -294,14 +280,6 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		return mj
 	}
 
-	type documentJSON struct {
-		ID       string `json:"id"`
-		Filename string `json:"filename"`
-		FilePath string `json:"file_path"`
-		MimeType string `json:"mime_type"`
-		ToolID   string `json:"tool_id"`
-	}
-
 	var request *messageJSON
 	if t.Request != nil {
 		request = messageToJSON(t.Request)
@@ -315,40 +293,35 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		messages = []*messageJSON{messageToJSON(t.Reply)}
 	}
 
-	documents := make([]documentJSON, len(t.Documents))
-	for i, docEntry := range t.Documents {
-		if docEntry.Document != nil {
-			documents[i] = documentJSON{
-				ID:       docEntry.Document.ID(),
-				Filename: docEntry.Document.Filename,
-				FilePath: docEntry.Document.FilePath,
-				MimeType: docEntry.Document.MimeType,
-				ToolID:   docEntry.ToolID,
-			}
-		} else {
-			documents[i] = documentJSON{
-				ToolID: docEntry.ToolID,
-			}
-		}
-	}
-
 	return json.Marshal(&struct {
 		*Alias
-		Request    *messageJSON   `json:"request"`
+		Request    *messageJSON `json:"request"`
 		Messages   []*messageJSON `json:"messages"`
-		Reply      *messageJSON   `json:"-"`
-		Documents  []documentJSON `json:"documents"`
-		SystemTags []tag          `json:"system_tags"`
-		TurnTags   []ai.KeyValue  `json:"turn_tags"`
+		Reply      *messageJSON `json:"-"`
+		SystemTags []tag        `json:"system_tags"`
+		TurnTags   []ai.KeyValue `json:"turn_tags"`
 	}{
 		Alias:      (*Alias)(t),
 		Request:    request,
 		Messages:   messages,
 		Reply:      nil,
-		Documents:  documents,
 		SystemTags: t.systemTags,
 		TurnTags:   t.turnTags,
 	})
+}
+
+type legacyDocumentJSON struct {
+	FilePath string `json:"file_path"`
+	MimeType string `json:"mime_type"`
+	ToolID   string `json:"tool_id"`
+}
+
+type legacyFileRefEntry struct {
+	Path            string `json:"path"`
+	IncludeInPrompt bool   `json:"include_in_prompt"`
+	MimeType        string `json:"mime_type,omitempty"`
+	Ephemeral       bool   `json:"ephemeral"`
+	UserUpload      bool   `json:"user_upload"`
 }
 
 func (t *Turn) UnmarshalJSON(data []byte) error {
@@ -387,22 +360,16 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	type documentJSON struct {
-		ID       string `json:"id"`
-		Filename string `json:"filename"`
-		FilePath string `json:"file_path"`
-		MimeType string `json:"mime_type"`
-		ToolID   string `json:"tool_id"`
-	}
-
 	aux := &struct {
 		*Alias
 		Request    *messageJSON   `json:"request"`
 		Messages   []*messageJSON `json:"messages"`
 		Reply      *messageJSON   `json:"reply,omitempty"`
-		Documents  []documentJSON `json:"documents"`
 		SystemTags []tag          `json:"system_tags"`
 		TurnTags   []ai.KeyValue  `json:"turn_tags"`
+		Files      []FileRef      `json:"files"`
+		Documents  []legacyDocumentJSON `json:"documents"`
+		FileRefs   []legacyFileRefEntry `json:"file_refs"`
 	}{
 		Alias: (*Alias)(t),
 	}
@@ -421,21 +388,6 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 	}
 	t.Reply = lastAssistantMessage(t.messages)
 
-	t.Documents = make([]documentEntry, len(aux.Documents))
-	for i, dj := range aux.Documents {
-		t.Documents[i] = documentEntry{
-			ToolID: dj.ToolID,
-		}
-		if dj.FilePath != "" {
-			doc := &document.Document{
-				Filename: dj.Filename,
-				FilePath: dj.FilePath,
-				MimeType: dj.MimeType,
-			}
-			t.Documents[i].Document = doc
-		}
-	}
-
 	if aux.SystemTags != nil {
 		t.systemTags = aux.SystemTags
 	} else {
@@ -448,10 +400,32 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		t.turnTags = make([]ai.KeyValue, 0)
 	}
 
-	if aux.FileRefs != nil {
-		t.FileRefs = aux.FileRefs
+	if len(aux.Files) > 0 {
+		t.Files = aux.Files
 	} else {
-		t.FileRefs = make([]FileRefEntry, 0)
+		t.Files = make([]FileRef, 0)
+		for _, d := range aux.Documents {
+			if d.FilePath != "" {
+				t.Files = append(t.Files, FileRef{
+					Path:            d.FilePath,
+					MimeType:        d.MimeType,
+					ToolID:          d.ToolID,
+					IncludeInPrompt: true,
+				})
+			}
+		}
+		for _, ref := range aux.FileRefs {
+			f := FileRef{
+				Path:            ref.Path,
+				MimeType:        ref.MimeType,
+				IncludeInPrompt: ref.IncludeInPrompt,
+				Ephemeral:       ref.Ephemeral,
+			}
+			if ref.UserUpload {
+				f.SetMeta(map[string]string{"visible_to_user": "true"})
+			}
+			t.Files = append(t.Files, f)
+		}
 	}
 
 	return nil

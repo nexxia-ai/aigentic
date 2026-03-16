@@ -38,6 +38,7 @@ type AgentRun struct {
 	trace                Trace
 	enableTrace          bool
 	parentRun            *AgentRun
+	suppressParentEvents bool
 	Logger               *slog.Logger
 	logLevel             slog.LevelVar
 	maxLLMCalls          int
@@ -50,8 +51,6 @@ type AgentRun struct {
 
 	subAgents    []AgentTool
 	subAgentDefs map[string]subAgentDef
-
-	dynamicPlanning bool
 
 	turnMetrics turnMetrics
 	processWg   sync.WaitGroup
@@ -120,6 +119,39 @@ func (r *AgentRun) Cancel() {
 	if r.cancelFunc != nil {
 		r.cancelFunc()
 	}
+}
+
+// Context returns the run's context. Valid during tool execution.
+func (r *AgentRun) Context() context.Context {
+	return r.ctx
+}
+
+// NewChildRun creates a child AgentRun with shared LLM directory, inheriting trace and streaming from the parent.
+// Used by orchestrator-owned execution tools (batch, plan) that create child runs.
+func NewChildRun(parent *AgentRun, childName, description, instructions, privateDir string, model *ai.Model, tools []AgentTool) (*AgentRun, error) {
+	ws := parent.AgentContext().Workspace()
+	if ws == nil {
+		return nil, fmt.Errorf("parent has no workspace")
+	}
+	childCtx, err := ctxt.NewChild(childName, description, instructions, privateDir, ws.LLMDir, parent.AgentContext().BasePath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create child context: %w", err)
+	}
+	childRun, err := Continue(childCtx, model, tools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create child run: %w", err)
+	}
+	childRun.sysTools = nil
+	childRun.SetAgentName(childName)
+	childRun.trace = parent.trace
+	childRun.enableTrace = parent.enableTrace
+	childRun.parentRun = parent
+	childRun.suppressParentEvents = true
+	if parent.streaming {
+		childRun.SetStreaming(true)
+	}
+	childRun.Logger = parent.Logger.With("child", childName)
+	return childRun, nil
 }
 
 func (r *AgentRun) SetRetrievers(retrievers []Retriever) {
@@ -309,18 +341,6 @@ func (r *AgentRun) stop() {
 	close(r.eventQueue)
 }
 
-func (r *AgentRun) SetDynamicPlanning(enabled bool) {
-	r.dynamicPlanning = enabled
-}
-
-func (r *AgentRun) DynamicPlanning() bool {
-	return r.dynamicPlanning
-}
-
-func (r *AgentRun) SubAgentDefs() map[string]subAgentDef {
-	return r.subAgentDefs
-}
-
 func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Model, tools []AgentTool) {
 	agentTool := AgentTool{
 		Name:        name,
@@ -351,6 +371,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 			subRun.SetEnableTrace(r.enableTrace)
 			subRun.Logger = r.Logger.With("sub-agent", name)
 			subRun.parentRun = r
+			subRun.suppressParentEvents = true
 			if r.streaming {
 				subRun.SetStreaming(true)
 			}
@@ -466,7 +487,7 @@ func (r *AgentRun) runStopAction(act *stopAction) {
 }
 
 func (r *AgentRun) queueEvent(event event.Event) {
-	if r.parentRun != nil {
+	if r.parentRun != nil && !r.suppressParentEvents {
 		r.parentRun.queueEvent(event)
 	}
 	select {

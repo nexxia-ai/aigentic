@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/nexxia-ai/aigentic/ai"
@@ -116,10 +115,7 @@ func TestAgentFileAttachment(t *testing.T) {
 	agent := Agent{
 		Name:        "test-attachment-agent",
 		Description: "A test agent that handles file attachments",
-		Documents: []*document.Document{
-			doc1,
-			doc2,
-		},
+		Files:       FileAttachmentsFromDocuments([]*document.Document{doc1, doc2}),
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			receivedMessages = messages
 
@@ -357,154 +353,6 @@ func TestAgentMultipleToolRequestsWithSameTool(t *testing.T) {
 	assert.Equal(t, expectedToolResponses, actualToolResponses, "Tool response messages should have correct tool call IDs, tool names, and content that match the original requests")
 }
 
-func TestAgentBatchExecution(t *testing.T) {
-	var subAgentCallCount atomic.Int64
-	var callCount atomic.Int64
-
-	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-		n := callCount.Add(1)
-
-		// Check if this is the sub-agent (child run) -- it won't have tools
-		if len(tools) == 0 {
-			subAgentCallCount.Add(1)
-			for _, msg := range messages {
-				if um, ok := msg.(ai.UserMessage); ok {
-					return ai.AIMessage{
-						Role:    ai.AssistantRole,
-						Content: "Processed: " + um.Content,
-					}, nil
-				}
-			}
-			return ai.AIMessage{Role: ai.AssistantRole, Content: "no input"}, nil
-		}
-
-		// Main agent: first call triggers agent_batch
-		if n == 1 {
-			return ai.AIMessage{
-				Role: ai.AssistantRole,
-				ToolCalls: []ai.ToolCall{
-					{
-						ID:   "call_batch",
-						Type: "function",
-						Name: "agent_batch",
-						Args: `{"sub_agent": "worker", "description": "process items", "items": [{"item_id": "doc-1", "message": "analyse document 1"}, {"item_id": "doc-2", "message": "analyse document 2"}]}`,
-					},
-				},
-			}, nil
-		}
-
-		// Second call: summarize results
-		return ai.AIMessage{
-			Role:    ai.AssistantRole,
-			Content: "Batch completed. Both documents have been processed.",
-		}, nil
-	})
-
-	agent := Agent{
-		Name:        "batch-agent",
-		Description: "An agent that processes documents in batch",
-		Model:       model,
-		EnableTrace: true,
-	}
-
-	ar, err := agent.New()
-	assert.NoError(t, err)
-
-	ar.AddSubAgent("worker", "analyses documents", "You analyse documents and extract key data.", model, nil)
-	run.AddExecutionTools(ar, run.ExecutionToolsConfig{
-		BatchPolicy: &run.BatchPolicy{MaxConcurrency: 2, ContinueOnError: true},
-	})
-
-	ar.Run(context.Background(), "Process these two documents in batch", nil)
-	result, err := ar.Wait(0)
-
-	assert.NoError(t, err)
-	assert.Contains(t, result, "Batch completed")
-	assert.GreaterOrEqual(t, subAgentCallCount.Load(), int64(2), "Sub-agent should have been called at least twice (once per batch item)")
-}
-
-func TestAgentPlanExecution(t *testing.T) {
-	stepExecutions := make(map[string]bool)
-	callCount := 0
-
-	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
-		callCount++
-
-		// Child agent calls (no tools available)
-		if len(tools) == 0 {
-			for _, msg := range messages {
-				if um, ok := msg.(ai.UserMessage); ok {
-					if strings.Contains(um.Content, "extract") || strings.Contains(um.Content, "step-1") {
-						stepExecutions["extract"] = true
-					}
-					if strings.Contains(um.Content, "Previous step results") {
-						stepExecutions["review"] = true
-					}
-					return ai.AIMessage{
-						Role:    ai.AssistantRole,
-						Content: "Completed analysis: found key terms and dates",
-					}, nil
-				}
-			}
-			return ai.AIMessage{Role: ai.AssistantRole, Content: "done"}, nil
-		}
-
-		// Main agent: first call triggers plan tool
-		if callCount == 1 {
-			return ai.AIMessage{
-				Role: ai.AssistantRole,
-				ToolCalls: []ai.ToolCall{
-					{
-						ID:   "call_plan",
-						Type: "function",
-						Name: "doc_pipeline",
-						Args: `{"description": "process document", "inputs": {"extract": "extract key data from document"}}`,
-					},
-				},
-			}, nil
-		}
-
-		// Final response
-		return ai.AIMessage{
-			Role:    ai.AssistantRole,
-			Content: "Pipeline completed. Document has been extracted and reviewed.",
-		}, nil
-	})
-
-	agent := Agent{
-		Name:        "plan-agent",
-		Description: "An agent that runs document pipelines",
-		Model:       model,
-		EnableTrace: true,
-	}
-
-	ar, err := agent.New()
-	assert.NoError(t, err)
-
-	ar.AddSubAgent("analyser", "extracts data", "You extract key data from documents.", model, nil)
-	ar.AddSubAgent("reviewer", "reviews data", "You review extracted data for accuracy.", model, nil)
-	run.AddExecutionTools(ar, run.ExecutionToolsConfig{
-		Plans: []run.PlanDef{
-			{
-				Name:        "doc-pipeline",
-				Description: "Extract then review a document",
-				Steps: []run.PlanStep{
-					{ID: "extract", SubAgent: "analyser"},
-					{ID: "review", SubAgent: "reviewer", DependsOn: []string{"extract"}},
-				},
-			},
-		},
-	})
-
-	ar.Run(context.Background(), "Run the document pipeline", nil)
-	result, err := ar.Wait(0)
-
-	assert.NoError(t, err)
-	assert.Contains(t, result, "Pipeline completed")
-	assert.True(t, stepExecutions["extract"], "extract step should have executed")
-	assert.True(t, stepExecutions["review"], "review step should have executed (received upstream output)")
-}
-
 func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 
 	callCount := 0
@@ -582,34 +430,33 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 	}
 
 	var coordinatorChunks []string
-	var childAgentChunks []string
 	var toolCalls []string
+	var childAgentResponse string
 
 	for ev := range ar.Next() {
 		switch e := ev.(type) {
 		case *event.ContentEvent:
-			// Check if this is from the coordinator or child agent
 			switch e.AgentName {
 			case "coordinator":
 				assert.True(t, e.RunID == ar.ID(), "Content event have a different RunID from the coordinator")
 				coordinatorChunks = append(coordinatorChunks, e.Content)
-			case "child_agent":
-				assert.True(t, e.RunID != ar.ID(), "Content event have a different RunID from the child agent")
-				childAgentChunks = append(childAgentChunks, e.Content)
 			default:
-				// For unknown agent names, we'll still collect the content
 				t.Logf("Received content from unknown agent: %s", e.AgentName)
 			}
 		case *event.ToolEvent:
 			toolCalls = append(toolCalls, e.ToolName)
+		case *event.ToolResponseEvent:
+			if e.ToolName == "child_agent" {
+				childAgentResponse = e.Content
+			}
 		case *event.ErrorEvent:
 			t.Fatalf("Agent error: %v", e.Err)
 		}
 	}
 
-	// Validate that we received streaming chunks from both agents
+	// Validate that we received streaming chunks from the coordinator.
+	// Child-agent output is surfaced through the parent tool response event.
 	assert.Greater(t, len(coordinatorChunks), 1, "Should have received streaming chunks from coordinator")
-	assert.Greater(t, len(childAgentChunks), 1, "Should have received streaming chunks from child agent")
 
 	// Validate that child agent was called
 	childAgentCalled := false
@@ -623,16 +470,15 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 
 	// Validate final content
 	finalCoordinatorContent := strings.Join(coordinatorChunks, "")
-	finalChildAgentContent := strings.Join(childAgentChunks, "")
 
 	assert.NotEmpty(t, finalCoordinatorContent, "Coordinator should have produced content")
-	assert.NotEmpty(t, finalChildAgentContent, "Child agent should have produced content")
+	assert.NotEmpty(t, childAgentResponse, "Child agent response should have been returned through the tool response event")
 
 	// Validate content quality
 	assert.Contains(t, strings.ToLower(finalCoordinatorContent), "delegate", "Coordinator should mention delegation")
-	assert.Contains(t, strings.ToLower(finalChildAgentContent), "artificial intelligence", "Child agent should mention AI")
+	assert.Contains(t, strings.ToLower(childAgentResponse), "artificial intelligence", "Child agent should mention AI")
 
 	t.Logf("Coordinator content: %s", finalCoordinatorContent)
-	t.Logf("Child agent content: %s", finalChildAgentContent)
+	t.Logf("Child agent content: %s", childAgentResponse)
 
 }

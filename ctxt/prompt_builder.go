@@ -225,7 +225,8 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 }
 
 func OpenFileRef(ref FileRef) (*document.Document, error) {
-	resolvedPath := strings.TrimSpace(ref.Path)
+	docID := strings.TrimSpace(ref.Path)
+	resolvedPath := docID
 	if strings.TrimSpace(ref.BasePath) != "" && !filepath.IsAbs(resolvedPath) {
 		resolvedPath = filepath.Join(ref.BasePath, filepath.FromSlash(resolvedPath))
 	}
@@ -240,7 +241,10 @@ func OpenFileRef(ref FileRef) (*document.Document, error) {
 	if name == "." || name == "" || name == string(filepath.Separator) {
 		name = filepath.Base(resolvedPath)
 	}
-	doc := document.NewInMemoryDocument("", name, data, nil)
+	if docID == "" {
+		docID = resolvedPath
+	}
+	doc := document.NewInMemoryDocument(docID, name, data, nil)
 	doc.FilePath = resolvedPath
 	if ref.MimeType != "" {
 		doc.MimeType = ref.MimeType

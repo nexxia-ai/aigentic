@@ -238,6 +238,32 @@ func TestCreateSystemMsgWithEmptyMemoryDir_NoMemoryFilesInPrompt(t *testing.T) {
 	assert.NotContains(t, sysMsg.Content, "<document name=", "system message should not contain memory documents when MemoryDir is empty")
 }
 
+func TestOpenFileRef_AllowsPathBasedDocumentIDReads(t *testing.T) {
+	withTempWorkingDirPB(t)
+
+	llmDir := filepath.Join(t.TempDir(), "llm")
+	uploadPath := filepath.Join(llmDir, "uploads", "receipt.txt")
+	require.NoError(t, os.MkdirAll(filepath.Dir(uploadPath), 0755))
+	require.NoError(t, os.WriteFile(uploadPath, []byte("receipt bytes"), 0644))
+
+	ref := FileRef{
+		BasePath: llmDir,
+		Path:     "uploads/receipt.txt",
+		MimeType: "text/plain",
+	}
+
+	doc, err := OpenFileRef(ref)
+	require.NoError(t, err)
+
+	// GetDocument rewrites the document ID to the llm-relative path before reading bytes.
+	doc.SetID(ref.Path)
+
+	data, err := doc.Bytes()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("receipt bytes"), data)
+	assert.Equal(t, ref.Path, doc.ID())
+}
+
 func TestCreateDocsMsg(t *testing.T) {
 	tests := []struct {
 		name             string

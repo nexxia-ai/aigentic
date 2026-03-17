@@ -13,6 +13,7 @@ type Session struct {
 	Summary string
 	Path    string
 	Meta    map[string]interface{}
+	Turns   int
 }
 
 func deriveBasePath(runDir string) string {
@@ -173,6 +174,11 @@ func loadSession(runDir string) (*Session, error) {
 	}
 	if err := loadSessionRunMeta(session, privateDir); err != nil {
 		return nil, err
+	}
+	if refs, err := LoadConversationRefs(filepath.Join(privateDir, "conversation.json")); err != nil {
+		return nil, err
+	} else {
+		session.Turns = len(refs)
 	}
 	return session, nil
 }

@@ -10,14 +10,9 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-type tag struct {
+type TagEntry struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
-}
-
-type TagEntry struct {
-	Name    string
-	Content string
 }
 
 type Turn struct {
@@ -36,7 +31,7 @@ type Turn struct {
 	Hidden       bool              `json:"hidden"`
 	Usage        ai.Usage          `json:"usage,omitempty"`
 	meta         map[string]string `json:"-"`
-	systemTags   []tag
+	systemTags   []TagEntry
 	turnTags     []ai.KeyValue
 }
 
@@ -51,7 +46,7 @@ func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) 
 		TraceFile:    "",
 		Timestamp:    time.Now(),
 		AgentName:    agentName,
-		systemTags:   make([]tag, 0),
+		systemTags:   make([]TagEntry, 0),
 		turnTags:     make([]ai.KeyValue, 0),
 	}
 }
@@ -177,18 +172,16 @@ func (t *Turn) saveMeta() error {
 }
 
 func (t *Turn) InjectSystemTag(tagName string, content string) {
-	t.systemTags = append(t.systemTags, tag{
-		Name:    tagName,
-		Content: content,
-	})
+	t.systemTags = append(t.systemTags, TagEntry{Name: tagName, Content: content})
 }
 
 func (t *Turn) SystemTags() []TagEntry {
-	result := make([]TagEntry, len(t.systemTags))
-	for i, tag := range t.systemTags {
-		result[i] = TagEntry{Name: tag.Name, Content: tag.Content}
+	if len(t.systemTags) == 0 {
+		return nil
 	}
-	return result
+	out := make([]TagEntry, len(t.systemTags))
+	copy(out, t.systemTags)
+	return out
 }
 
 func (t *Turn) InjectTurnTag(tagName string, content string) {
@@ -298,7 +291,7 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 		Request    *messageJSON `json:"request"`
 		Messages   []*messageJSON `json:"messages"`
 		Reply      *messageJSON `json:"-"`
-		SystemTags []tag        `json:"system_tags"`
+		SystemTags []TagEntry   `json:"system_tags"`
 		TurnTags   []ai.KeyValue `json:"turn_tags"`
 	}{
 		Alias:      (*Alias)(t),
@@ -365,7 +358,7 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		Request    *messageJSON   `json:"request"`
 		Messages   []*messageJSON `json:"messages"`
 		Reply      *messageJSON   `json:"reply,omitempty"`
-		SystemTags []tag          `json:"system_tags"`
+		SystemTags []TagEntry    `json:"system_tags"`
 		TurnTags   []ai.KeyValue  `json:"turn_tags"`
 		Files      []FileRef      `json:"files"`
 		Documents  []legacyDocumentJSON `json:"documents"`
@@ -391,7 +384,7 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 	if aux.SystemTags != nil {
 		t.systemTags = aux.SystemTags
 	} else {
-		t.systemTags = make([]tag, 0)
+		t.systemTags = make([]TagEntry, 0)
 	}
 
 	if aux.TurnTags != nil {

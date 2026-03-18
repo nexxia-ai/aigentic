@@ -111,7 +111,7 @@ func (h *ConversationHistory) resolveTurns(limit int) []Turn {
 	return turns
 }
 
-func (h *ConversationHistory) getMessages(limit int) []ai.Message {
+func (h *ConversationHistory) getMessages(limit int, ac *AgentContext) []ai.Message {
 	turns := h.resolveTurns(limit)
 	var messages []ai.Message
 	for _, turn := range turns {
@@ -120,8 +120,15 @@ func (h *ConversationHistory) getMessages(limit int) []ai.Message {
 		}
 		if turn.Request != nil {
 			messages = append(messages, turn.Request)
-		} else if turn.UserMessage != "" {
-			messages = append(messages, ai.UserMessage{Role: ai.UserRole, Content: turn.UserMessage})
+		} else if turn.UserMessage != "" || turn.UserData != "" {
+			if ac != nil {
+				userMsg, err := createUserMsgForTurn(ac, &turn)
+				if err == nil {
+					messages = append(messages, userMsg)
+				}
+			} else {
+				messages = append(messages, ai.UserMessage{Role: ai.UserRole, Content: turn.UserMessage})
+			}
 		}
 		if turn.Reply != nil {
 			messages = append(messages, turn.Reply)
@@ -130,8 +137,8 @@ func (h *ConversationHistory) getMessages(limit int) []ai.Message {
 	return messages
 }
 
-func (h *ConversationHistory) GetMessages() []ai.Message {
-	return h.getMessages(0)
+func (h *ConversationHistory) GetMessages(ac *AgentContext) []ai.Message {
+	return h.getMessages(0, ac)
 }
 
 func (h *ConversationHistory) appendTurn(turn Turn) {

@@ -111,7 +111,7 @@ func TestRunLLMCallAction_StreamingAgent(t *testing.T) {
 			agentRun.SetEnableTrace(true)
 			defer agentRun.stop()
 
-			agentRun.agentContext.StartTurn("")
+			agentRun.agentContext.StartTurn("", "")
 			agentRun.runLLMCallAction("Test message")
 
 			// runLLMCallAction is synchronous; all events are in the buffered channel.
@@ -182,7 +182,7 @@ func TestRunLLMCallAction_NonStreamingAgent(t *testing.T) {
 	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
-	agentRun.agentContext.StartTurn("")
+	agentRun.agentContext.StartTurn("", "")
 	agentRun.runLLMCallAction("Test message")
 
 	// runLLMCallAction is synchronous; drain the buffered channel without a goroutine.
@@ -244,7 +244,7 @@ func TestRunLLMCallAction_StreamingWithToolCalls(t *testing.T) {
 		}
 	}()
 
-	agentRun.agentContext.StartTurn("")
+	agentRun.agentContext.StartTurn("", "")
 	agentRun.runLLMCallAction("Test message")
 
 	time.Sleep(100 * time.Millisecond)
@@ -284,7 +284,7 @@ func TestRunLLMCallAction_LLMCallLimit(t *testing.T) {
 	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
-	agentRun.agentContext.StartTurn("")
+	agentRun.agentContext.StartTurn("", "")
 	agentRun.runLLMCallAction("First call")
 	agentRun.runLLMCallAction("Second call")
 	agentRun.runLLMCallAction("Third call")
@@ -365,7 +365,7 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 	agentRun.SetEnableTrace(true)
 	defer agentRun.stop()
 
-	agentRun.agentContext.StartTurn("")
+	agentRun.agentContext.StartTurn("", "")
 	agentRun.runLLMCallAction("Test chunking")
 
 	// runLLMCallAction is synchronous; drain the buffered channel without a goroutine.
@@ -418,12 +418,12 @@ func TestAgentRun_ReuseAfterCompletion(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "First message", nil)
+	ar.Run(context.Background(), "First message", "", nil)
 	content1, err1 := ar.Wait(0)
 	assert.NoError(t, err1)
 	assert.Contains(t, content1, "First response")
 
-	ar.Run(context.Background(), "Second message", nil)
+	ar.Run(context.Background(), "Second message", "", nil)
 	content2, err2 := ar.Wait(0)
 	assert.NoError(t, err2)
 	assert.Contains(t, content2, "First response")
@@ -445,12 +445,12 @@ func TestAgentRun_ReuseAfterCancel(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "First message", nil)
+	ar.Run(context.Background(), "First message", "", nil)
 	ar.Cancel()
 
 	time.Sleep(100 * time.Millisecond)
 
-	ar.Run(context.Background(), "Second message", nil)
+	ar.Run(context.Background(), "Second message", "", nil)
 	content2, err2 := ar.Wait(0)
 	assert.NoError(t, err2)
 	assert.Contains(t, content2, "Response after cancel")
@@ -474,12 +474,12 @@ func TestAgentRun_MemoryPersistenceAcrossRuns(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "First message", nil)
+	ar.Run(context.Background(), "First message", "", nil)
 	content1, err1 := ar.Wait(0)
 	assert.NoError(t, err1)
 	assert.Contains(t, content1, "Response")
 
-	ar.Run(context.Background(), "Second message", nil)
+	ar.Run(context.Background(), "Second message", "", nil)
 	content2, err2 := ar.Wait(0)
 	assert.NoError(t, err2)
 	assert.Contains(t, content2, "Response")
@@ -512,7 +512,7 @@ func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
 	ar.SetModel(model1)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "First message", nil)
+	ar.Run(context.Background(), "First message", "", nil)
 	content1, err1 := ar.Wait(0)
 	assert.NoError(t, err1)
 	assert.Contains(t, content1, "Response from model-1")
@@ -520,7 +520,7 @@ func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
 
 	ar.SetModel(model2)
 
-	ar.Run(context.Background(), "Second message", nil)
+	ar.Run(context.Background(), "Second message", "", nil)
 	content2, err2 := ar.Wait(0)
 	assert.NoError(t, err2)
 	assert.Contains(t, content2, "Response from model-2")
@@ -548,7 +548,7 @@ func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "hello", nil)
+	ar.Run(context.Background(), "hello", "", nil)
 	_, err = ar.Wait(0)
 	assert.NoError(t, err)
 
@@ -586,7 +586,7 @@ func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
 	convData, _ := json.Marshal(map[string]interface{}{"turn_refs": []string{turnID}})
 	assert.NoError(t, os.WriteFile(convFile, convData, 0644))
 
-	ar.Run(context.Background(), "/context", nil)
+	ar.Run(context.Background(), "/context", "", nil)
 	var content string
 	for evt := range ar.eventQueue {
 		if ce, ok := evt.(*event.ContentEvent); ok {
@@ -615,7 +615,7 @@ func TestFormatAigenticStats_ShowsReasoningWhenOnlyChildHasIt(t *testing.T) {
 	ar.SetModel(model)
 	ar.SetEnableTrace(true)
 
-	ar.Run(context.Background(), "hello", nil)
+	ar.Run(context.Background(), "hello", "", nil)
 	_, _ = ar.Wait(0)
 
 	ws := ar.AgentContext().Workspace()
@@ -639,7 +639,7 @@ func TestFormatAigenticStats_ShowsReasoningWhenOnlyChildHasIt(t *testing.T) {
 	convData, _ := json.Marshal(map[string]interface{}{"turn_refs": []string{turnID}})
 	os.WriteFile(filepath.Join(batchDir, "conversation.json"), convData, 0644)
 
-	ar.Run(context.Background(), "/context", nil)
+	ar.Run(context.Background(), "/context", "", nil)
 	var content string
 	for evt := range ar.eventQueue {
 		if ce, ok := evt.(*event.ContentEvent); ok {

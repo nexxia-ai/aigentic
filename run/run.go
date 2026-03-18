@@ -269,12 +269,12 @@ func (r *AgentRun) IncludeHistory(enable bool) {
 	r.includeHistory = enable
 }
 
-func (r *AgentRun) Run(ctx context.Context, message string, metadata []ai.KeyValue) {
+func (r *AgentRun) Run(ctx context.Context, userMessage string, userData string, metadata []ai.KeyValue) {
 	// Wait for any previous processLoop goroutine to fully exit before
 	// re-initialising shared fields (eventQueue, actionQueue, ctx, etc.).
 	r.processWg.Wait()
 
-	rest, cmd, ok := parseAigenticCommand(message)
+	rest, cmd, ok := parseAigenticCommand(userMessage)
 	if ok {
 		// Command-only path: do not create or consume a turn (no StartTurn, no pendingRefs/history/usage side effects).
 		r.ctx, r.cancelFunc = context.WithCancel(ctx)
@@ -289,9 +289,9 @@ func (r *AgentRun) Run(ctx context.Context, message string, metadata []ai.KeyVal
 		r.handleAigenticCommand(ctx, cmd)
 		return
 	}
-	message = rest
+	userMessage = rest
 
-	turn := r.agentContext.StartTurn(message)
+	turn := r.agentContext.StartTurn(userMessage, userData)
 	r.turnMetrics.reset()
 
 	if len(metadata) > 0 {
@@ -302,7 +302,7 @@ func (r *AgentRun) Run(ctx context.Context, message string, metadata []ai.KeyVal
 		}
 		r.Logger.Info("turn metadata set",
 			"run_id", r.id,
-			"user_message", truncateForLog(message, 500),
+			"user_message", truncateForLog(userMessage, 500),
 			"metadata_keys", keys,
 		)
 	}
@@ -376,7 +376,7 @@ func (r *AgentRun) AddSubAgent(name, description, message string, model *ai.Mode
 				subRun.SetStreaming(true)
 			}
 
-			subRun.Run(r.ctx, input, nil)
+			subRun.Run(r.ctx, input, "", nil)
 			content, err := subRun.Wait(0)
 
 			if r.enableTrace && err != nil {

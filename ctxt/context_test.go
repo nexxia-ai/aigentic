@@ -123,7 +123,7 @@ func TestChildContextAddFileRefCarriesIntoTurn(t *testing.T) {
 	err = child.AddFileRef(fullPath, true, "image/png")
 	require.NoError(t, err)
 
-	turn := child.StartTurn("Process uploads/test.png")
+	turn := child.StartTurn("Process uploads/test.png", "")
 	require.Len(t, turn.Files, 1)
 	require.Equal(t, fullPath, turn.Files[0].Path)
 	require.True(t, turn.Files[0].IncludeInPrompt)
@@ -146,7 +146,7 @@ func TestAttachDocumentAndAddFileRefDedupesPendingRef(t *testing.T) {
 	err = ctx.AddFileRef(fullPath, true, "")
 	require.NoError(t, err)
 
-	turn := ctx.StartTurn("Process uploads/test.png")
+	turn := ctx.StartTurn("Process uploads/test.png", "")
 	require.Len(t, turn.Files, 1)
 	require.Equal(t, fullPath, turn.Files[0].Path)
 	require.True(t, turn.Files[0].IncludeInPrompt)
@@ -319,7 +319,7 @@ func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory file: %v", err)
 	}
-	ctx.StartTurn("test user message")
+	ctx.StartTurn("test user message", "")
 
 	msgs, err := ctx.BuildPrompt([]ai.Tool{}, false)
 	if err != nil {

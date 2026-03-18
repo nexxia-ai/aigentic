@@ -33,6 +33,36 @@ func TestLedgerGetResolvesTurns(t *testing.T) {
 	}
 }
 
+func TestLedgerGetResolvesUserMessageAndUserData(t *testing.T) {
+	basePath := t.TempDir()
+	ledger := NewLedger(basePath)
+
+	turn1 := Turn{
+		TurnID:      "20260312-abc12345",
+		UserMessage: "From: alice@example.com | Subject: Meeting tomorrow",
+		UserData:    `{"type":"mail.received","from":"alice@example.com","subject":"Meeting tomorrow"}`,
+		Request:     ai.UserMessage{Role: ai.UserRole, Content: "Hello"},
+		Reply:       ai.AIMessage{Role: ai.AssistantRole, Content: "Hi there"},
+		Timestamp:   time.Now(),
+		AgentName:   "test",
+	}
+	if err := ledger.Append(&turn1); err != nil {
+		t.Fatalf("failed to append turn: %v", err)
+	}
+
+	got, err := ledger.Get("20260312-abc12345")
+	if err != nil {
+		t.Fatalf("ledger.Get: %v", err)
+	}
+	if got.UserMessage != "From: alice@example.com | Subject: Meeting tomorrow" {
+		t.Errorf("UserMessage = %q, want display message", got.UserMessage)
+	}
+	wantData := `{"type":"mail.received","from":"alice@example.com","subject":"Meeting tomorrow"}`
+	if got.UserData != wantData {
+		t.Errorf("UserData = %q, want %q", got.UserData, wantData)
+	}
+}
+
 func TestGetMessagesSkipsNilRequest(t *testing.T) {
 	tmp := t.TempDir()
 	ledger := NewLedger(tmp)
@@ -52,7 +82,7 @@ func TestGetMessagesSkipsNilRequest(t *testing.T) {
 	}
 	h.appendTurn(turn)
 
-	msgs := h.GetMessages()
+	msgs := h.GetMessages(nil)
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages (user + assistant), got %d", len(msgs))
 	}
@@ -95,7 +125,7 @@ func TestGetMessagesPreservesFullHistory(t *testing.T) {
 	if got := len(h.GetTurns()); got != 120 {
 		t.Fatalf("expected 120 resolved turns, got %d", got)
 	}
-	if got := len(h.GetMessages()); got != 240 {
+	if got := len(h.GetMessages(nil)); got != 240 {
 		t.Fatalf("expected 240 history messages, got %d", got)
 	}
 }

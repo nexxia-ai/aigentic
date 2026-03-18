@@ -97,7 +97,7 @@ func TestCreateSystemMsg(t *testing.T) {
 		{
 			name: "with system tags",
 			setup: func(ac *AgentContext) *AgentContext {
-				ac.StartTurn("")
+				ac.StartTurn("", "")
 				ac.Turn().InjectSystemTag("tag1", "tag content 1")
 				ac.Turn().InjectSystemTag("tag2", "tag content 2")
 				return ac
@@ -114,7 +114,7 @@ func TestCreateSystemMsg(t *testing.T) {
 				ac.SetDescription("Test Role")
 				ac.SetInstructions("Test Instructions")
 				ac.SetSystemPart(SystemPartKeyOutputInstructions, "Test Output")
-				ac.StartTurn("")
+				ac.StartTurn("", "")
 				ac.Turn().InjectSystemTag("tag1", "tag content")
 				return ac
 			},
@@ -283,7 +283,7 @@ func TestCreateDocsMsg(t *testing.T) {
 			setup: func(ac *AgentContext) *AgentContext {
 				_ = attachTestDocument(ac, "uploads/test1.pdf", []byte("content1"), "", false)
 				_ = attachTestDocument(ac, "uploads/test2.txt", []byte("content2"), "", false)
-				ac.StartTurn("msg")
+				ac.StartTurn("msg", "")
 				return ac
 			},
 			expectedContains: []string{
@@ -300,7 +300,7 @@ func TestCreateDocsMsg(t *testing.T) {
 			setup: func(ac *AgentContext) *AgentContext {
 				_ = attachTestDocument(ac, "uploads/test1.pdf", []byte("content1"), "", false)
 				_ = attachTestDocument(ac, "uploads/ref1.txt", []byte("content2"), "", false)
-				ac.StartTurn("msg")
+				ac.StartTurn("msg", "")
 				return ac
 			},
 			expectedContains: []string{
@@ -314,7 +314,7 @@ func TestCreateDocsMsg(t *testing.T) {
 			name: "with empty filename document",
 			setup: func(ac *AgentContext) *AgentContext {
 				_ = attachTestDocument(ac, "uploads/doc1", []byte("content"), "", false)
-				ac.StartTurn("msg")
+				ac.StartTurn("msg", "")
 				return ac
 			},
 			expectedContains: []string{
@@ -334,7 +334,7 @@ func TestCreateDocsMsg(t *testing.T) {
 			name: "with unknown mime type",
 			setup: func(ac *AgentContext) *AgentContext {
 				_ = attachTestDocument(ac, "uploads/test.unknown", []byte("content"), "", false)
-				ac.StartTurn("msg")
+				ac.StartTurn("msg", "")
 				return ac
 			},
 			expectedContains: []string{
@@ -381,6 +381,7 @@ func TestCreateUserMsg(t *testing.T) {
 		{
 			name: "empty message",
 			setup: func(ac *AgentContext) *AgentContext {
+				ac.StartTurn("", "")
 				return ac
 			},
 			message: "",
@@ -391,6 +392,7 @@ func TestCreateUserMsg(t *testing.T) {
 		{
 			name: "with message",
 			setup: func(ac *AgentContext) *AgentContext {
+				ac.StartTurn("What is the weather?", "")
 				return ac
 			},
 			message: "What is the weather?",
@@ -401,7 +403,7 @@ func TestCreateUserMsg(t *testing.T) {
 		{
 			name: "with user tags",
 			setup: func(ac *AgentContext) *AgentContext {
-				ac.StartTurn("Test message")
+				ac.StartTurn("Process this", "")
 				ac.Turn().InjectTurnTag("context", "additional context")
 				ac.Turn().InjectTurnTag("priority", "high")
 				return ac
@@ -415,7 +417,7 @@ func TestCreateUserMsg(t *testing.T) {
 		{
 			name: "with message and user tags",
 			setup: func(ac *AgentContext) *AgentContext {
-				ac.StartTurn("Test message")
+				ac.StartTurn("Test message", "")
 				ac.Turn().InjectTurnTag("context", "test context")
 				return ac
 			},
@@ -434,7 +436,7 @@ func TestCreateUserMsg(t *testing.T) {
 
 			ac = tt.setup(ac)
 
-			msg, err := createUserMsg(ac, tt.message)
+			msg, err := createUserMsg(ac)
 			require.NoError(t, err)
 			require.NotNil(t, msg)
 
@@ -491,7 +493,7 @@ func TestBuildPrompt(t *testing.T) {
 		{
 			name: "with history",
 			setup: func(ac *AgentContext) *AgentContext {
-				ac.StartTurn("First message")
+				ac.StartTurn("First message", "")
 				ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "First response"})
 				return ac
 			},
@@ -526,7 +528,7 @@ func TestBuildPrompt(t *testing.T) {
 		{
 			name: "without history",
 			setup: func(ac *AgentContext) *AgentContext {
-				ac.StartTurn("First message")
+				ac.StartTurn("First message", "")
 				ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "First response"})
 				return ac
 			},
@@ -540,7 +542,7 @@ func TestBuildPrompt(t *testing.T) {
 			name: "with turn documents",
 			setup: func(ac *AgentContext) *AgentContext {
 				_ = attachTestDocument(ac, "uploads/turn.pdf", []byte("turn content"), "", true)
-				ac.StartTurn("Process")
+				ac.StartTurn("Process", "")
 				return ac
 			},
 			tools:            nil,
@@ -567,7 +569,7 @@ func TestBuildPrompt(t *testing.T) {
 		{
 			name: "with tool messages",
 			setup: func(ac *AgentContext) *AgentContext {
-				ac.StartTurn("Test")
+				ac.StartTurn("Test", "")
 				toolMsg := ai.ToolMessage{
 					Role:       ai.ToolRole,
 					Content:    "Tool result",
@@ -602,11 +604,11 @@ func TestBuildPrompt(t *testing.T) {
 
 				_ = attachTestDocument(ac, "uploads/test1.pdf", []byte("content1"), "", false)
 
-				ac.StartTurn("Previous message")
+				ac.StartTurn("Previous message", "")
 				ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Previous response"})
 
 				_ = attachTestDocument(ac, "uploads/turn.pdf", []byte("turn content"), "", true)
-				ac.StartTurn("Current message")
+				ac.StartTurn("Current message", "")
 
 				return ac
 			},
@@ -643,7 +645,7 @@ func TestBuildPrompt(t *testing.T) {
 
 			ac = tt.setup(ac)
 			if !tt.skipStartTurn {
-				ac.StartTurn(tt.userMessage)
+				ac.StartTurn(tt.userMessage, "")
 			}
 
 			msgs, err := ac.BuildPrompt(tt.tools, tt.includeHistory)
@@ -699,7 +701,7 @@ func TestBuildPromptWithSystemAndUserTags(t *testing.T) {
 	require.NoError(t, err)
 
 	ac.SetDescription("Test Role")
-	ac.StartTurn("Test message")
+	ac.StartTurn("Test message", "")
 	ac.Turn().InjectSystemTag("tag1", "system tag content")
 	ac.Turn().InjectTurnTag("tag2", "user tag content")
 
@@ -726,11 +728,11 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 
 	_ = attachTestDocument(ac, "uploads/test1.pdf", []byte("content1"), "", false)
 
-	ac.StartTurn("Previous")
+	ac.StartTurn("Previous", "")
 	ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Response"})
 
 	_ = attachTestDocument(ac, "uploads/turn.pdf", []byte("turn content"), "", true)
-	ac.StartTurn("Current message")
+	ac.StartTurn("Current message", "")
 
 	toolMsg := ai.ToolMessage{
 		Role:       ai.ToolRole,
@@ -817,7 +819,7 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 
 	_ = memDoc
 
-	ac.StartTurn("Test message")
+	ac.StartTurn("Test message", "")
 
 	msgs, err := ac.BuildPrompt(nil, false)
 	require.NoError(t, err)
@@ -835,7 +837,7 @@ func TestBuildPromptUploadedDocuments(t *testing.T) {
 	_ = attachTestDocument(ac, "uploads/ref1.pdf", []byte("content1"), "", false)
 	_ = attachTestDocument(ac, "uploads/ref2.txt", []byte("content2"), "", false)
 
-	ac.StartTurn("Process documents")
+	ac.StartTurn("Process documents", "")
 
 	msgs, err := ac.BuildPrompt(nil, false)
 	require.NoError(t, err)
@@ -860,10 +862,10 @@ func TestBuildPromptLimitsHistoryToLatest100Turns(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 105; i++ {
-		ac.StartTurn(fmt.Sprintf("history-%03d", i))
+		ac.StartTurn(fmt.Sprintf("history-%03d", i), "")
 		ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: fmt.Sprintf("reply-%03d", i)})
 	}
-	ac.StartTurn("current")
+	ac.StartTurn("current", "")
 
 	msgs, err := ac.BuildPrompt(nil, true)
 	require.NoError(t, err)
@@ -896,14 +898,14 @@ func TestBuildPromptLimitsHistoryToLatest100Turns(t *testing.T) {
 	assert.Equal(t, 100, historyUsers)
 	assert.Equal(t, 100, historyReplies)
 	assert.Equal(t, 105, len(ac.GetHistory().GetTurns()))
-	assert.Equal(t, 210, len(ac.GetHistory().GetMessages()))
+	assert.Equal(t, 210, len(ac.GetHistory().GetMessages(ac)))
 }
 
 func TestBuildPromptEmptyUserMessage(t *testing.T) {
 	ac, err := New("test-id", "", "", t.TempDir())
 	require.NoError(t, err)
 
-	ac.StartTurn("")
+	ac.StartTurn("", "")
 
 	msgs, err := ac.BuildPrompt(nil, false)
 	require.NoError(t, err)

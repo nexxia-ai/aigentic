@@ -14,7 +14,7 @@ func TestTurnAddFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test context: %v", err)
 	}
-	turn := NewTurn(ac, "test message", "agent1", "turn-001")
+	turn := NewTurn(ac, "test message", "", "agent1", "turn-001")
 
 	turn.AddFile(FileRef{
 		Path:            "uploads/test.pdf",
@@ -30,7 +30,7 @@ func TestTurnAddFile(t *testing.T) {
 
 func TestTurnAddMultipleFiles(t *testing.T) {
 	ac, _ := New("test", "test", "test", t.TempDir())
-	turn := NewTurn(ac, "test message", "agent1", "turn-001")
+	turn := NewTurn(ac, "test message", "", "agent1", "turn-001")
 
 	turn.AddFile(FileRef{Path: "uploads/a.pdf", ToolID: "tool1", IncludeInPrompt: true})
 	turn.AddFile(FileRef{Path: "uploads/b.txt", ToolID: "tool2", IncludeInPrompt: false})
@@ -44,7 +44,7 @@ func TestTurnAddMultipleFiles(t *testing.T) {
 
 func TestTurnPromptFiles(t *testing.T) {
 	ac, _ := New("test", "test", "test", t.TempDir())
-	turn := NewTurn(ac, "test message", "agent1", "turn-001")
+	turn := NewTurn(ac, "test message", "", "agent1", "turn-001")
 
 	turn.AddFile(FileRef{Path: "a", IncludeInPrompt: true})
 	turn.AddFile(FileRef{Path: "b", IncludeInPrompt: false})
@@ -58,7 +58,7 @@ func TestTurnPromptFiles(t *testing.T) {
 
 func TestTurnFilesForTool(t *testing.T) {
 	ac, _ := New("test", "test", "test", t.TempDir())
-	turn := NewTurn(ac, "test message", "agent1", "turn-001")
+	turn := NewTurn(ac, "test message", "", "agent1", "turn-001")
 
 	turn.AddFile(FileRef{Path: "a", ToolID: "t1"})
 	turn.AddFile(FileRef{Path: "b", ToolID: "t2"})
@@ -71,7 +71,7 @@ func TestTurnFilesForTool(t *testing.T) {
 
 func TestTurnSetFileMeta(t *testing.T) {
 	ac, _ := New("test", "test", "test", t.TempDir())
-	turn := NewTurn(ac, "test message", "agent1", "turn-001")
+	turn := NewTurn(ac, "test message", "", "agent1", "turn-001")
 
 	turn.AddFile(FileRef{Path: "uploads/doc.pdf"})
 
@@ -85,7 +85,7 @@ func TestTurnSetFileMeta(t *testing.T) {
 
 func TestTurnFileMetaMergeAndDelete(t *testing.T) {
 	ac, _ := New("test", "test", "test", t.TempDir())
-	turn := NewTurn(ac, "test message", "agent1", "turn-001")
+	turn := NewTurn(ac, "test message", "", "agent1", "turn-001")
 
 	f := FileRef{Path: "x"}
 	f.SetMeta(map[string]string{"a": "1", "b": "2"})
@@ -110,7 +110,7 @@ func TestLedgerAppendPersistsTurnMetaSidecar(t *testing.T) {
 	turnID, dirPath, err := ledger.PrepareTurn(time.Now())
 	assert.NoError(t, err)
 
-	turn := NewTurn(nil, "test message", "agent1", turnID)
+	turn := NewTurn(nil, "test message", "", "agent1", turnID)
 	turn.Timestamp = time.Now()
 	turn.SetLedgerDir(dirPath)
 	turn.SetMeta(map[string]string{"source": "caller"})
@@ -133,7 +133,7 @@ func TestSetMetaPersistsToSidecarWhenLedgerDirKnown(t *testing.T) {
 	turnID, dirPath, err := ledger.PrepareTurn(time.Now())
 	assert.NoError(t, err)
 
-	turn := NewTurn(nil, "test message", "agent1", turnID)
+	turn := NewTurn(nil, "test message", "", "agent1", turnID)
 	turn.Timestamp = time.Now()
 	turn.SetLedgerDir(dirPath)
 
@@ -160,7 +160,7 @@ func TestSetMetaPersistsToSidecarWhenLedgerDirKnown(t *testing.T) {
 
 func TestTurnMarshalUnmarshalFiles(t *testing.T) {
 	ac, _ := New("test", "test", "test", t.TempDir())
-	turn := NewTurn(ac, "msg", "agent", "turn-1")
+	turn := NewTurn(ac, "msg", "", "agent", "turn-1")
 	f := FileRef{Path: "uploads/x.pdf", MimeType: "application/pdf", IncludeInPrompt: true}
 	f.SetMeta(map[string]string{"visible_to_user": "true"})
 	turn.AddFile(f)
@@ -184,7 +184,7 @@ func TestTurnLedgerPersistsFilesWithMetadata(t *testing.T) {
 	turnID, _, err := ledger.PrepareTurn(time.Now())
 	assert.NoError(t, err)
 
-	turn := NewTurn(nil, "msg", "agent", turnID)
+	turn := NewTurn(nil, "msg", "", "agent", turnID)
 	turn.Timestamp = time.Now()
 	f := FileRef{Path: "uploads/invoice.pdf", MimeType: "application/pdf", IncludeInPrompt: true}
 	f.SetMeta(map[string]string{"visible_to_user": "true", "source": "user"})

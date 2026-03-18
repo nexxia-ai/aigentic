@@ -460,12 +460,8 @@ func (r *AgentContext) SetSummary(summary string) *AgentContext {
 	return r
 }
 
-func (r *AgentContext) newTurn() *Turn {
-	return NewTurn(r, "", "", "")
-}
-
-func (r *AgentContext) StartTurn(userMessage string) *Turn {
-	turn := r.newTurn()
+func (r *AgentContext) StartTurn(userMessage string, userData string) *Turn {
+	turn := NewTurn(r, "", "", "", "")
 	if r.ledger != nil {
 		turnID, dirPath, err := r.ledger.PrepareTurn(time.Now())
 		if err != nil {
@@ -478,7 +474,7 @@ func (r *AgentContext) StartTurn(userMessage string) *Turn {
 	}
 	r.currentTurn = turn
 	r.currentTurn.UserMessage = userMessage
-	r.currentTurn.Request = ai.UserMessage{Role: ai.UserRole, Content: userMessage}
+	r.currentTurn.UserData = userData
 	for _, f := range r.pendingRefs {
 		r.currentTurn.AddFile(f)
 	}
@@ -495,6 +491,9 @@ func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 	}
 
 	if !r.currentTurn.Hidden {
+		if userMsg, err := createUserMsgForTurn(r, r.currentTurn); err == nil {
+			r.currentTurn.Request = userMsg
+		}
 		r.conversationHistory.appendTurn(*r.currentTurn)
 	}
 	r.save()

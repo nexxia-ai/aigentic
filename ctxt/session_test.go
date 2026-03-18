@@ -144,10 +144,10 @@ func TestLoadContextWithHistory(t *testing.T) {
 		t.Fatalf("failed to create context: %v", err)
 	}
 
-	ctx.StartTurn("Hello")
+	ctx.StartTurn("Hello", "")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Hi there"})
 
-	ctx.StartTurn("How are you?")
+	ctx.StartTurn("How are you?", "")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "I'm fine"})
 
 	sessionPath := ctx.Workspace().RootDir
@@ -183,6 +183,44 @@ func TestLoadContextWithHistory(t *testing.T) {
 	}
 }
 
+func TestLoadContextWithHistory_UserMessageAndUserDataReloaded(t *testing.T) {
+	baseDir := t.TempDir()
+	ctx, err := New("test-id", "test description", "test instructions", baseDir)
+	if err != nil {
+		t.Fatalf("failed to create context: %v", err)
+	}
+
+	ctx.StartTurn("From: alice@example.com | Subject: Meeting tomorrow", `{"type":"mail.received","from":"alice@example.com","subject":"Meeting tomorrow"}`)
+	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "I'll add it to your calendar."})
+
+	ctx.StartTurn("Second message", "")
+	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Got it."})
+
+	sessionPath := ctx.Workspace().RootDir
+	loadedCtx, err := LoadContext(sessionPath)
+	if err != nil {
+		t.Fatalf("failed to load context: %v", err)
+	}
+
+	turns := loadedCtx.GetHistory().GetTurns()
+	if len(turns) != 2 {
+		t.Fatalf("expected 2 turns, got %d", len(turns))
+	}
+	if turns[0].UserMessage != "From: alice@example.com | Subject: Meeting tomorrow" {
+		t.Errorf("turn 0 UserMessage = %q, want display message", turns[0].UserMessage)
+	}
+	wantData := `{"type":"mail.received","from":"alice@example.com","subject":"Meeting tomorrow"}`
+	if turns[0].UserData != wantData {
+		t.Errorf("turn 0 UserData = %q, want %q", turns[0].UserData, wantData)
+	}
+	if turns[1].UserMessage != "Second message" {
+		t.Errorf("turn 1 UserMessage = %q, want 'Second message'", turns[1].UserMessage)
+	}
+	if turns[1].UserData != "" {
+		t.Errorf("turn 1 UserData = %q, want empty", turns[1].UserData)
+	}
+}
+
 func TestReloadedContextMatchesOriginal(t *testing.T) {
 	baseDir := t.TempDir()
 	ctx, err := New("parity-test", "desc", "instructions", baseDir)
@@ -192,10 +230,10 @@ func TestReloadedContextMatchesOriginal(t *testing.T) {
 	ctx.SetName("Parity Test")
 	ctx.SetSummary("Test summary")
 
-	ctx.StartTurn("First question")
+	ctx.StartTurn("First question", "")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "First answer"})
 
-	ctx.StartTurn("Second question")
+	ctx.StartTurn("Second question", "")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Second answer"})
 
 	origTurns := ctx.GetHistory().GetTurns()
@@ -232,7 +270,7 @@ func TestReloadedContextMatchesOriginal(t *testing.T) {
 		}
 	}
 
-	msgs := loadedCtx.GetHistory().GetMessages()
+	msgs := loadedCtx.GetHistory().GetMessages(loadedCtx)
 	for _, m := range msgs {
 		if m == nil {
 			t.Error("GetMessages returned nil message")
@@ -252,7 +290,7 @@ func TestGetTurnsReturnsRehydratedHistory(t *testing.T) {
 		t.Fatalf("failed to create context: %v", err)
 	}
 
-	ctx.StartTurn("Q1")
+	ctx.StartTurn("Q1", "")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "A1"})
 
 	turns := ctx.GetHistory().GetTurns()
@@ -324,7 +362,7 @@ func TestLoadContextMetadataWithHistory(t *testing.T) {
 
 	ctx.SetMeta("agent_name", "support-agent")
 	ctx.SetMeta("package_id", "support-agent-1.0.0")
-	ctx.StartTurn("Hello")
+	ctx.StartTurn("Hello", "")
 	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Hi"})
 
 	sessionPath := ctx.Workspace().RootDir

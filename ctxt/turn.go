@@ -22,6 +22,7 @@ type Turn struct {
 	ledgerDir    string            `json:"-"` // set by PrepareTurn for Dir()
 	Request      ai.Message        `json:"-"`
 	UserMessage  string            `json:"user_message"`
+	UserData     string            `json:"user_data"`
 	messages     []ai.Message      `json:"-"`
 	Reply        ai.Message        `json:"-"`
 	Files        []FileRef         `json:"files"`
@@ -35,12 +36,12 @@ type Turn struct {
 	turnTags     []ai.KeyValue
 }
 
-func NewTurn(agentContext *AgentContext, userMessage, agentName, turnID string) *Turn {
+func NewTurn(agentContext *AgentContext, userMessage, userData, agentName, turnID string) *Turn {
 	return &Turn{
 		TurnID:       turnID,
 		agentContext: agentContext,
-		Request:      ai.UserMessage{Role: ai.UserRole, Content: userMessage},
 		UserMessage:  userMessage,
+		UserData:     userData,
 		messages:     make([]ai.Message, 0),
 		Files:        make([]FileRef, 0),
 		TraceFile:    "",

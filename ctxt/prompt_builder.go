@@ -22,8 +22,12 @@ const DefaultUserTemplate = `
 {{end}}
 {{end}}
 
-{{if .HasMessage}}
-{{.Message}} 
+{{if .UserData}}
+{{.UserData}}
+
+{{end}}
+{{if .UserMessage}}
+{{.UserMessage}}
 {{end}}
 
 {{if .FileRefs}}
@@ -144,32 +148,40 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 	return userMsg, nil
 }
 
-func createUserMsg(ac *AgentContext, message string) (ai.Message, error) {
+func createUserMsgForTurn(ac *AgentContext, turn *Turn) (ai.Message, error) {
 	var turnTags []ai.KeyValue
 	var fileRefPaths []string
 	norm := func(p string) string { return filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/")) }
 	seenPath := make(map[string]bool)
-	if t := ac.Turn(); t != nil {
-		turnTags = t.TurnTags()
-		for _, ref := range t.Files {
+	userMessage := ""
+	userData := ""
+	if turn != nil {
+		turnTags = turn.TurnTags()
+		for _, ref := range turn.Files {
 			p := norm(ref.Path)
 			if p != "" && !seenPath[p] {
 				seenPath[p] = true
 				fileRefPaths = append(fileRefPaths, ref.Path)
 			}
 		}
+		userMessage = turn.UserMessage
+		userData = turn.UserData
 	}
 	userVars := map[string]any{
-		"Message":    message,
-		"HasMessage": message != "",
-		"TurnTags":   turnTags,
-		"FileRefs":   fileRefPaths,
+		"UserMessage": userMessage,
+		"UserData":    userData,
+		"TurnTags":    turnTags,
+		"FileRefs":    fileRefPaths,
 	}
 	var userBuf bytes.Buffer
 	if err := ac.UserTemplate.Execute(&userBuf, userVars); err != nil {
 		return nil, fmt.Errorf("failed to execute user template: %w", err)
 	}
 	return ai.UserMessage{Role: ai.UserRole, Content: userBuf.String()}, nil
+}
+
+func createUserMsg(ac *AgentContext) (ai.Message, error) {
+	return createUserMsgForTurn(ac, ac.Turn())
 }
 
 func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.Message, error) {
@@ -187,7 +199,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 
 	// Add history messages before user message
 	if includeHistory && r.conversationHistory != nil {
-		historyMessages := r.conversationHistory.getMessages(promptHistoryTurnLimit)
+		historyMessages := r.conversationHistory.getMessages(promptHistoryTurnLimit, r)
 		msgs = append(msgs, historyMessages...)
 	}
 
@@ -197,7 +209,7 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	}
 
 	// Add user message before documents
-	userMsg, err := createUserMsg(r, r.currentTurn.UserMessage)
+	userMsg, err := createUserMsg(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user message: %w", err)
 	}

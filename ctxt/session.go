@@ -147,7 +147,7 @@ func LoadContext(runDir string) (*AgentContext, error) {
 	conversationPath := filepath.Join(ws.PrivateDir, "conversation.json")
 	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
-	ctx.currentTurn = ctx.newTurn()
+	ctx.currentTurn = NewTurn(ctx, "", "", "", "")
 
 	return ctx, nil
 }

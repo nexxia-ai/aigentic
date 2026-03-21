@@ -24,8 +24,13 @@ func (l *Ledger) ledgerRoot() string {
 	return filepath.Join(l.basePath, ledgerDir)
 }
 
+// utcDateShard returns the UTC calendar date as yyyymmdd for ledger path segments.
+func utcDateShard(t time.Time) string {
+	return t.In(time.UTC).Format("20060102")
+}
+
 func (l *Ledger) PrepareTurn(timestamp time.Time) (turnID, dirPath string, err error) {
-	shard := timestamp.Format("20060102")
+	shard := utcDateShard(timestamp)
 	shortID := uuid.New().String()[:8]
 	turnID = shard + "-" + shortID
 
@@ -105,16 +110,19 @@ func (l *Ledger) TurnDir(turnID string) string {
 }
 
 // NewRunID returns a run ID in format {yyyymmdd}-{short_uuid} for date-sharded storage.
+// The yyyymmdd prefix is the UTC calendar date of timestamp, except the zero time uses 00000000
+// (e.g. single-instance runs). On-disk layout: runs/{yyyymmdd}/{runID}/.
 func NewRunID(timestamp time.Time) string {
-	shard := timestamp.Format("20060102")
-	if timestamp.IsZero() {
-		shard = "00000000"
+	shard := "00000000"
+	if !timestamp.IsZero() {
+		shard = utcDateShard(timestamp)
 	}
 	shortID := uuid.New().String()[:8]
 	return shard + "-" + shortID
 }
 
-// RunIDShard returns the date shard (yyyymmdd) from a runID in format {yyyymmdd}-{short_uuid}, or "" if invalid.
+// RunIDShard returns the UTC date shard (yyyymmdd) from a runID in format {yyyymmdd}-{short_uuid}, or "" if invalid.
+// The shard is a path segment under runs/ and ledger/; it encodes the UTC calendar day used when the ID was created.
 func RunIDShard(runID string) string {
 	if len(runID) < 9 || runID[8] != '-' {
 		return ""
@@ -123,7 +131,7 @@ func RunIDShard(runID string) string {
 }
 
 // RunDir returns the run directory path for a given runID.
-// RunID is expected in format {yyyymmdd}-{short_uuid}.
+// RunID is expected in format {yyyymmdd}-{short_uuid} where yyyymmdd is the UTC date shard.
 func RunDir(basePath, runID string) string {
 	return filepath.Join(basePath, "runs", RunIDShard(runID), runID)
 }

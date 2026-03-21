@@ -501,7 +501,7 @@ Each agent run uses a `Workspace` (accessed via `AgentContext.Workspace()`) that
           └── main/     # Private workspace state
 ```
 
-Optional memory files can be loaded into prompts via `Workspace.SetMemoryDir()`. Conversation history and turn traces are stored by the Ledger at `basePath/ledger/{shard}/{turnID}/`.
+Optional memory files can be loaded into prompts via `Workspace.SetMemoryDir()`. Conversation history and turn traces are stored by the Ledger at `basePath/ledger/{shard}/{turnID}/`, where `{shard}` is the UTC calendar date `yyyymmdd` (same convention as run ID prefixes).
 
 **File References:**
 

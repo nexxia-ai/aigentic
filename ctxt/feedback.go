@@ -21,14 +21,15 @@ type TurnArtifact struct {
 	Files     []FileRef
 }
 
-// ListTurnArtifactsWithFeedback scans the ledger for a single day and returns turns
+// ListTurnArtifactsWithFeedback scans the ledger for a single UTC calendar day and returns turns
 // that have feedback or feedback_comment metadata. Operates on one user's baseDir.
+// The ledger subdirectory is yyyymmdd for day converted to UTC (same convention as turn IDs).
 func ListTurnArtifactsWithFeedback(baseDir string, day time.Time, limit int) ([]TurnArtifact, error) {
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, err
 	}
-	shard := day.Format("20060102")
+	shard := day.In(time.UTC).Format("20060102")
 	shardDir := filepath.Join(absBase, ledgerDir, shard)
 	entries, err := os.ReadDir(shardDir)
 	if err != nil {

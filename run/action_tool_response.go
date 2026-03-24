@@ -15,6 +15,15 @@ func filesForToolEvent(group *ToolCallGroup, toolCallID string, turn *ctxt.Turn)
 	return turn.FilesForTool(toolCallID)
 }
 
+func endTerminalToolGroup(r *AgentRun, group *ToolCallGroup) {
+	if r == nil || group == nil || group.AIMessage == nil {
+		return
+	}
+	finalMsg := *group.AIMessage
+	finalMsg.ToolCalls = nil
+	r.agentContext.EndTurn(finalMsg)
+}
+
 func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string, fileRefs []ctxt.FileRef) {
 	// Store original content for user-facing display
 	action.Group.UserResponses[action.ToolCallID] = content
@@ -74,6 +83,7 @@ func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string,
 		}
 
 		if action.Group.Terminal {
+			endTerminalToolGroup(r, action.Group)
 			r.queueAction(&stopAction{})
 		} else {
 			r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})

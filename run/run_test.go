@@ -403,6 +403,133 @@ func TestRunLLMCallAction_StreamingContentConcatenation(t *testing.T) {
 	assert.Equal(t, expectedFinal, finalContent, "Final concatenated content should match expected")
 }
 
+func TestAgentRun_TerminalToolEndsTurnAndPersistsReply(t *testing.T) {
+	tests := []struct {
+		name       string
+		streaming  bool
+		finalReply string
+	}{
+		{
+			name:       "non-streaming terminal tool",
+			streaming:  false,
+			finalReply: "Using the terminal tool now.",
+		},
+		{
+			name:       "streaming terminal tool",
+			streaming:  true,
+			finalReply: "Using the terminal tool now.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			modelCalls := 0
+			streamingCalls := 0
+			toolCalls := 0
+
+			model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+				modelCalls++
+				return ai.AIMessage{
+					Role:    ai.AssistantRole,
+					Content: tt.finalReply,
+					ToolCalls: []ai.ToolCall{
+						{
+							ID:   "call_terminal",
+							Type: "function",
+							Name: "terminal_tool",
+							Args: `{"message":"stop"}`,
+						},
+					},
+				}, nil
+			})
+			if tt.streaming {
+				_ = model.SetStreamingFunc(func(ctx context.Context, model *ai.Model, messages []ai.Message, tools []ai.Tool, chunkFunction func(ai.AIMessage) error) (ai.AIMessage, error) {
+					streamingCalls++
+
+					chunk := ai.AIMessage{
+						Role: ai.AssistantRole,
+						ToolCalls: []ai.ToolCall{
+							{
+								ID:   "call_terminal",
+								Type: "function",
+								Name: "terminal_tool",
+								Args: `{"message":"stop"}`,
+							},
+						},
+					}
+					if err := chunkFunction(chunk); err != nil {
+						return ai.AIMessage{}, err
+					}
+
+					return ai.AIMessage{
+						Role:    ai.AssistantRole,
+						Content: tt.finalReply,
+						ToolCalls: []ai.ToolCall{
+							{
+								ID:   "call_terminal",
+								Type: "function",
+								Name: "terminal_tool",
+								Args: `{"message":"stop"}`,
+							},
+						},
+					}, nil
+				})
+			}
+
+			ar, err := NewAgentRun("test-terminal-tool-agent", "Test terminal tool turn ending", "", t.TempDir())
+			require.NoError(t, err)
+			ar.SetModel(model)
+			ar.SetTools([]AgentTool{
+				{
+					Name:        "terminal_tool",
+					Description: "Stops after tool execution",
+					InputSchema: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"message": map[string]interface{}{"type": "string"},
+						},
+						"required": []string{"message"},
+					},
+					Execute: func(run *AgentRun, args map[string]interface{}) (*ToolCallResult, error) {
+						toolCalls++
+						return &ToolCallResult{
+							Result: &ai.ToolResult{
+								Content: []ai.ToolContent{{Type: "text", Content: "terminal complete"}},
+							},
+							Terminal: true,
+						}, nil
+					},
+				},
+			})
+			ar.SetStreaming(tt.streaming)
+			ar.SetEnableTrace(true)
+
+			ar.Run(context.Background(), "Test terminal handling", "", nil)
+			_, err = ar.Wait(0)
+			require.NoError(t, err)
+
+			assert.Equal(t, 1, modelCalls+streamingCalls, "terminal tool flow should not trigger a follow-up LLM call")
+			assert.Equal(t, 1, toolCalls, "terminal tool should execute once")
+
+			turns := ar.AgentContext().GetHistory().GetTurns()
+			require.Len(t, turns, 1, "turn should be persisted after terminal tool execution")
+
+			reply, ok := turns[0].Reply.(ai.AIMessage)
+			require.True(t, ok, "turn reply should be an assistant message")
+			assert.Equal(t, tt.finalReply, reply.Content)
+			assert.Empty(t, reply.ToolCalls, "persisted reply should not retain tool calls")
+
+			historyMessages := ar.AgentContext().GetHistory().GetMessages(ar.AgentContext())
+			require.Len(t, historyMessages, 2, "history replay should contain user and assistant messages only")
+
+			historyReply, ok := historyMessages[1].(ai.AIMessage)
+			require.True(t, ok, "history reply should be an assistant message")
+			assert.Equal(t, tt.finalReply, historyReply.Content)
+			assert.Empty(t, historyReply.ToolCalls, "history replay reply should not retain tool calls")
+		})
+	}
+}
+
 func TestAgentRun_ReuseAfterCompletion(t *testing.T) {
 	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{
@@ -574,11 +701,11 @@ func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
 	turnID, _, err := ledger.PrepareTurn(childTs)
 	require.NoError(t, err)
 	childTurn := ctxt.Turn{
-		TurnID:       turnID,
-		UserMessage:  "child",
-		Timestamp:    childTs,
-		AgentName:    "subagent",
-		Usage:        ai.Usage{PromptTokens: 10, CompletionTokens: 20},
+		TurnID:      turnID,
+		UserMessage: "child",
+		Timestamp:   childTs,
+		AgentName:   "subagent",
+		Usage:       ai.Usage{PromptTokens: 10, CompletionTokens: 20},
 	}
 	assert.NoError(t, ledger.Append(&childTurn))
 

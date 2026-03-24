@@ -206,6 +206,7 @@ func (r *AgentRun) handleAIMessage(msg ai.AIMessage, isChunk bool) {
 			}
 
 			if r.currentStreamGroup.Terminal {
+				endTerminalToolGroup(r, r.currentStreamGroup)
 				r.queueAction(&stopAction{})
 			} else {
 				r.queueAction(&llmCallAction{Message: r.agentContext.Turn().UserMessage})

@@ -115,7 +115,7 @@ func TestAgentFileAttachment(t *testing.T) {
 	agent := Agent{
 		Name:        "test-attachment-agent",
 		Description: "A test agent that handles file attachments",
-		Files:       FileAttachmentsFromDocuments([]*document.Document{doc1, doc2}),
+		Files:       fileAttachmentsFromDocuments([]*document.Document{doc1, doc2}),
 		Model: ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 			receivedMessages = messages
 
@@ -418,8 +418,8 @@ func TestStreamingCoordinatorWithChildAgents(t *testing.T) {
 		1. Create a brief summary about the topic
 		2. Call the sub agent to provide detailed information about the topic
 		3. Return the summary and the detailed information in markdown format`,
-		Agents: []Agent{childAgent},
-		Stream: true,
+		Agents:      []Agent{childAgent},
+		Stream:      true,
 		EnableTrace: true,
 	}
 

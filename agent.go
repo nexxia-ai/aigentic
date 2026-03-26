@@ -10,39 +10,8 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 	_ "github.com/nexxia-ai/aigentic/ai/openai"
 	"github.com/nexxia-ai/aigentic/ctxt"
-	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/run"
 )
-
-// FileAttachmentsFromDocuments converts documents to file refs for agent runs.
-func FileAttachmentsFromDocuments(docs []*document.Document) []ctxt.FileRef {
-	var out []ctxt.FileRef
-	for _, doc := range docs {
-		if doc == nil {
-			continue
-		}
-		basePath := ""
-		path := doc.FilePath
-		if path == "" {
-			path = doc.Filename
-		}
-		if path == "" {
-			path = doc.ID()
-		}
-		if filepath.IsAbs(path) {
-			basePath = filepath.Dir(path)
-			path = filepath.Base(path)
-		}
-		ref := ctxt.FileRef{
-			BasePath:        basePath,
-			Path:            path,
-			MimeType:        doc.MimeType,
-			IncludeInPrompt: true,
-		}
-		out = append(out, ref)
-	}
-	return out
-}
 
 // ContextFunction is a function that provides dynamic context for the agent.
 // It receives the AgentRun and returns a context string to be included in every LLM call.

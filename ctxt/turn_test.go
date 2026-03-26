@@ -229,5 +229,5 @@ func TestTurnLegacyUnmarshalMigratesDocuments(t *testing.T) {
 	assert.Equal(t, "uploads/x.pdf", loaded.Files[0].Path)
 	assert.Equal(t, "application/pdf", loaded.Files[0].MimeType)
 	assert.Equal(t, "t1", loaded.Files[0].ToolID)
-	assert.True(t, loaded.Files[0].IncludeInPrompt)
+	assert.False(t, loaded.Files[0].IncludeInPrompt)
 }

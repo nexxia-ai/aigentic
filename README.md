@@ -254,7 +254,7 @@ When `IncludeInPrompt` is `true`, the file content is automatically injected int
 
 [📖 See full example](https://github.com/nexxia-ai/aigentic-examples/tree/main/documents)
 
-Native document support with enhanced MIME type detection for text, code, and binary files. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents. Files passed via `Agent.Files` are path-based refs; use `FileAttachmentsFromDocuments` to convert documents. Paths are resolved relative to the run workspace `llm/` directory.
+Native document support with enhanced MIME type detection for text, code, and binary files. You can choose to embed the document on the prompt or send a reference. Embedding the document works for simple, and smaller documents. Files passed via `Agent.Files` are path-based refs, so create `ctxt.FileRef` values directly. Paths are resolved relative to the run workspace `llm/` directory.
 
 ```go
 package main
@@ -265,6 +265,7 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/document"
 )
 
@@ -281,7 +282,11 @@ func main() {
 		Name:         "DocumentAnalyst",
 		Description:  "Analyzes documents and extracts insights",
 		Instructions: "Analyze the provided documents and summarize key findings.",
-		Files:        aigentic.FileAttachmentsFromDocuments([]*document.Document{doc}),
+		Files: []ctxt.FileRef{{
+			Path:            doc.Filename,
+			MimeType:        doc.MimeType,
+			IncludeInPrompt: true,
+		}},
 	}
 
 	response, err := agent.Execute("What are the main points in this document?")
@@ -292,12 +297,15 @@ func main() {
 }
 ```
 
-If you have several documents, convert them with `FileAttachmentsFromDocuments` and pass via the `Files` field; they are listed in the prompt for the LLM to reference.
+If you have several documents, build `ctxt.FileRef` values and pass them via the `Files` field. Set `IncludeInPrompt` only for files whose content the model should receive in the prompt.
 
 ```go
 agent := aigentic.Agent{
     ...
-    Files: aigentic.FileAttachmentsFromDocuments([]*document.Document{doc1, doc2}),
+    Files: []ctxt.FileRef{
+        {Path: doc1.Filename, MimeType: doc1.MimeType},
+        {Path: doc2.Filename, MimeType: doc2.MimeType},
+    },
     ...
 }
 ```
@@ -544,7 +552,7 @@ Create custom tools using `run.NewTool()` for type-safe tool definitions with au
 
 ## Migration Notes
 
-**Execution tools (batch, plans, dynamic planning)** were removed from the framework and moved to the orchestrator (`aigentic-desktop/orchestrator/tools`). Use `run.NewChildRun` and `ctxt.NewChild` for custom batch/plan implementations. **Agent.Documents** was replaced by **Agent.Files** (`[]ctxt.FileRef`); use `FileAttachmentsFromDocuments` to convert documents.
+**Execution tools (batch, plans, dynamic planning)** were removed from the framework and moved to the orchestrator (`aigentic-desktop/orchestrator/tools`). Use `run.NewChildRun` and `ctxt.NewChild` for custom batch/plan implementations. **Agent.Documents** was replaced by **Agent.Files** (`[]ctxt.FileRef`); create `ctxt.FileRef` values directly for attached files.
 
 ---
 

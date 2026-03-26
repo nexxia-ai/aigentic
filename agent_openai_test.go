@@ -82,7 +82,7 @@ func TestOpenAI_Agent_WithFileID(t *testing.T) {
 		Description:  "You are a helpful assistant that analyzes files and provides insights.",
 		Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
 		EnableTrace:  true,
-		Files:        FileAttachmentsFromDocuments([]*document.Document{fileDoc}),
+		Files:        fileAttachmentsWithPromptInject([]*document.Document{fileDoc}),
 	}
 
 	// Test the agent with file ID

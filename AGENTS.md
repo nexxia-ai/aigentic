@@ -4,7 +4,7 @@
 - Create models with `ai.New(<model identifier>, apiKey)` after importing provider modules (e.g., `_ "github.com/nexxia-ai/aigentic-openai"`); identifiers are listed via `ai.Models()`.
 - Agent tools use the `run.AgentTool` type and `run.NewTool` helper; built-in tools in `tools/` return `run.AgentTool`.
 - Tools return `*run.ToolCallResult` which includes both the `ai.ToolResult`, optional `FileRefs` (files to be included in the next turn prompt), and optional `Terminal` (when true, the run stops after tool execution with no further LLM call).
-- Files are attached via `Agent.Files` (`[]ctxt.FileRef`). Use `FileAttachmentsFromDocuments` to convert documents. Paths are resolved relative to the run workspace `llm/` directory.
+- Files are attached via `Agent.Files` (`[]ctxt.FileRef`). Create `ctxt.FileRef` values directly. Paths are resolved relative to the run workspace `llm/` directory.
 - System prompt content is managed with ordered context parts via `AgentContext.SetSystemPart(key, value)`, `PromptPart(key)`, and `SystemParts()`. Use `ctxt.SystemPartKeyDescription`, `ctxt.SystemPartKeyInstructions`, and `ctxt.SystemPartKeyOutputInstructions` for common keys.
 - Legacy skill registry and framework-managed `read_file` system tool were removed from `aigentic`; skill discovery/loading is orchestrator-owned.
 
@@ -75,7 +75,7 @@ The `document` package (`github.com/nexxia-ai/aigentic/document`) provides docum
 - **Store** (`store.go`) - Interface for document storage with `Save()`, `Load()`, `List()`, and `Delete()` operations.
 - **LocalStore** (`local_store.go`) - File system-based implementation of Store that persists documents and metadata to disk. Supports lazy loading of document content.
 
-Files can be attached to agents via `Agent.Files` (use `FileAttachmentsFromDocuments` to convert documents). Paths are resolved relative to the run workspace `llm/` directory; prompts list files from the turn.
+Files can be attached to agents via `Agent.Files` (create `ctxt.FileRef` values directly). Paths are resolved relative to the run workspace `llm/` directory; prompts list files from the turn.
 
 ## Build, Test, and Development Commands
 - Build library: `go build ./...` — compile all packages.

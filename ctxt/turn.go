@@ -404,7 +404,7 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 					Path:            d.FilePath,
 					MimeType:        d.MimeType,
 					ToolID:          d.ToolID,
-					IncludeInPrompt: true,
+					IncludeInPrompt: false,
 				})
 			}
 		}

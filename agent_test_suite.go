@@ -2,17 +2,53 @@ package aigentic
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/ctxt"
 	"github.com/nexxia-ai/aigentic/document"
 	"github.com/nexxia-ai/aigentic/event"
 	"github.com/nexxia-ai/aigentic/run"
 	"github.com/stretchr/testify/assert"
 )
+
+func fileAttachmentsFromDocuments(docs []*document.Document) []ctxt.FileRef {
+	var refs []ctxt.FileRef
+	for _, doc := range docs {
+		if doc == nil {
+			continue
+		}
+		path := doc.FilePath
+		if path == "" {
+			path = doc.Filename
+		}
+		if path == "" {
+			path = doc.ID()
+		}
+		ref := ctxt.FileRef{
+			Path:     filepath.Base(path),
+			MimeType: doc.MimeType,
+		}
+		if filepath.IsAbs(path) {
+			ref.BasePath = filepath.Dir(path)
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+// fileAttachmentsWithPromptInject is for integration tests that require file bytes in the LLM prompt.
+func fileAttachmentsWithPromptInject(docs []*document.Document) []ctxt.FileRef {
+	refs := fileAttachmentsFromDocuments(docs)
+	for i := range refs {
+		refs[i].IncludeInPrompt = true
+	}
+	return refs
+}
 
 // IntegrationTestSuite defines a test suite for integration testing with different providers
 type IntegrationTestSuite struct {
@@ -325,7 +361,7 @@ func TestBasicAgent(t *testing.T, model *ai.Model) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.agent.Files = FileAttachmentsFromDocuments(tt.attachments)
+			tt.agent.Files = fileAttachmentsFromDocuments(tt.attachments)
 			for _, tool := range tt.tools {
 				tt.agent.AgentTools = append(tt.agent.AgentTools, run.WrapTool(tool))
 			}
@@ -398,7 +434,7 @@ func TestAgentRun(t *testing.T, model *ai.Model) {
 			for _, tool := range test.tools {
 				agent.AgentTools = append(agent.AgentTools, run.WrapTool(tool))
 			}
-			agent.Files = FileAttachmentsFromDocuments(test.attachments)
+			agent.Files = fileAttachmentsFromDocuments(test.attachments)
 			agentRun, err := agent.Start(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
@@ -457,7 +493,7 @@ func TestToolIntegration(t *testing.T, model *ai.Model) {
 			for _, tool := range test.tools {
 				test.agent.AgentTools = append(test.agent.AgentTools, run.WrapTool(tool))
 			}
-			test.agent.Files = FileAttachmentsFromDocuments(test.attachments)
+			test.agent.Files = fileAttachmentsFromDocuments(test.attachments)
 			agentRun, err := test.agent.Start(test.message)
 			if err != nil {
 				t.Fatalf("Agent run failed: %v", err)
@@ -657,7 +693,7 @@ func TestFileAttachments(t *testing.T, model *ai.Model) {
 				Description:  tc.description,
 				Instructions: "When you see a file reference, analyze it and provide a summary. If you cannot access the file, explain why.",
 				EnableTrace:  true,
-				Files:        FileAttachmentsFromDocuments(tc.attachments),
+				Files:        fileAttachmentsWithPromptInject(tc.attachments),
 			}
 
 			agentRun, err := agent.Start("Please analyze the attached file and tell me what it contains. If you can are able to analyse the file, start your response with 'SUCCESS:' followed by the analysis.")

@@ -44,6 +44,26 @@ func TestContextSaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestContextSaveAndLoadPreservesGoal(t *testing.T) {
+	baseDir := t.TempDir()
+	ctx, err := New("test-id", "d", "i", baseDir)
+	if err != nil {
+		t.Fatalf("failed to create context: %v", err)
+	}
+	ctx.SetSystemPart(SystemPartKeyGoal, "Help the user achieve the outcome")
+	if err := ctx.save(); err != nil {
+		t.Fatalf("failed to save context: %v", err)
+	}
+	loaded, err := LoadContext(ctx.Workspace().RootDir)
+	if err != nil {
+		t.Fatalf("failed to load context: %v", err)
+	}
+	g, ok := loaded.PromptPart(SystemPartKeyGoal)
+	if !ok || g != "Help the user achieve the outcome" {
+		t.Errorf("expected goal preserved, got %q (ok=%v)", g, ok)
+	}
+}
+
 func TestContextAutoSave(t *testing.T) {
 	baseDir := t.TempDir()
 	ctx, err := New("test-id", "test description", "test instructions", baseDir)

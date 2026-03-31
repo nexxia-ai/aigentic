@@ -656,6 +656,15 @@ func TestSetModel_ModelUpdateReflectedInNextRun(t *testing.T) {
 	assert.Equal(t, model2, ar.Model(), "Model() should return the updated model")
 }
 
+func TestAgentRunSetGoal(t *testing.T) {
+	ar, err := NewAgentRun("goal-agent", "d", "i", t.TempDir())
+	require.NoError(t, err)
+	ar.SetGoal("Help the user finish the task")
+	assert.Equal(t, "Help the user finish the task", ar.Goal())
+	ar.SetGoal("")
+	assert.Equal(t, "", ar.Goal())
+}
+
 func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
 	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		return ai.AIMessage{

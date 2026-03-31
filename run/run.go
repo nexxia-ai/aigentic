@@ -237,6 +237,23 @@ func (r *AgentRun) AgentContext() *ctxt.AgentContext {
 	return r.agentContext
 }
 
+// SetGoal sets the run-scoped mission anchor (system prompt <goal> block).
+func (r *AgentRun) SetGoal(goal string) {
+	if r.agentContext == nil {
+		return
+	}
+	r.agentContext.SetSystemPart(ctxt.SystemPartKeyGoal, goal)
+}
+
+// Goal returns the current goal system part, if set.
+func (r *AgentRun) Goal() string {
+	if r.agentContext == nil {
+		return ""
+	}
+	v, _ := r.agentContext.PromptPart(ctxt.SystemPartKeyGoal)
+	return v
+}
+
 func (r *AgentRun) SetModel(model *ai.Model) {
 	r.model = model
 }

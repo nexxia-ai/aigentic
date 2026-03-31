@@ -29,6 +29,9 @@ type Agent struct {
 	// It will be added to the system prompt. If this is a sub-agent, the Description is passed to the parent agent.
 	Description string
 
+	// Goal is a stable, run-scoped outcome the agent should work toward (system prompt <goal>), rendered before Instructions.
+	Goal string
+
 	// Instructions should contain specific instructions for the agent to carry out its task.
 	// Instructions are useful to create specific bullet points for the agent.
 	// For example,
@@ -107,6 +110,7 @@ func (a Agent) New() (*run.AgentRun, error) {
 	ar.SetRetrievers(a.Retrievers)
 	ar.SetStreaming(a.Stream)
 	ar.AgentContext().SetSystemPart(ctxt.SystemPartKeyOutputInstructions, a.OutputInstructions)
+	ar.SetGoal(a.Goal)
 	ar.SetLogLevel(a.LogLevel)
 	for _, agent := range a.Agents {
 		ar.AddSubAgent(agent.Name, agent.Description, agent.Instructions, agent.Model, agent.AgentTools)

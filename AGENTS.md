@@ -5,7 +5,7 @@
 - Agent tools use the `run.AgentTool` type and `run.NewTool` helper; built-in tools in `tools/` return `run.AgentTool`.
 - Tools return `*run.ToolCallResult` which includes both the `ai.ToolResult`, optional `FileRefs` (files to be included in the next turn prompt), and optional `Terminal` (when true, the run stops after tool execution with no further LLM call).
 - Files are attached via `Agent.Files` (`[]ctxt.FileRef`). Create `ctxt.FileRef` values directly. Paths are resolved relative to the run workspace `llm/` directory.
-- System prompt content is managed with ordered context parts via `AgentContext.SetSystemPart(key, value)`, `PromptPart(key)`, and `SystemParts()`. Use `ctxt.SystemPartKeyDescription`, `ctxt.SystemPartKeyInstructions`, and `ctxt.SystemPartKeyOutputInstructions` for common keys.
+- System prompt content is managed with ordered context parts via `AgentContext.SetSystemPart(key, value)`, `PromptPart(key)`, and `SystemParts()`. Use `ctxt.SystemPartKeyDescription`, `ctxt.SystemPartKeyGoal`, `ctxt.SystemPartKeyInstructions`, and `ctxt.SystemPartKeyOutputInstructions` for common keys. Empty values are omitted from the assembled system message. When building the LLM system message, known keys are emitted in this order: `description` → `goal` → `instructions` → `output_instructions` → `skills`, then any other keys in their existing slice order (see `ctxt/prompt_builder.go`).
 - Legacy skill registry and framework-managed `read_file` system tool were removed from `aigentic`; skill discovery/loading is orchestrator-owned.
 
 ## Project Structure & Module Organization
@@ -23,7 +23,7 @@
 
 The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runtime execution engine. It contains:
 
-- **AgentRun** (`run.go`) - Main execution runtime type that orchestrates agent execution, handles LLM calls, tool execution, and event streaming
+- **AgentRun** (`run.go`) - Main execution runtime type that orchestrates agent execution, handles LLM calls, tool execution, and event streaming. Use `SetGoal` / `Goal()` as thin helpers over the `goal` system part (`ctxt.SystemPartKeyGoal`).
 - **Events** (`event/event.go`) - Event types for execution lifecycle: `ContentEvent`, `ToolEvent`, `ThinkingEvent`, `ErrorEvent`, `LLMCallEvent`, `EvalEvent`, `ToolContentEvent`, `ToolActivityEvent`, `ToolCardEvent`, etc.
 - **AgentTool** (`agent_tool.go`) - Tool definition type and `NewTool()` helper for creating type-safe tools. Tools execute with signature `func(*AgentRun, map[string]interface{}) (*ToolCallResult, error)`.
 - **ToolCallResult** (`agent_tool.go`) - Return type for tool execution containing `*ai.ToolResult` (the LLM-visible result), `[]ctxt.FileRef` (files to register for the next turn), and `Terminal` (when true, run stops after tool execution). This allows tools to generate files and automatically include them in subsequent prompts.
@@ -31,7 +31,7 @@ The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runti
 - **Tracer** (`trace_run.go`) - Tracing support for debugging agent execution, including file reference tracking
 - **Retriever** (`retriever.go`) - Interface for document retrieval systems
 
-The root `aigentic` package (`agent.go`) provides the declarative `Agent` type that users configure, which internally creates and manages `run.AgentRun` instances for execution.
+The root `aigentic` package (`agent.go`) provides the declarative `Agent` type that users configure, which internally creates and manages `run.AgentRun` instances for execution. Set optional `Agent.Goal` for a stable run mission string (user-outcome framing); it is applied to the run context like `Description` and `Instructions`.
 
 Execution tools (batch, plans, dynamic planning) are **orchestrator-owned** and live in `aigentic-desktop/orchestrator/tools`. The framework provides `run.NewChildRun` and `run.Context()` for orchestrator tools that create child runs. **Breaking:** `AddExecutionTools`, `BatchPolicy`, `PlanDef`, `PlanStep`, and related exports were removed from `run`; migrate to the orchestrator tools package.
 
@@ -63,7 +63,7 @@ The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context manag
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **Turn** (`turn.go`) - Represents individual conversation turns. Contains `Files []FileRef` to track files registered by tools during the turn.
 - **FileRef** (`fileref.go`) - Canonical file reference with `Path` (relative to LLM dir), `IncludeInPrompt`, `Ephemeral`, `MimeType`, and caller metadata via `Meta()`/`SetMeta()`.
-- **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context and documents.
+- **PromptBuilder** (`prompt_builder.go`) - Builds LLM prompts from context and documents, including the system message with the canonical part order above.
 
 ### The `document` Package
 

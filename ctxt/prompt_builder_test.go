@@ -166,6 +166,27 @@ func TestCreateSystemMsg(t *testing.T) {
 	}
 }
 
+func TestCreateSystemMsg_ordersGoalBeforeInstructions(t *testing.T) {
+	withTempWorkingDirPB(t)
+	ac, err := New("test-id", "desc", "inst", t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		document.UnregisterStore(ac.Workspace().MemoryStoreName())
+	})
+	// Append order would put goal after instructions without canonical ordering
+	ac.SetSystemPart(SystemPartKeyInstructions, "do the thing")
+	ac.SetSystemPart(SystemPartKeyGoal, "Help the user succeed")
+
+	msg, err := createSystemMsg(ac, nil)
+	require.NoError(t, err)
+	content := msg.(ai.SystemMessage).Content
+	iGoal := strings.Index(content, "<goal>")
+	iInst := strings.Index(content, "<instructions>")
+	require.GreaterOrEqual(t, iGoal, 0)
+	require.GreaterOrEqual(t, iInst, 0)
+	assert.Less(t, iGoal, iInst, "goal block should appear before instructions")
+}
+
 // withTempWorkingDirPB switches the process working directory to a temp dir for the test.
 // It restores the original working directory when the test ends.
 func withTempWorkingDirPB(t *testing.T) {

@@ -24,6 +24,7 @@ type PromptPart struct {
 // Well-known system prompt part keys. Use these with SetSystemPart / PromptPart for consistency.
 const (
 	SystemPartKeyDescription        = "description"
+	SystemPartKeyGoal               = "goal"
 	SystemPartKeyInstructions       = "instructions"
 	SystemPartKeyOutputInstructions = "output_instructions"
 )

@@ -20,6 +20,8 @@ For multi-agent systems, agents can be composed as tools within other agents, en
 
 The declarative approach means you focus on agent configuration and event handling rather than implementing conversation management, tool orchestration, file handling, or LLM integration details.
 
+**System prompt layers:** Besides `Description` and `Instructions`, you can set **`Goal`** on `aigentic.Agent` (or `AgentRun.SetGoal` on a run) for a short, stable mission the model should weigh on every turn—typically phrased as helping the user reach an outcome. The framework maps these to context system parts and builds the system message in order: description, goal, instructions, output instructions, skills catalogue (when present), then any other custom parts.
+
 ---
 
 ## Key Features
@@ -64,6 +66,7 @@ func main() {
 		Model:        model,
 		Name:         "Assistant",
 		Description:  "A helpful AI assistant",
+		Goal:         "Help the user get clear, accurate answers to their questions.",
 		Instructions: "You are a friendly and knowledgeable assistant.",
 	}
 

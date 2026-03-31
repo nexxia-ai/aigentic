@@ -39,11 +39,57 @@ File references for this turn:
 
 const promptHistoryTurnLimit = 100
 
+// systemPartSkillsKey matches orchestrator-staged skills blocks; kept as a string to avoid importing orchestrator into ctxt.
+const systemPartSkillsKey = "skills"
+
+// systemPartPromptOrder is the canonical order of well-known keys in the system prompt (goal before instructions).
+var systemPartPromptOrder = []string{
+	SystemPartKeyDescription,
+	SystemPartKeyGoal,
+	SystemPartKeyInstructions,
+	SystemPartKeyOutputInstructions,
+	systemPartSkillsKey,
+}
+
+func orderedSystemPartsForPrompt(parts []PromptPart) []PromptPart {
+	known := make(map[string]struct{}, len(systemPartPromptOrder))
+	for _, k := range systemPartPromptOrder {
+		known[k] = struct{}{}
+	}
+	byKey := make(map[string]string)
+	for _, p := range parts {
+		byKey[p.Key] = p.Value
+	}
+	var out []PromptPart
+	for _, k := range systemPartPromptOrder {
+		v := strings.TrimSpace(byKey[k])
+		if v == "" {
+			continue
+		}
+		out = append(out, PromptPart{Key: k, Value: byKey[k]})
+	}
+	seenUnknown := make(map[string]struct{})
+	for _, p := range parts {
+		if _, isKnown := known[p.Key]; isKnown {
+			continue
+		}
+		if _, dup := seenUnknown[p.Key]; dup {
+			continue
+		}
+		if strings.TrimSpace(p.Value) == "" {
+			continue
+		}
+		seenUnknown[p.Key] = struct{}{}
+		out = append(out, PromptPart{Key: p.Key, Value: byKey[p.Key]})
+	}
+	return out
+}
+
 func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 	var b bytes.Buffer
 	b.WriteString(defaultSystemIntro)
 
-	for _, p := range ac.SystemParts() {
+	for _, p := range orderedSystemPartsForPrompt(ac.SystemParts()) {
 		if p.Value == "" {
 			continue
 		}

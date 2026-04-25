@@ -122,7 +122,7 @@ func NewAtPath(id, description, instructions, runDir string) (*AgentContext, err
 
 // NewChild creates a child AgentContext with its own directory but sharing the
 // given llm/ directory. Used by batch and plan tools. basePath is the ledger base (same as parent).
-func NewChild(id, description, instructions, privateDir, sharedLLMDir, basePath string) (*AgentContext, error) {
+func NewChild(id, description, instructions, privateDir, sharedLLMDir, basePath string, inheritedParts ...PromptPart) (*AgentContext, error) {
 	if privateDir == "" {
 		return nil, fmt.Errorf("child private dir is required")
 	}
@@ -143,20 +143,44 @@ func NewChild(id, description, instructions, privateDir, sharedLLMDir, basePath 
 	}
 
 	ctx := &AgentContext{
-		id:        id,
-		runMeta:   make(map[string]interface{}),
-		workspace: ws,
-		basePath:  absBase,
-		ledger:    NewLedger(absBase),
-		systemParts: []PromptPart{
-			{Key: SystemPartKeyDescription, Value: description},
-			{Key: SystemPartKeyInstructions, Value: instructions},
-		},
+		id:          id,
+		runMeta:     make(map[string]interface{}),
+		workspace:   ws,
+		basePath:    absBase,
+		ledger:      NewLedger(absBase),
+		systemParts: childSystemParts(description, instructions, inheritedParts),
 	}
 	conversationPath := filepath.Join(privateDir, "conversation.json")
 	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
+}
+
+func childSystemParts(description, instructions string, inheritedParts []PromptPart) []PromptPart {
+	parts := []PromptPart{
+		{Key: SystemPartKeyDescription, Value: description},
+		{Key: SystemPartKeyInstructions, Value: instructions},
+	}
+	for _, part := range inheritedParts {
+		if part.Key == "" || part.Value == "" {
+			continue
+		}
+		if part.Key == SystemPartKeyDescription || part.Key == SystemPartKeyInstructions {
+			continue
+		}
+		replaced := false
+		for i := range parts {
+			if parts[i].Key == part.Key {
+				parts[i].Value = part.Value
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			parts = append(parts, part)
+		}
+	}
+	return parts
 }
 
 func (r *AgentContext) Workspace() *Workspace {

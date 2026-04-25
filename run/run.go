@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,12 +129,20 @@ func (r *AgentRun) Context() context.Context {
 
 // NewChildRun creates a child AgentRun with shared LLM directory, inheriting trace and streaming from the parent.
 // Used by orchestrator-owned execution tools (batch, plan) that create child runs.
-func NewChildRun(parent *AgentRun, childName, description, instructions, privateDir string, model *ai.Model, tools []AgentTool) (*AgentRun, error) {
+func NewChildRun(parent *AgentRun, childName, description, instructions, privateDir string, model *ai.Model, tools []AgentTool, childGoal ...string) (*AgentRun, error) {
 	ws := parent.AgentContext().Workspace()
 	if ws == nil {
 		return nil, fmt.Errorf("parent has no workspace")
 	}
-	childCtx, err := ctxt.NewChild(childName, description, instructions, privateDir, ws.LLMDir, parent.AgentContext().BasePath())
+	childCtx, err := ctxt.NewChild(
+		childName,
+		description,
+		instructions,
+		privateDir,
+		ws.LLMDir,
+		parent.AgentContext().BasePath(),
+		childRunSystemParts(parent.AgentContext(), childGoal...)...,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create child context: %w", err)
 	}
@@ -152,6 +161,29 @@ func NewChildRun(parent *AgentRun, childName, description, instructions, private
 	}
 	childRun.Logger = parent.Logger.With("child", childName)
 	return childRun, nil
+}
+
+func childRunSystemParts(parentCtx *ctxt.AgentContext, childGoal ...string) []ctxt.PromptPart {
+	if parentCtx == nil {
+		return nil
+	}
+	var parts []ctxt.PromptPart
+	goal := ""
+	if len(childGoal) > 0 {
+		goal = strings.TrimSpace(childGoal[0])
+	}
+	if goal == "" {
+		goal, _ = parentCtx.PromptPart(ctxt.SystemPartKeyGoal)
+	}
+	if goal != "" {
+		parts = append(parts, ctxt.PromptPart{Key: ctxt.SystemPartKeyGoal, Value: goal})
+	}
+	for _, key := range []string{ctxt.SystemPartKeyOutputInstructions, ctxt.SystemPartKeySkills} {
+		if value, ok := parentCtx.PromptPart(key); ok && value != "" {
+			parts = append(parts, ctxt.PromptPart{Key: key, Value: value})
+		}
+	}
+	return parts
 }
 
 func (r *AgentRun) SetRetrievers(retrievers []Retriever) {

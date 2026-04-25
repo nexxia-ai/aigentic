@@ -131,6 +131,39 @@ func TestChildContextAddFileRefCarriesIntoTurn(t *testing.T) {
 	require.Equal(t, "image/png", turn.Files[0].MimeType)
 }
 
+func TestNewChildInheritsSelectedSystemParts(t *testing.T) {
+	parent, err := New("parent-run", "desc", "inst", t.TempDir())
+	require.NoError(t, err)
+	parent.SetSystemPart(SystemPartKeyGoal, "parent goal")
+	parent.SetSystemPart(SystemPartKeyOutputInstructions, "parent output")
+	parent.SetSystemPart(SystemPartKeySkills, "parent skills")
+
+	privateDir := filepath.Join(parent.Workspace().PrivateDir, "batch", "item-0")
+	child, err := NewChild(
+		"child-run",
+		"child desc",
+		"child inst",
+		privateDir,
+		parent.Workspace().LLMDir,
+		parent.BasePath(),
+		parent.SystemParts()...,
+	)
+	require.NoError(t, err)
+
+	requirePromptPart(t, child, SystemPartKeyDescription, "child desc")
+	requirePromptPart(t, child, SystemPartKeyInstructions, "child inst")
+	requirePromptPart(t, child, SystemPartKeyGoal, "parent goal")
+	requirePromptPart(t, child, SystemPartKeyOutputInstructions, "parent output")
+	requirePromptPart(t, child, SystemPartKeySkills, "parent skills")
+}
+
+func requirePromptPart(t *testing.T, ctx *AgentContext, key, want string) {
+	t.Helper()
+	got, ok := ctx.PromptPart(key)
+	require.True(t, ok, "missing prompt part %q", key)
+	require.Equal(t, want, got)
+}
+
 func TestAttachDocumentAndAddFileRefDedupesPendingRef(t *testing.T) {
 	ctx := createTestContext(t, "id", "desc", "inst")
 

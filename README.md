@@ -555,7 +555,7 @@ Create custom tools using `run.NewTool()` for type-safe tool definitions with au
 
 ## Migration Notes
 
-**Execution tools (batch, plans, dynamic planning)** were removed from the framework and moved to the orchestrator (`aigentic-desktop/orchestrator/tools`). Use `run.NewChildRun` and `ctxt.NewChild` for custom batch/plan implementations. **Agent.Documents** was replaced by **Agent.Files** (`[]ctxt.FileRef`); create `ctxt.FileRef` values directly for attached files.
+**Agent.Documents** was replaced by **Agent.Files** (`[]ctxt.FileRef`); create `ctxt.FileRef` values directly for attached files.
 
 ---
 

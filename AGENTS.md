@@ -6,7 +6,7 @@
 - Tools return `*run.ToolCallResult` which includes both the `ai.ToolResult`, optional `FileRefs` (files to be included in the next turn prompt), and optional `Terminal` (when true, the run stops after tool execution with no further LLM call).
 - Files are attached via `Agent.Files` (`[]ctxt.FileRef`). Create `ctxt.FileRef` values directly. Paths are resolved relative to the run workspace `llm/` directory.
 - System prompt content is managed with ordered context parts via `AgentContext.SetSystemPart(key, value)`, `PromptPart(key)`, and `SystemParts()`. Use `ctxt.SystemPartKeyDescription`, `ctxt.SystemPartKeyGoal`, `ctxt.SystemPartKeyInstructions`, and `ctxt.SystemPartKeyOutputInstructions` for common keys. Empty values are omitted from the assembled system message. When building the LLM system message, known keys are emitted in this order: `description` → `goal` → `instructions` → `output_instructions` → `skills`, then any other keys in their existing slice order (see `ctxt/prompt_builder.go`).
-- Legacy skill registry and framework-managed `read_file` system tool were removed from `aigentic`; skill discovery/loading is orchestrator-owned.
+- Legacy skill registry and framework-managed `read_file` system tool were removed from `aigentic`.
 
 ## Project Structure & Module Organization
 - Root Go module: `aigentic` (see `go.mod`).
@@ -33,8 +33,6 @@ The `run` package (`github.com/nexxia-ai/aigentic/run`) provides the agent runti
 
 The root `aigentic` package (`agent.go`) provides the declarative `Agent` type that users configure, which internally creates and manages `run.AgentRun` instances for execution. Set optional `Agent.Goal` for a stable run mission string (user-outcome framing); it is applied to the run context like `Description` and `Instructions`.
 
-Execution tools (batch, plans, dynamic planning) are **orchestrator-owned** and live in `aigentic-desktop/orchestrator/tools`. The framework provides `run.NewChildRun` and `run.Context()` for orchestrator tools that create child runs. **Breaking:** `AddExecutionTools`, `BatchPolicy`, `PlanDef`, `PlanStep`, and related exports were removed from `run`; migrate to the orchestrator tools package.
-
 #### Tool File References
 
 Tools can register files to be included in the next turn's prompt by returning `FileRefs` in `ToolCallResult`:
@@ -58,7 +56,7 @@ The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context manag
 
 - **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and workspace. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
 - **PromptPart** (`context.go`) - Ordered key/value system prompt parts. `SetSystemPart` upserts/removes parts while preserving order, and `PromptPart` reads by key.
-- **NewChild** (`context.go`) - Creates a child `AgentContext` with its own `_private/` directory but sharing the parent's `llm/` directory. Used by batch items and plan steps: `NewChild(id, description, instructions, privateDir, sharedLLMDir)`.
+- **NewChild** (`context.go`) - Creates a child `AgentContext` with its own `_private/` directory but sharing the parent's `llm/` directory: `NewChild(id, description, instructions, privateDir, sharedLLMDir)`.
 - **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`). Turn storage is managed by the Ledger at `basePath/ledger/{shard}/{turnID}/` where `{shard}` is the UTC calendar date `yyyymmdd`. Use `AgentContext.Workspace()`. `newChildWorkspace(privateDir, sharedLLMDir)` creates workspaces for child contexts.
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **Turn** (`turn.go`) - Represents individual conversation turns. Contains `Files []FileRef` to track files registered by tools during the turn.

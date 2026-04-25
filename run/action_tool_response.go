@@ -25,6 +25,11 @@ func endTerminalToolGroup(r *AgentRun, group *ToolCallGroup) {
 }
 
 func (r *AgentRun) runToolResponseAction(action *toolCallAction, content string, fileRefs []ctxt.FileRef) {
+	for i := range fileRefs {
+		if fileRefs[i].Role == "" {
+			fileRefs[i].Role = ctxt.FileRoleToolArtifact
+		}
+	}
 	// Store original content for user-facing display
 	action.Group.UserResponses[action.ToolCallID] = content
 	if action.Group.FileRefs == nil {

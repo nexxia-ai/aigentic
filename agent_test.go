@@ -132,27 +132,26 @@ func TestAgentFileAttachment(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, result, "I've received your message and the attached files")
 
-	// Verify that at least the expected messages were received by the model
-	// Expected: System message, Documents list message, User message = 3 messages minimum
+	// Verify that at least the expected messages were received by the model.
+	// Expected: system message, file reference message, user message = 3 messages minimum.
 	if !assert.GreaterOrEqual(t, len(receivedMessages), 3) {
 		t.FailNow()
 	}
 
-	// Check that the documents list message is present
-	docsListFound := false
+	filesListFound := false
 	userMsgFound := false
 	for _, msg := range receivedMessages {
 		if userMsg, ok := msg.(ai.UserMessage); ok {
-			if strings.Contains(userMsg.Content, "The following documents are available in this session") {
+			if strings.Contains(userMsg.Content, "Files available on disk") {
 				assert.Contains(t, userMsg.Content, "test.txt")
 				assert.Contains(t, userMsg.Content, "test.png")
-				docsListFound = true
+				filesListFound = true
 			} else if strings.Contains(userMsg.Content, "Please analyze these attached files") {
 				userMsgFound = true
 			}
 		}
 	}
-	assert.True(t, docsListFound, "Documents list message should be present")
+	assert.True(t, filesListFound, "Files list message should be present")
 	assert.True(t, userMsgFound, "User message should be present")
 }
 

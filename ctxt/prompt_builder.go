@@ -39,16 +39,13 @@ File references for this turn:
 
 const promptHistoryTurnLimit = 100
 
-// systemPartSkillsKey matches orchestrator-staged skills blocks; kept as a string to avoid importing orchestrator into ctxt.
-const systemPartSkillsKey = "skills"
-
 // systemPartPromptOrder is the canonical order of well-known keys in the system prompt (goal before instructions).
 var systemPartPromptOrder = []string{
 	SystemPartKeyDescription,
 	SystemPartKeyGoal,
 	SystemPartKeyInstructions,
 	SystemPartKeyOutputInstructions,
-	systemPartSkillsKey,
+	SystemPartKeySkills,
 }
 
 func orderedSystemPartsForPrompt(parts []PromptPart) []PromptPart {
@@ -114,38 +111,6 @@ func createSystemMsg(ac *AgentContext, tools []ai.Tool) (ai.Message, error) {
 		b.WriteString("</tools>\n")
 	}
 
-	ws := ac.Workspace()
-	if ws != nil {
-		docs, err := ws.MemoryFiles()
-		if err != nil {
-			slog.Error("failed to load memory files", "error", err)
-		} else if len(docs) > 0 {
-			for _, doc := range docs {
-				relPath := doc.FilePath
-				if ws.MemoryDir != "" && ws.LLMDir != "" {
-					absLLM, errLLM := filepath.Abs(ws.LLMDir)
-					absMem, errMem := filepath.Abs(ws.MemoryDir)
-					if errLLM == nil && errMem == nil {
-						fullPath := filepath.Join(absMem, doc.FilePath)
-						if r, err := filepath.Rel(absLLM, fullPath); err == nil {
-							joined := filepath.Join(".", r)
-							prefix := "." + string(filepath.Separator)
-							if !strings.HasPrefix(joined, prefix) {
-								joined = prefix + joined
-							}
-							relPath = joined
-						}
-					}
-				}
-				b.WriteString("\n<document name=\"")
-				b.WriteString(relPath)
-				b.WriteString("\">\n")
-				b.WriteString(doc.Text())
-				b.WriteString("\n</document>\n")
-			}
-		}
-	}
-
 	if t := ac.Turn(); t != nil && len(t.systemTags) > 0 {
 		b.WriteString("\n")
 		for _, tag := range t.systemTags {
@@ -168,21 +133,64 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 		return nil, nil
 	}
 
-	seenPath := make(map[string]bool)
 	norm := func(p string) string { return filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/")) }
+	renderRef := func(buf *bytes.Buffer, ref FileRef) {
+		if ref.MimeType != "" {
+			buf.WriteString(fmt.Sprintf("  %s, Type: %s\n", ref.Path, ref.MimeType))
+			return
+		}
+		buf.WriteString(fmt.Sprintf("  %s\n", ref.Path))
+	}
 
 	var promptBuf bytes.Buffer
-	promptBuf.WriteString("The following documents are available in this session:\n")
-	for _, ref := range turn.Files {
+	promptFiles := turn.PromptFiles()
+	includedByPath := make(map[string]struct{}, len(promptFiles))
+	seenIncluded := make(map[string]bool)
+	for _, ref := range promptFiles {
 		p := norm(ref.Path)
-		if p == "" || seenPath[p] {
+		if p == "" || seenIncluded[p] {
 			continue
 		}
-		seenPath[p] = true
-		if ref.MimeType != "" {
-			promptBuf.WriteString(fmt.Sprintf("  %s, Type: %s\n", ref.Path, ref.MimeType))
-		} else {
-			promptBuf.WriteString(fmt.Sprintf("  %s\n", ref.Path))
+		seenIncluded[p] = true
+		includedByPath[p] = struct{}{}
+	}
+
+	seenOnDisk := make(map[string]bool)
+	var onDiskRefs []FileRef
+	for _, ref := range turn.Files {
+		p := norm(ref.Path)
+		if p == "" || seenOnDisk[p] {
+			continue
+		}
+		seenOnDisk[p] = true
+		if _, ok := includedByPath[p]; ok {
+			continue
+		}
+		onDiskRefs = append(onDiskRefs, ref)
+	}
+
+	if len(onDiskRefs) > 0 {
+		promptBuf.WriteString("Files available on disk (use filesystem.read_text to load):\n")
+		for _, ref := range onDiskRefs {
+			renderRef(&promptBuf, ref)
+		}
+	}
+
+	if len(seenIncluded) > 0 {
+		if promptBuf.Len() > 0 {
+			promptBuf.WriteString("\n")
+		}
+		promptBuf.WriteString("Files included below in this turn:\n")
+		for _, ref := range promptFiles {
+			p := norm(ref.Path)
+			if p == "" {
+				continue
+			}
+			if !seenIncluded[p] {
+				continue
+			}
+			renderRef(&promptBuf, ref)
+			delete(seenIncluded, p)
 		}
 	}
 
@@ -192,6 +200,137 @@ func createDocsMsg(ac *AgentContext) (ai.Message, error) {
 
 	userMsg := ai.UserMessage{Role: ai.UserRole, Content: promptBuf.String()}
 	return userMsg, nil
+}
+
+const contextMapBucketLimit = 50
+
+func createContextMapMsg(ac *AgentContext) (ai.Message, error) {
+	turn := ac.Turn()
+	if turn == nil {
+		return nil, nil
+	}
+	byPath := make(map[string]struct{})
+	var injected []FileRef
+	var onDisk []FileRef
+	var generated []FileRef
+	for _, ref := range turn.Files {
+		path := strings.TrimSpace(ref.Path)
+		if path == "" {
+			continue
+		}
+		key := filepath.ToSlash(strings.TrimPrefix(path, "/"))
+		if _, seen := byPath[key]; seen {
+			continue
+		}
+		byPath[key] = struct{}{}
+		if ref.IncludeInPrompt {
+			injected = append(injected, ref)
+		} else if ref.IsUserUpload() || ref.IsReference() || ref.IsToolArtifact() {
+			onDisk = append(onDisk, ref)
+		}
+		if !ref.AddedAt.IsZero() && !turn.StartFileCutoff.IsZero() && ref.AddedAt.After(turn.StartFileCutoff) {
+			generated = append(generated, ref)
+		}
+	}
+	if ws := ac.Workspace(); ws != nil {
+		docs, err := ws.MemoryFiles()
+		if err != nil {
+			slog.Error("failed to load memory files", "error", err)
+		} else {
+			for _, doc := range docs {
+				path := memoryPromptPath(ws, doc.FilePath)
+				if strings.TrimSpace(path) == "" {
+					continue
+				}
+				key := filepath.ToSlash(strings.TrimPrefix(path, "/"))
+				if _, seen := byPath[key]; seen {
+					continue
+				}
+				byPath[key] = struct{}{}
+				onDisk = append(onDisk, FileRef{
+					Path:      path,
+					MimeType:  doc.MimeType,
+					Role:      FileRoleReference,
+					SizeBytes: doc.FileSize,
+				})
+			}
+		}
+	}
+	stateBlock := strings.TrimSpace(ac.StateBlock())
+	if len(injected) == 0 && len(onDisk) == 0 && len(generated) == 0 && stateBlock == "" {
+		return nil, nil
+	}
+
+	writeBucket := func(buf *bytes.Buffer, name string, refs []FileRef) {
+		buf.WriteString(name)
+		buf.WriteString(":\n")
+		if len(refs) == 0 {
+			buf.WriteString("  (none)\n")
+			return
+		}
+		limit := len(refs)
+		if limit > contextMapBucketLimit {
+			limit = contextMapBucketLimit
+		}
+		for i := 0; i < limit; i++ {
+			ref := refs[i]
+			buf.WriteString("  - path: ")
+			buf.WriteString(ref.Path)
+			buf.WriteString("\n")
+			if ref.SizeBytes > 0 {
+				buf.WriteString(fmt.Sprintf("    size_bytes: %d\n", ref.SizeBytes))
+			}
+			if ref.MimeType != "" {
+				buf.WriteString("    mime_type: ")
+				buf.WriteString(ref.MimeType)
+				buf.WriteString("\n")
+			}
+		}
+		if len(refs) > limit {
+			buf.WriteString(fmt.Sprintf("  ... (%d more)\n", len(refs)-limit))
+		}
+	}
+
+	var buf bytes.Buffer
+	buf.WriteString("Context map for this turn:\n<context_map>\n")
+	writeBucket(&buf, "injected", injected)
+	writeBucket(&buf, "on_disk", onDisk)
+	writeBucket(&buf, "generated_this_turn", generated)
+	buf.WriteString("package_state:\n")
+	if stateBlock == "" {
+		buf.WriteString("  (none)\n")
+	} else {
+		for _, line := range strings.Split(stateBlock, "\n") {
+			buf.WriteString("  ")
+			buf.WriteString(line)
+			buf.WriteString("\n")
+		}
+	}
+	buf.WriteString("</context_map>")
+	return ai.UserMessage{Role: ai.UserRole, Content: buf.String()}, nil
+}
+
+func memoryPromptPath(ws *Workspace, path string) string {
+	if ws == nil {
+		return path
+	}
+	relPath := path
+	if ws.MemoryDir != "" && ws.LLMDir != "" {
+		absLLM, errLLM := filepath.Abs(ws.LLMDir)
+		absMem, errMem := filepath.Abs(ws.MemoryDir)
+		if errLLM == nil && errMem == nil {
+			fullPath := filepath.Join(absMem, path)
+			if r, err := filepath.Rel(absLLM, fullPath); err == nil {
+				joined := filepath.Join(".", r)
+				prefix := "." + string(filepath.Separator)
+				if !strings.HasPrefix(joined, prefix) {
+					joined = prefix + joined
+				}
+				relPath = joined
+			}
+		}
+	}
+	return filepath.ToSlash(relPath)
 }
 
 func createUserMsgForTurn(ac *AgentContext, turn *Turn) (ai.Message, error) {
@@ -245,13 +384,18 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 
 	// Add history messages before user message
 	if includeHistory && r.conversationHistory != nil {
-		historyMessages := r.conversationHistory.getMessages(promptHistoryTurnLimit, r)
+		historyMessages := r.conversationHistory.getMessages(0, r)
 		msgs = append(msgs, historyMessages...)
 	}
 
 	docsMsg, _ := createDocsMsg(r)
 	if docsMsg != nil {
 		msgs = append(msgs, docsMsg)
+	}
+
+	contextMapMsg, _ := createContextMapMsg(r)
+	if contextMapMsg != nil {
+		msgs = append(msgs, contextMapMsg)
 	}
 
 	// Add user message before documents
@@ -264,7 +408,13 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 	}
 
 	// Add document content for files with IncludeInPrompt
+	policy := DefaultInjectionPolicy()
+	usedBytes := 0
 	for _, ref := range r.currentTurn.PromptFiles() {
+		// Tool artifacts are injected through their tool response so the next LLM call sees them once.
+		if ref.ToolID != "" {
+			continue
+		}
 		doc, err := OpenFileRef(ref)
 		if err != nil {
 			slog.Warn("failed to open file for prompt", "path", ref.Path, "error", err)
@@ -272,6 +422,23 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 		}
 		if ref.MimeType != "" {
 			doc.MimeType = ref.MimeType
+		}
+		data, err := doc.Bytes()
+		if err != nil {
+			slog.Warn("failed to read file for prompt", "path", ref.Path, "error", err)
+			continue
+		}
+		rendered := RenderInjectedText(ref.Path, data, policy, usedBytes)
+		if rendered.Omitted {
+			continue
+		}
+		usedBytes += len(rendered.Text)
+		if rendered.Truncated {
+			msgs = append(msgs, ai.UserMessage{
+				Role:    ai.UserRole,
+				Content: fmt.Sprintf("Content of %s:\n\n%s", ref.Path, rendered.Text),
+			})
+			continue
 		}
 		msgs = append(msgs, r.insertDocuments([]*document.Document{doc})...)
 	}
@@ -284,12 +451,9 @@ func (r *AgentContext) BuildPrompt(tools []ai.Tool, includeHistory bool) ([]ai.M
 
 func OpenFileRef(ref FileRef) (*document.Document, error) {
 	docID := strings.TrimSpace(ref.Path)
-	resolvedPath := docID
-	if strings.TrimSpace(ref.BasePath) != "" && !filepath.IsAbs(resolvedPath) {
-		resolvedPath = filepath.Join(ref.BasePath, filepath.FromSlash(resolvedPath))
-	}
-	if resolvedPath == "" {
-		return nil, fmt.Errorf("file path not set")
+	resolvedPath, err := resolveFileRefPath(ref)
+	if err != nil {
+		return nil, err
 	}
 	data, err := os.ReadFile(resolvedPath)
 	if err != nil {
@@ -308,4 +472,45 @@ func OpenFileRef(ref FileRef) (*document.Document, error) {
 		doc.MimeType = ref.MimeType
 	}
 	return doc, nil
+}
+
+func resolveFileRefPath(ref FileRef) (string, error) {
+	docID := strings.TrimSpace(ref.Path)
+	if docID == "" {
+		return "", fmt.Errorf("file path not set")
+	}
+	resolvedPath := filepath.FromSlash(docID)
+	basePath := strings.TrimSpace(ref.BasePath)
+	if basePath == "" {
+		return resolvedPath, nil
+	}
+
+	absBase, err := filepath.Abs(basePath)
+	if err != nil {
+		return "", fmt.Errorf("file base path: %w", err)
+	}
+	if evalBase, err := filepath.EvalSymlinks(absBase); err == nil {
+		absBase = evalBase
+	}
+
+	if filepath.IsAbs(resolvedPath) {
+		resolvedPath, err = filepath.Abs(resolvedPath)
+	} else {
+		resolvedPath, err = filepath.Abs(filepath.Join(absBase, resolvedPath))
+	}
+	if err != nil {
+		return "", fmt.Errorf("file path: %w", err)
+	}
+	if evalPath, err := filepath.EvalSymlinks(resolvedPath); err == nil {
+		resolvedPath = evalPath
+	}
+
+	rel, err := filepath.Rel(absBase, resolvedPath)
+	if err != nil {
+		return "", fmt.Errorf("file path relative to base: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("file path escapes base path: %s", ref.Path)
+	}
+	return resolvedPath, nil
 }

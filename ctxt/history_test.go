@@ -2,6 +2,7 @@ package ctxt
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,60 @@ func TestLedgerGetResolvesTurns(t *testing.T) {
 	}
 	if got.UserMessage != "Hello" {
 		t.Errorf("expected UserMessage 'Hello', got %q", got.UserMessage)
+	}
+}
+
+func TestGetMessagesUsesTurnLimit(t *testing.T) {
+	tmp := t.TempDir()
+	ledger := NewLedger(tmp)
+	h := NewConversationHistory(ledger, filepath.Join(tmp, "conversation.json"))
+	h.SetTurnLimit(2)
+
+	for i := 0; i < 4; i++ {
+		turnID, _, err := ledger.PrepareTurn(time.Now())
+		if err != nil {
+			t.Fatalf("PrepareTurn %d: %v", i, err)
+		}
+		h.appendTurn(Turn{
+			TurnID:    turnID,
+			Request:   ai.UserMessage{Role: ai.UserRole, Content: "question"},
+			Reply:     ai.AIMessage{Role: ai.AssistantRole, Content: "answer"},
+			Timestamp: time.Now(),
+		})
+	}
+
+	if got := len(h.GetMessages(nil)); got != 4 {
+		t.Fatalf("expected 2 turns / 4 messages, got %d", got)
+	}
+}
+
+func TestGetMessagesAppliesByteBudgetToRecentTurns(t *testing.T) {
+	tmp := t.TempDir()
+	ledger := NewLedger(tmp)
+	h := NewConversationHistory(ledger, filepath.Join(tmp, "conversation.json"))
+	h.SetBudget(10, 16*1024)
+
+	payload := strings.Repeat("x", 5*1024)
+	for i := 0; i < 10; i++ {
+		turnID, _, err := ledger.PrepareTurn(time.Now())
+		if err != nil {
+			t.Fatalf("PrepareTurn %d: %v", i, err)
+		}
+		h.appendTurn(Turn{
+			TurnID:    turnID,
+			Request:   ai.UserMessage{Role: ai.UserRole, Content: payload},
+			Reply:     ai.AIMessage{Role: ai.AssistantRole, Content: "ok"},
+			Timestamp: time.Now(),
+		})
+	}
+
+	msgs := h.GetMessages(nil)
+	if got := len(msgs); got < 6 || got > 8 {
+		t.Fatalf("expected most recent 3-4 turns, got %d messages", got)
+	}
+	firstUser, ok := msgs[0].(ai.UserMessage)
+	if !ok || firstUser.Content != payload {
+		t.Fatalf("expected history to preserve user messages, got %T", msgs[0])
 	}
 }
 
@@ -99,7 +154,7 @@ func TestGetMessagesSkipsNilRequest(t *testing.T) {
 	}
 }
 
-func TestGetMessagesPreservesFullHistory(t *testing.T) {
+func TestGetMessagesUsesDefaultTurnLimit(t *testing.T) {
 	tmp := t.TempDir()
 	ledger := NewLedger(tmp)
 	h := NewConversationHistory(ledger, filepath.Join(tmp, "conversation.json"))
@@ -125,7 +180,7 @@ func TestGetMessagesPreservesFullHistory(t *testing.T) {
 	if got := len(h.GetTurns()); got != 120 {
 		t.Fatalf("expected 120 resolved turns, got %d", got)
 	}
-	if got := len(h.GetMessages(nil)); got != 240 {
-		t.Fatalf("expected 240 history messages, got %d", got)
+	if got := len(h.GetMessages(nil)); got != 200 {
+		t.Fatalf("expected 200 history messages from latest 100 turns, got %d", got)
 	}
 }

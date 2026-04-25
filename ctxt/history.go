@@ -18,6 +18,8 @@ type ConversationHistory struct {
 	turnRefs         []string
 	conversationPath string
 	ledger           *Ledger
+	turnLimit        int
+	byteBudget       int
 	mutex            sync.RWMutex
 }
 
@@ -26,6 +28,8 @@ func NewConversationHistory(ledger *Ledger, conversationPath string) *Conversati
 		turnRefs:         make([]string, 0),
 		conversationPath: conversationPath,
 		ledger:           ledger,
+		turnLimit:        promptHistoryTurnLimit,
+		byteBudget:       0,
 	}
 	if ledger != nil && conversationPath != "" {
 		if refs, _ := LoadConversationRefs(conversationPath); refs != nil {
@@ -84,12 +88,22 @@ func (h *ConversationHistory) Ledger() *Ledger {
 }
 
 func (h *ConversationHistory) SetTurnLimit(limit int) {
-	_ = limit
+	h.mutex.Lock()
+	h.turnLimit = limit
+	h.mutex.Unlock()
+}
+
+func (h *ConversationHistory) SetBudget(limit int, byteBudget int) {
+	h.mutex.Lock()
+	h.turnLimit = limit
+	h.byteBudget = byteBudget
+	h.mutex.Unlock()
 }
 
 func (h *ConversationHistory) resolveTurns(limit int) []Turn {
 	h.mutex.RLock()
-	refs := h.turnRefs
+	refs := make([]string, len(h.turnRefs))
+	copy(refs, h.turnRefs)
 	h.mutex.RUnlock()
 
 	if h.ledger == nil || len(refs) == 0 {
@@ -112,29 +126,67 @@ func (h *ConversationHistory) resolveTurns(limit int) []Turn {
 }
 
 func (h *ConversationHistory) getMessages(limit int, ac *AgentContext) []ai.Message {
+	h.mutex.RLock()
+	if limit <= 0 {
+		limit = h.turnLimit
+	}
+	byteBudget := h.byteBudget
+	h.mutex.RUnlock()
+
 	turns := h.resolveTurns(limit)
-	var messages []ai.Message
-	for _, turn := range turns {
+	var selected [][]ai.Message
+	usedBytes := 0
+	for i := len(turns) - 1; i >= 0; i-- {
+		turn := turns[i]
 		if turn.Hidden {
 			continue
 		}
+		var turnMessages []ai.Message
 		if turn.Request != nil {
-			messages = append(messages, turn.Request)
+			turnMessages = append(turnMessages, turn.Request)
+		} else if turn.RequestSnapshot != nil {
+			turnMessages = append(turnMessages, turn.RequestSnapshot)
 		} else if turn.UserMessage != "" || turn.UserData != "" {
 			if ac != nil {
 				userMsg, err := createUserMsgForTurn(ac, &turn)
 				if err == nil {
-					messages = append(messages, userMsg)
+					turnMessages = append(turnMessages, userMsg)
 				}
 			} else {
-				messages = append(messages, ai.UserMessage{Role: ai.UserRole, Content: turn.UserMessage})
+				turnMessages = append(turnMessages, ai.UserMessage{Role: ai.UserRole, Content: turn.UserMessage})
 			}
 		}
 		if turn.Reply != nil {
-			messages = append(messages, turn.Reply)
+			turnMessages = append(turnMessages, turn.Reply)
 		}
+		if len(turnMessages) == 0 {
+			continue
+		}
+		turnBytes := messagesByteSize(turnMessages)
+		if byteBudget > 0 && len(selected) > 0 && usedBytes+turnBytes > byteBudget {
+			continue
+		}
+		usedBytes += turnBytes
+		selected = append(selected, turnMessages)
+	}
+
+	var messages []ai.Message
+	for i := len(selected) - 1; i >= 0; i-- {
+		messages = append(messages, selected[i]...)
 	}
 	return messages
+}
+
+func messagesByteSize(messages []ai.Message) int {
+	total := 0
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		_, content := msg.Value()
+		total += len(content)
+	}
+	return total
 }
 
 func (h *ConversationHistory) GetMessages(ac *AgentContext) []ai.Message {

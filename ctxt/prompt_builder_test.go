@@ -199,7 +199,7 @@ func withTempWorkingDirPB(t *testing.T) {
 	})
 }
 
-func TestCreateSystemMsgWithMemoryFiles(t *testing.T) {
+func TestCreateSystemMsgDoesNotInlineMemoryFiles(t *testing.T) {
 	withTempWorkingDirPB(t)
 
 	tempDir := t.TempDir()
@@ -237,12 +237,9 @@ func TestCreateSystemMsgWithMemoryFiles(t *testing.T) {
 	require.True(t, ok)
 	content := sysMsg.Content
 
-	memoryRelPath := "." + string(filepath.Separator) + filepath.Join("memory", "memory1.txt")
-	assert.Contains(t, content, "<document name=\""+memoryRelPath+"\">")
-	assert.Contains(t, content, "Memory file 1 content")
-	memoryRelPath2 := "." + string(filepath.Separator) + filepath.Join("memory", "memory2.txt")
-	assert.Contains(t, content, "<document name=\""+memoryRelPath2+"\">")
-	assert.Contains(t, content, "Memory file 2 content")
+	assert.NotContains(t, content, "<document name=")
+	assert.NotContains(t, content, "Memory file 1 content")
+	assert.NotContains(t, content, "Memory file 2 content")
 }
 
 func TestCreateSystemMsgWithEmptyMemoryDir_NoMemoryFilesInPrompt(t *testing.T) {
@@ -308,7 +305,7 @@ func TestCreateDocsMsg(t *testing.T) {
 				return ac
 			},
 			expectedContains: []string{
-				"The following documents are available",
+				"Files available on disk",
 				"test1.pdf",
 				"Type: application/pdf",
 				"test2.txt",
@@ -325,7 +322,7 @@ func TestCreateDocsMsg(t *testing.T) {
 				return ac
 			},
 			expectedContains: []string{
-				"The following documents are available",
+				"Files available on disk",
 				"test1.pdf",
 				"ref1.txt",
 			},
@@ -339,7 +336,7 @@ func TestCreateDocsMsg(t *testing.T) {
 				return ac
 			},
 			expectedContains: []string{
-				"The following documents are available",
+				"Files available on disk",
 				"doc1",
 			},
 			shouldBeNil: false,
@@ -359,7 +356,24 @@ func TestCreateDocsMsg(t *testing.T) {
 				return ac
 			},
 			expectedContains: []string{
+				"Files available on disk",
 				"Type: application/octet-stream",
+			},
+			shouldBeNil: false,
+		},
+		{
+			name: "splits on-disk and included sections",
+			setup: func(ac *AgentContext) *AgentContext {
+				_ = attachTestDocument(ac, "uploads/on-disk.txt", []byte("content"), "", false)
+				_ = attachTestDocument(ac, "uploads/included.txt", []byte("content"), "", true)
+				ac.StartTurn("msg", "")
+				return ac
+			},
+			expectedContains: []string{
+				"Files available on disk",
+				"on-disk.txt",
+				"Files included below in this turn",
+				"included.txt",
 			},
 			shouldBeNil: false,
 		},
@@ -570,7 +584,7 @@ func TestBuildPrompt(t *testing.T) {
 			includeHistory:   false,
 			userMessage:      "Process",
 			skipStartTurn:    true,
-			expectedMsgCount: 4,
+			expectedMsgCount: 5,
 			validate: func(t *testing.T, msgs []ai.Message) {
 				resourceFound := false
 				for _, msg := range msgs {
@@ -773,6 +787,7 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 	assert.Equal(t, ai.SystemRole, role, "First message should be system")
 
 	docsMsgFound := false
+	contextMapFound := false
 	historyUserFound := false
 	historyAssistantFound := false
 	currentUserFound := false
@@ -785,9 +800,11 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 		}
 
 		if um, ok := msg.(ai.UserMessage); ok {
-			if strings.Contains(um.Content, "The following documents are available") {
+			if strings.Contains(um.Content, "Files available on disk") || strings.Contains(um.Content, "Files included below in this turn") {
 				docsMsgFound = true
 				assert.Contains(t, um.Content, "turn.pdf")
+			} else if strings.Contains(um.Content, "<context_map>") {
+				contextMapFound = true
 			} else if strings.Contains(um.Content, "Previous") {
 				historyUserFound = true
 			} else if strings.Contains(um.Content, "Current message") {
@@ -808,6 +825,7 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 	}
 
 	assert.True(t, docsMsgFound, "Should have docs message")
+	assert.True(t, contextMapFound, "Should have context map message")
 	assert.True(t, historyUserFound, "Should have history user message")
 	assert.True(t, historyAssistantFound, "Should have history assistant message")
 	assert.True(t, currentUserFound, "Should have current user message")
@@ -815,7 +833,7 @@ func TestBuildPromptMessageOrder(t *testing.T) {
 	assert.True(t, toolMsgFound, "Should have tool message")
 }
 
-func TestBuildPromptWithMemoryFiles(t *testing.T) {
+func TestBuildPromptListsMemoryFilesInContextMap(t *testing.T) {
 	withTempWorkingDirPB(t)
 
 	tempDir := t.TempDir()
@@ -846,9 +864,20 @@ func TestBuildPromptWithMemoryFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	sysMsg := msgs[0].(ai.SystemMessage)
-	memoryRelPath := "." + string(filepath.Separator) + filepath.Join("memory", "memory.txt")
-	assert.Contains(t, sysMsg.Content, "<document name=\""+memoryRelPath+"\">")
-	assert.Contains(t, sysMsg.Content, "Memory content")
+	assert.NotContains(t, sysMsg.Content, "Memory content")
+
+	contextMapFound := false
+	for _, msg := range msgs {
+		userMsg, ok := msg.(ai.UserMessage)
+		if !ok || !strings.Contains(userMsg.Content, "<context_map>") {
+			continue
+		}
+		contextMapFound = true
+		memoryRelPath := filepath.ToSlash("." + string(filepath.Separator) + filepath.Join("memory", "memory.txt"))
+		assert.Contains(t, userMsg.Content, memoryRelPath)
+		assert.NotContains(t, userMsg.Content, "Memory content")
+	}
+	assert.True(t, contextMapFound, "expected context map to list memory file")
 }
 
 func TestBuildPromptUploadedDocuments(t *testing.T) {
@@ -868,7 +897,7 @@ func TestBuildPromptUploadedDocuments(t *testing.T) {
 		if msg == nil {
 			continue
 		}
-		if um, ok := msg.(ai.UserMessage); ok && strings.Contains(um.Content, "The following documents are available") {
+		if um, ok := msg.(ai.UserMessage); ok && strings.Contains(um.Content, "Files available on disk") {
 			docsMsgFound = true
 			assert.Contains(t, um.Content, "ref1.pdf")
 			assert.Contains(t, um.Content, "ref2.txt")
@@ -919,7 +948,7 @@ func TestBuildPromptLimitsHistoryToLatest100Turns(t *testing.T) {
 	assert.Equal(t, 100, historyUsers)
 	assert.Equal(t, 100, historyReplies)
 	assert.Equal(t, 105, len(ac.GetHistory().GetTurns()))
-	assert.Equal(t, 210, len(ac.GetHistory().GetMessages(ac)))
+	assert.Equal(t, 200, len(ac.GetHistory().GetMessages(ac)))
 }
 
 func TestBuildPromptEmptyUserMessage(t *testing.T) {
@@ -939,4 +968,87 @@ func TestBuildPromptEmptyUserMessage(t *testing.T) {
 		}
 	}
 	assert.True(t, userMsgFound, "Should have user message even with empty content")
+}
+
+func TestCreateContextMapMsgBuckets(t *testing.T) {
+	ac, err := New("test-id", "", "", t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, ac.AddFile(FileRef{
+		Path:            "uploads/injected.txt",
+		MimeType:        "text/plain",
+		IncludeInPrompt: true,
+		Role:            FileRoleUserUpload,
+	}))
+	require.NoError(t, ac.AddFile(FileRef{
+		Path:            "uploads/reference.txt",
+		MimeType:        "text/plain",
+		IncludeInPrompt: false,
+		Role:            FileRoleReference,
+	}))
+	ac.StartTurn("Process files", "")
+	ac.SetStateBlock("stage: collecting")
+	ac.Turn().AddFile(FileRef{
+		Path:            "output/generated.json",
+		MimeType:        "application/json",
+		Role:            FileRoleToolArtifact,
+		IncludeInPrompt: false,
+		SizeBytes:       42,
+	})
+
+	msg, err := createContextMapMsg(ac)
+	require.NoError(t, err)
+	require.NotNil(t, msg)
+	userMsg, ok := msg.(ai.UserMessage)
+	require.True(t, ok)
+	content := userMsg.Content
+
+	assert.Contains(t, content, "<context_map>")
+	assert.Contains(t, content, "injected:")
+	assert.Contains(t, content, "on_disk:")
+	assert.Contains(t, content, "generated_this_turn:")
+	assert.Contains(t, content, "package_state:")
+	assert.Contains(t, content, "injected.txt")
+	assert.Contains(t, content, "reference.txt")
+	assert.Contains(t, content, "generated.json")
+	assert.Contains(t, content, "stage: collecting")
+}
+
+func TestBuildPromptMessageOrderIncludesContextMap(t *testing.T) {
+	ac, err := New("test-id", "", "", t.TempDir())
+	require.NoError(t, err)
+	_ = attachTestDocument(ac, "uploads/history.txt", []byte("hist"), "", false)
+	ac.StartTurn("Previous", "")
+	ac.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "Previous reply"})
+
+	_ = attachTestDocument(ac, "uploads/current.txt", []byte("curr"), "", true)
+	ac.StartTurn("Current", "")
+
+	msgs, err := ac.BuildPrompt(nil, true)
+	require.NoError(t, err)
+
+	indices := map[string]int{
+		"docs":       -1,
+		"contextMap": -1,
+		"user":       -1,
+	}
+	for i, msg := range msgs {
+		um, ok := msg.(ai.UserMessage)
+		if !ok {
+			continue
+		}
+		switch {
+		case strings.Contains(um.Content, "Files included below in this turn"):
+			indices["docs"] = i
+		case strings.Contains(um.Content, "<context_map>"):
+			indices["contextMap"] = i
+		case strings.Contains(um.Content, "Current"):
+			indices["user"] = i
+		}
+	}
+
+	require.GreaterOrEqual(t, indices["docs"], 0)
+	require.GreaterOrEqual(t, indices["contextMap"], 0)
+	require.GreaterOrEqual(t, indices["user"], 0)
+	assert.Less(t, indices["docs"], indices["contextMap"])
+	assert.Less(t, indices["contextMap"], indices["user"])
 }

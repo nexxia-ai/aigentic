@@ -9,6 +9,7 @@ import (
 
 	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/nexxia-ai/aigentic/document"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -335,16 +336,60 @@ func TestBuildPromptIncludesMemoryFiles(t *testing.T) {
 		t.Fatalf("expected first message to be SystemMessage, got %T", msgs[0])
 	}
 
-	if !strings.Contains(sysMsg.Content, memoryFileContent) {
-		t.Errorf("system message should contain memory file content %q, got: %s", memoryFileContent, sysMsg.Content)
+	if strings.Contains(sysMsg.Content, memoryFileContent) {
+		t.Errorf("system message should not contain memory file content %q, got: %s", memoryFileContent, sysMsg.Content)
 	}
 
-	if !strings.Contains(sysMsg.Content, memoryFileName) {
-		t.Errorf("system message should contain memory file name %q, got: %s", memoryFileName, sysMsg.Content)
+	foundContextMap := false
+	for _, msg := range msgs {
+		userMsg, ok := msg.(ai.UserMessage)
+		if !ok || !strings.Contains(userMsg.Content, "<context_map>") {
+			continue
+		}
+		foundContextMap = true
+		if !strings.Contains(userMsg.Content, memoryFileName) {
+			t.Errorf("context map should contain memory file name %q, got: %s", memoryFileName, userMsg.Content)
+		}
+	}
+	if !foundContextMap {
+		t.Fatal("expected context map message for memory files")
 	}
 
 	storeName := ctx.Workspace().MemoryStoreName()
 	t.Cleanup(func() {
 		document.UnregisterStore(storeName)
 	})
+}
+
+func TestEndTurnPersistsStartTurnRequestSnapshot(t *testing.T) {
+	ctx := createTestContext(t, "id", "desc", "inst")
+	require.NoError(t, ctx.AddFile(FileRef{
+		Path:            "uploads/original.txt",
+		MimeType:        "text/plain",
+		IncludeInPrompt: false,
+		Role:            FileRoleUserUpload,
+	}))
+
+	ctx.StartTurn("hello", "")
+	ctx.Turn().AddFile(FileRef{
+		Path:            "output/tool-artifact.txt",
+		MimeType:        "text/plain",
+		IncludeInPrompt: false,
+		Role:            FileRoleToolArtifact,
+	})
+	ctx.Turn().AddFile(FileRef{
+		Path:            "output/tool-artifact-2.txt",
+		MimeType:        "text/plain",
+		IncludeInPrompt: false,
+		Role:            FileRoleToolArtifact,
+	})
+	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "done"})
+
+	turns := ctx.GetHistory().GetTurns()
+	require.Len(t, turns, 1)
+	req, ok := turns[0].Request.(ai.UserMessage)
+	require.True(t, ok)
+	assert.Contains(t, req.Content, "uploads/original.txt")
+	assert.NotContains(t, req.Content, "output/tool-artifact.txt")
+	assert.NotContains(t, req.Content, "output/tool-artifact-2.txt")
 }

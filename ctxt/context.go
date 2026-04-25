@@ -27,6 +27,7 @@ const (
 	SystemPartKeyGoal               = "goal"
 	SystemPartKeyInstructions       = "instructions"
 	SystemPartKeyOutputInstructions = "output_instructions"
+	SystemPartKeySkills             = "skills"
 )
 
 type AgentContext struct {
@@ -37,6 +38,7 @@ type AgentContext struct {
 	UserTemplate *template.Template
 
 	systemParts []PromptPart
+	stateBlock  string
 
 	mutex               sync.RWMutex
 	pendingRefs         []FileRef
@@ -216,6 +218,19 @@ func (r *AgentContext) SystemParts() []PromptPart {
 	return out
 }
 
+func (r *AgentContext) SetStateBlock(state string) *AgentContext {
+	r.mutex.Lock()
+	r.stateBlock = state
+	r.mutex.Unlock()
+	return r
+}
+
+func (r *AgentContext) StateBlock() string {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	return r.stateBlock
+}
+
 func (r *AgentContext) UpdateUserTemplate(templateStr string) error {
 	tmpl, err := template.New("user").Parse(templateStr)
 	if err != nil {
@@ -351,6 +366,15 @@ func (r *AgentContext) upsertPendingRef(ref FileRef) {
 		if ref.ToolID != "" {
 			r.pendingRefs[i].ToolID = ref.ToolID
 		}
+		if ref.Role != "" {
+			r.pendingRefs[i].Role = ref.Role
+		}
+		if ref.SizeBytes > 0 {
+			r.pendingRefs[i].SizeBytes = ref.SizeBytes
+		}
+		if !ref.AddedAt.IsZero() {
+			r.pendingRefs[i].AddedAt = ref.AddedAt
+		}
 		r.pendingRefs[i].IncludeInPrompt = r.pendingRefs[i].IncludeInPrompt || ref.IncludeInPrompt
 		r.pendingRefs[i].Ephemeral = r.pendingRefs[i].Ephemeral || ref.Ephemeral
 		if meta := ref.Meta(); len(meta) > 0 {
@@ -372,6 +396,13 @@ func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *Age
 
 func (r *AgentContext) GetHistory() *ConversationHistory {
 	return r.conversationHistory
+}
+
+func (r *AgentContext) SetHistoryBudget(turns int, bytes int) *AgentContext {
+	if r.conversationHistory != nil {
+		r.conversationHistory.SetBudget(turns, bytes)
+	}
+	return r
 }
 
 func (r *AgentContext) ConversationHistory() *ConversationHistory {
@@ -480,6 +511,10 @@ func (r *AgentContext) StartTurn(userMessage string, userData string) *Turn {
 		r.currentTurn.AddFile(f)
 	}
 	r.pendingRefs = nil
+	r.currentTurn.StartFileCutoff = time.Now()
+	if userMsg, err := createUserMsgForTurn(r, r.currentTurn); err == nil {
+		r.currentTurn.RequestSnapshot = userMsg
+	}
 	return r.currentTurn
 }
 
@@ -492,7 +527,9 @@ func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 	}
 
 	if !r.currentTurn.Hidden {
-		if userMsg, err := createUserMsgForTurn(r, r.currentTurn); err == nil {
+		if r.currentTurn.RequestSnapshot != nil {
+			r.currentTurn.Request = r.currentTurn.RequestSnapshot
+		} else if userMsg, err := createUserMsgForTurn(r, r.currentTurn); err == nil {
 			r.currentTurn.Request = userMsg
 		}
 		r.conversationHistory.appendTurn(*r.currentTurn)

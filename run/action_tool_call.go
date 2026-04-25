@@ -95,6 +95,9 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 		if turn != nil {
 			for i := range currentResult.FileRefs {
 				ref := &currentResult.FileRefs[i]
+				if ref.Role == "" {
+					ref.Role = ctxt.FileRoleToolArtifact
+				}
 				if !ref.Ephemeral {
 					ref.ToolID = act.ToolCallID
 					turn.AddFile(*ref)
@@ -111,6 +114,11 @@ func (r *AgentRun) runToolCallAction(act *toolCallAction) {
 	var fileRefs []ctxt.FileRef
 	if currentResult != nil && len(currentResult.FileRefs) > 0 {
 		fileRefs = currentResult.FileRefs
+		for i := range fileRefs {
+			if fileRefs[i].Role == "" {
+				fileRefs[i].Role = ctxt.FileRoleToolArtifact
+			}
+		}
 	}
 
 	if currentResult != nil && currentResult.Result != nil && currentResult.Result.Error {
@@ -188,6 +196,12 @@ func appendFileRefsToToolResponse(r *AgentRun, response string, refs []ctxt.File
 		b.WriteString(ref.Path)
 		b.WriteString("\n")
 	}
+	turn := ac.Turn()
+	policy := ctxt.DefaultInjectionPolicy()
+	usedBytes := 0
+	if turn != nil {
+		usedBytes = turn.InjectionBytesUsed
+	}
 	for _, ref := range refs {
 		if !ref.IncludeInPrompt {
 			continue
@@ -197,11 +211,27 @@ func appendFileRefsToToolResponse(r *AgentRun, response string, refs []ctxt.File
 			slog.Warn("failed to load file for tool response", "path", ref.Path, "error", err)
 			continue
 		}
-		text := doc.Text()
+		data, err := doc.Bytes()
+		if err != nil {
+			slog.Warn("failed to read file for tool response", "path", ref.Path, "error", err)
+			continue
+		}
+		rendered := ctxt.RenderInjectedText(ref.Path, data, policy, usedBytes)
+		if rendered.Omitted {
+			continue
+		}
+		if turn != nil {
+			if !turn.ReserveInjectionBytes(len(rendered.Text), policy.MaxBytesPerTurn) {
+				continue
+			}
+			usedBytes = turn.InjectionBytesUsed
+		} else {
+			usedBytes += len(rendered.Text)
+		}
 		b.WriteString("\n\nContent of ")
 		b.WriteString(ref.Path)
 		b.WriteString(":\n\n")
-		b.WriteString(text)
+		b.WriteString(rendered.Text)
 		b.WriteString("\n")
 	}
 	return strings.TrimSuffix(b.String(), "\n")

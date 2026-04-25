@@ -16,24 +16,27 @@ type TagEntry struct {
 }
 
 type Turn struct {
-	TurnID       string            `json:"turn_id"`
-	RunID        string            `json:"run_id,omitempty"`
-	agentContext *AgentContext     `json:"-"`
-	ledgerDir    string            `json:"-"` // set by PrepareTurn for Dir()
-	Request      ai.Message        `json:"-"`
-	UserMessage  string            `json:"user_message"`
-	UserData     string            `json:"user_data"`
-	messages     []ai.Message      `json:"-"`
-	Reply        ai.Message        `json:"-"`
-	Files        []FileRef         `json:"files"`
-	TraceFile    string            `json:"trace_file"`
-	Timestamp    time.Time         `json:"timestamp"`
-	AgentName    string            `json:"agent_name"`
-	Hidden       bool              `json:"hidden"`
-	Usage        ai.Usage          `json:"usage,omitempty"`
-	meta         map[string]string `json:"-"`
-	systemTags   []TagEntry
-	turnTags     []ai.KeyValue
+	TurnID             string            `json:"turn_id"`
+	RunID              string            `json:"run_id,omitempty"`
+	agentContext       *AgentContext     `json:"-"`
+	ledgerDir          string            `json:"-"` // set by PrepareTurn for Dir()
+	Request            ai.Message        `json:"-"`
+	RequestSnapshot    ai.Message        `json:"-"`
+	UserMessage        string            `json:"user_message"`
+	UserData           string            `json:"user_data"`
+	messages           []ai.Message      `json:"-"`
+	Reply              ai.Message        `json:"-"`
+	Files              []FileRef         `json:"files"`
+	TraceFile          string            `json:"trace_file"`
+	Timestamp          time.Time         `json:"timestamp"`
+	AgentName          string            `json:"agent_name"`
+	Hidden             bool              `json:"hidden"`
+	Usage              ai.Usage          `json:"usage,omitempty"`
+	StartFileCutoff    time.Time         `json:"start_file_cutoff,omitempty"`
+	InjectionBytesUsed int               `json:"injection_bytes_used,omitempty"`
+	meta               map[string]string `json:"-"`
+	systemTags         []TagEntry
+	turnTags           []ai.KeyValue
 }
 
 func NewTurn(agentContext *AgentContext, userMessage, userData, agentName, turnID string) *Turn {
@@ -57,6 +60,9 @@ func (t *Turn) AddMessage(msg ai.Message) {
 }
 
 func (t *Turn) AddFile(ref FileRef) {
+	if ref.AddedAt.IsZero() {
+		ref.AddedAt = time.Now()
+	}
 	t.Files = append(t.Files, ref)
 }
 
@@ -68,6 +74,23 @@ func (t *Turn) PromptFiles() []FileRef {
 		}
 	}
 	return out
+}
+
+func (t *Turn) ReserveInjectionBytes(n int, max int) bool {
+	if t == nil || n <= 0 {
+		return true
+	}
+	if max <= 0 {
+		max = defaultMaxInjectionBytesPerTurn
+	}
+	if t.InjectionBytesUsed >= max {
+		return false
+	}
+	if t.InjectionBytesUsed+n > max {
+		return false
+	}
+	t.InjectionBytesUsed += n
+	return true
 }
 
 func (t *Turn) FilesForTool(toolID string) []FileRef {
@@ -278,6 +301,10 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 	if t.Request != nil {
 		request = messageToJSON(t.Request)
 	}
+	var requestSnapshot *messageJSON
+	if t.RequestSnapshot != nil {
+		requestSnapshot = messageToJSON(t.RequestSnapshot)
+	}
 
 	messages := make([]*messageJSON, len(t.messages))
 	for i, msg := range t.messages {
@@ -289,18 +316,20 @@ func (t *Turn) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(&struct {
 		*Alias
-		Request    *messageJSON `json:"request"`
-		Messages   []*messageJSON `json:"messages"`
-		Reply      *messageJSON `json:"-"`
-		SystemTags []TagEntry   `json:"system_tags"`
-		TurnTags   []ai.KeyValue `json:"turn_tags"`
+		Request         *messageJSON   `json:"request"`
+		RequestSnapshot *messageJSON   `json:"request_snapshot,omitempty"`
+		Messages        []*messageJSON `json:"messages"`
+		Reply           *messageJSON   `json:"-"`
+		SystemTags      []TagEntry     `json:"system_tags"`
+		TurnTags        []ai.KeyValue  `json:"turn_tags"`
 	}{
-		Alias:      (*Alias)(t),
-		Request:    request,
-		Messages:   messages,
-		Reply:      nil,
-		SystemTags: t.systemTags,
-		TurnTags:   t.turnTags,
+		Alias:           (*Alias)(t),
+		Request:         request,
+		RequestSnapshot: requestSnapshot,
+		Messages:        messages,
+		Reply:           nil,
+		SystemTags:      t.systemTags,
+		TurnTags:        t.turnTags,
 	})
 }
 
@@ -356,14 +385,15 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 
 	aux := &struct {
 		*Alias
-		Request    *messageJSON   `json:"request"`
-		Messages   []*messageJSON `json:"messages"`
-		Reply      *messageJSON   `json:"reply,omitempty"`
-		SystemTags []TagEntry    `json:"system_tags"`
-		TurnTags   []ai.KeyValue  `json:"turn_tags"`
-		Files      []FileRef      `json:"files"`
-		Documents  []legacyDocumentJSON `json:"documents"`
-		FileRefs   []legacyFileRefEntry `json:"file_refs"`
+		Request         *messageJSON         `json:"request"`
+		RequestSnapshot *messageJSON         `json:"request_snapshot,omitempty"`
+		Messages        []*messageJSON       `json:"messages"`
+		Reply           *messageJSON         `json:"reply,omitempty"`
+		SystemTags      []TagEntry           `json:"system_tags"`
+		TurnTags        []ai.KeyValue        `json:"turn_tags"`
+		Files           []FileRef            `json:"files"`
+		Documents       []legacyDocumentJSON `json:"documents"`
+		FileRefs        []legacyFileRefEntry `json:"file_refs"`
 	}{
 		Alias: (*Alias)(t),
 	}
@@ -374,6 +404,9 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 
 	if aux.Request != nil {
 		t.Request = jsonToMessage(aux.Request)
+	}
+	if aux.RequestSnapshot != nil {
+		t.RequestSnapshot = jsonToMessage(aux.RequestSnapshot)
 	}
 
 	t.messages = make([]ai.Message, len(aux.Messages))
@@ -404,6 +437,7 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 					Path:            d.FilePath,
 					MimeType:        d.MimeType,
 					ToolID:          d.ToolID,
+					Role:            FileRoleReference,
 					IncludeInPrompt: false,
 				})
 			}
@@ -416,6 +450,7 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 				Ephemeral:       ref.Ephemeral,
 			}
 			if ref.UserUpload {
+				f.Role = FileRoleUserUpload
 				f.SetMeta(map[string]string{"visible_to_user": "true"})
 			}
 			t.Files = append(t.Files, f)

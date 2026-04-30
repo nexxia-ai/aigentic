@@ -16,6 +16,31 @@ type Session struct {
 	Turns   int
 }
 
+// ListSessionsOptions configures ListSessions. Zero value means omit archived runs
+// (run_meta run_state "inactive").
+type ListSessionsOptions struct {
+	IncludeArchived bool
+}
+
+const (
+	sessionRunStateInactive = "inactive"
+)
+
+// sessionRunMetaIndicatesArchived returns true only when run_meta.json decodes and run_state is inactive.
+func sessionRunMetaIndicatesArchived(privateDir string) bool {
+	data, err := os.ReadFile(filepath.Join(privateDir, "run_meta.json"))
+	if err != nil {
+		return false
+	}
+	var probe struct {
+		RunState string `json:"run_state"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return false
+	}
+	return probe.RunState == sessionRunStateInactive
+}
+
 func deriveBasePath(runDir string) string {
 	parentDir := filepath.Dir(runDir)
 	grandparentDir := filepath.Dir(parentDir)
@@ -64,7 +89,12 @@ func sessionRunDirs(baseDir string) ([]string, error) {
 	return runDirs, nil
 }
 
-func ListSessions(baseDir string) ([]Session, error) {
+func ListSessions(baseDir string, opts ...ListSessionsOptions) ([]Session, error) {
+	includeArchived := false
+	if len(opts) > 0 {
+		includeArchived = opts[0].IncludeArchived
+	}
+
 	runDirs, err := sessionRunDirs(baseDir)
 	if err != nil {
 		return nil, err
@@ -72,6 +102,10 @@ func ListSessions(baseDir string) ([]Session, error) {
 
 	var sessions []Session
 	for _, runDir := range runDirs {
+		privateDir := filepath.Join(runDir, aigenticDirName)
+		if !includeArchived && sessionRunMetaIndicatesArchived(privateDir) {
+			continue
+		}
 		session, err := loadSession(runDir)
 		if err != nil {
 			continue
@@ -88,23 +122,14 @@ func FindSession(baseDir, runID string) (*Session, error) {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	if shard := RunIDShard(runID); shard != "" {
-		session, err := loadSession(RunDir(absBaseDir, runID))
-		if err == nil && session.ID == runID {
-			return session, nil
-		}
+	if RunIDShard(runID) == "" {
+		return nil, fmt.Errorf("run not found: %s", runID)
 	}
-
-	sessions, err := ListSessions(absBaseDir)
-	if err != nil {
-		return nil, err
+	session, err := loadSession(RunDir(absBaseDir, runID))
+	if err != nil || session.ID != runID {
+		return nil, fmt.Errorf("run not found: %s", runID)
 	}
-	for _, session := range sessions {
-		if session.ID == runID {
-			return &session, nil
-		}
-	}
-	return nil, fmt.Errorf("run not found: %s", runID)
+	return session, nil
 }
 
 func LoadContext(runDir string) (*AgentContext, error) {

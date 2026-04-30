@@ -94,22 +94,23 @@ func TestContextAutoSave(t *testing.T) {
 
 func TestListSessions(t *testing.T) {
 	baseDir := t.TempDir()
+	now := time.Now()
 
-	ctx1, err := New("id1", "desc1", "inst1", baseDir)
+	ctx1, err := New(NewRunID(now), "desc1", "inst1", baseDir)
 	if err != nil {
 		t.Fatalf("failed to create context: %v", err)
 	}
 	ctx1.SetName("Session 1")
 	ctx1.SetSummary("Summary 1")
 
-	ctx2, err := New("id2", "desc2", "inst2", baseDir)
+	ctx2, err := New(NewRunID(now.Add(time.Second)), "desc2", "inst2", baseDir)
 	if err != nil {
 		t.Fatalf("failed to create context: %v", err)
 	}
 	ctx2.SetName("Session 2")
 	ctx2.SetSummary("Summary 2")
 
-	ctx3, err := New("id3", "desc3", "inst3", baseDir)
+	ctx3, err := New(NewRunID(now.Add(2*time.Second)), "desc3", "inst3", baseDir)
 	if err != nil {
 		t.Fatalf("failed to create context: %v", err)
 	}
@@ -141,6 +142,47 @@ func TestListSessions(t *testing.T) {
 	}
 	if loadedCtx3.Name() != "Session 3" {
 		t.Errorf("expected Name 'Session 3', got '%s'", loadedCtx3.Name())
+	}
+
+	inactiveRunID := NewRunID(now.Add(3 * time.Second))
+	ctxInactive, err := New(inactiveRunID, "ina", "ina", baseDir)
+	if err != nil {
+		t.Fatalf("inactive context: %v", err)
+	}
+	ctxInactive.SetMeta("run_state", "inactive")
+	if err := ctxInactive.save(); err != nil {
+		t.Fatalf("save inactive: %v", err)
+	}
+
+	sessions, err := ListSessions(baseDir)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions) != 3 {
+		t.Fatalf("expected 3 active sessions, got %d", len(sessions))
+	}
+	for _, s := range sessions {
+		if s.ID == inactiveRunID {
+			t.Fatal("inactive session should be excluded from default ListSessions")
+		}
+	}
+
+	allSessions, err := ListSessions(baseDir, ListSessionsOptions{IncludeArchived: true})
+	if err != nil {
+		t.Fatalf("ListSessions include archived: %v", err)
+	}
+	if len(allSessions) != 4 {
+		t.Fatalf("expected 4 sessions when including archived, got %d", len(allSessions))
+	}
+	var foundInactive bool
+	for _, s := range allSessions {
+		if s.ID == inactiveRunID {
+			foundInactive = true
+			break
+		}
+	}
+	if !foundInactive {
+		t.Fatal("inactive session missing when IncludeArchived is true")
 	}
 }
 
@@ -418,7 +460,8 @@ func TestNewRunIDUsesZeroShardForZeroTime(t *testing.T) {
 
 func TestFindSessionAllowsMissingRunMeta(t *testing.T) {
 	baseDir := t.TempDir()
-	ctx, err := New("missing-meta", "desc", "inst", baseDir)
+	runID := NewRunID(time.Now())
+	ctx, err := New(runID, "desc", "inst", baseDir)
 	if err != nil {
 		t.Fatalf("failed to create context: %v", err)
 	}
@@ -435,7 +478,7 @@ func TestFindSessionAllowsMissingRunMeta(t *testing.T) {
 	if session.ID != ctx.ID() {
 		t.Fatalf("expected session ID %q, got %q", ctx.ID(), session.ID)
 	}
-	if session.Meta != nil && len(session.Meta) > 0 {
+	if len(session.Meta) > 0 {
 		t.Fatalf("expected empty metadata when run_meta.json is missing, got %v", session.Meta)
 	}
 }

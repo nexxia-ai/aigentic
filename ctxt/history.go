@@ -236,11 +236,7 @@ func (h *ConversationHistory) GetTurns() []Turn {
 }
 
 func (h *ConversationHistory) Last(n int) []Turn {
-	turns := h.resolveTurns(0)
-	if n > 0 && len(turns) > n {
-		turns = turns[len(turns)-n:]
-	}
-	return turns
+	return h.resolveTurns(n)
 }
 
 func (h *ConversationHistory) FilterByAgent(name string) []Turn {

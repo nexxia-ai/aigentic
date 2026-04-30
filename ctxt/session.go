@@ -152,6 +152,116 @@ func LoadContext(runDir string) (*AgentContext, error) {
 	return ctx, nil
 }
 
+// skipJSONValue advances the decoder past one complete JSON value.
+func skipJSONValue(d *json.Decoder) error {
+	tok, err := d.Token()
+	if err != nil {
+		return err
+	}
+	del, ok := tok.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch del {
+	case '{':
+		for d.More() {
+			keyTok, err := d.Token()
+			if err != nil {
+				return err
+			}
+			if _, ok := keyTok.(string); !ok {
+				return fmt.Errorf("ctxt: context.json: expected string object key")
+			}
+			if err := skipJSONValue(d); err != nil {
+				return err
+			}
+		}
+		tok, err := d.Token()
+		if err != nil {
+			return err
+		}
+		if del, ok := tok.(json.Delim); !ok || del != '}' {
+			return fmt.Errorf("ctxt: context.json: expected end of object")
+		}
+		return nil
+	case '[':
+		for d.More() {
+			if err := skipJSONValue(d); err != nil {
+				return err
+			}
+		}
+		tok, err := d.Token()
+		if err != nil {
+			return err
+		}
+		if del, ok := tok.(json.Delim); !ok || del != ']' {
+			return fmt.Errorf("ctxt: context.json: expected end of array")
+		}
+		return nil
+	default:
+		return fmt.Errorf("ctxt: skipJSONValue unexpected delimiter %q", del)
+	}
+}
+
+func decodeContextJSONForSession(d *json.Decoder) (id, name, summary string, err error) {
+	tok, err := d.Token()
+	if err != nil {
+		return "", "", "", err
+	}
+	del, ok := tok.(json.Delim)
+	if !ok || del != '{' {
+		return "", "", "", fmt.Errorf("ctxt: context.json: expected object")
+	}
+	for d.More() {
+		keyTok, err := d.Token()
+		if err != nil {
+			return "", "", "", err
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return "", "", "", fmt.Errorf("ctxt: context.json: expected string object key")
+		}
+		switch key {
+		case "id":
+			var s string
+			if err := d.Decode(&s); err != nil {
+				return "", "", "", err
+			}
+			id = s
+		case "name":
+			var s string
+			if err := d.Decode(&s); err != nil {
+				return "", "", "", err
+			}
+			name = s
+		case "summary":
+			var s string
+			if err := d.Decode(&s); err != nil {
+				return "", "", "", err
+			}
+			summary = s
+		case "enable_trace":
+			var disc bool
+			if err := d.Decode(&disc); err != nil {
+				return "", "", "", err
+			}
+		default:
+			if err := skipJSONValue(d); err != nil {
+				return "", "", "", err
+			}
+		}
+	}
+	tok, err = d.Token()
+	if err != nil {
+		return "", "", "", err
+	}
+	del, ok = tok.(json.Delim)
+	if !ok || del != '}' {
+		return "", "", "", fmt.Errorf("ctxt: context.json: expected end of object")
+	}
+	return id, name, summary, nil
+}
+
 func loadSession(runDir string) (*Session, error) {
 	privateDir := filepath.Join(runDir, aigenticDirName)
 	contextFile := filepath.Join(privateDir, "context.json")
@@ -161,15 +271,16 @@ func loadSession(runDir string) (*Session, error) {
 	}
 	defer file.Close()
 
-	var data contextData
-	if err := json.NewDecoder(file).Decode(&data); err != nil {
+	dec := json.NewDecoder(file)
+	id, name, summary, err := decodeContextJSONForSession(dec)
+	if err != nil {
 		return nil, err
 	}
 
 	session := &Session{
-		ID:      data.ID,
-		Name:    data.Name,
-		Summary: data.Summary,
+		ID:      id,
+		Name:    name,
+		Summary: summary,
 		Path:    runDir,
 	}
 	if err := loadSessionRunMeta(session, privateDir); err != nil {

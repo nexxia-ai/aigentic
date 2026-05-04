@@ -556,6 +556,37 @@ func TestAgentRun_ReuseAfterCompletion(t *testing.T) {
 	assert.Contains(t, content2, "First response")
 }
 
+// Command-only Run skips StartTurn; Turn() must not match a completed history ledger id.
+func TestAgentRun_ContextCommand_CurrentTurnMustNotReuseCompletedLedgerID(t *testing.T) {
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: "normal reply",
+		}, nil
+	})
+
+	ar, err := NewAgentRun("test-context-cmd-turnid", "d", "i", t.TempDir())
+	require.NoError(t, err)
+	ar.SetModel(model)
+
+	ar.Run(context.Background(), "user message", "", nil)
+	_, err = ar.Wait(0)
+	require.NoError(t, err)
+
+	require.Len(t, ar.AgentContext().GetHistory().GetTurns(), 1)
+
+	ar.Run(context.Background(), "/context", "", nil)
+	stats, err := ar.Wait(0)
+	require.NoError(t, err)
+	require.Contains(t, stats, "Agent:")
+
+	curID := ar.AgentContext().Turn().TurnID
+	for _, ht := range ar.AgentContext().GetHistory().GetTurns() {
+		require.NotEqual(t, ht.TurnID, curID,
+			"after command-only Run, Turn().TurnID must not match a completed history row")
+	}
+}
+
 func TestAgentRun_ReuseAfterCancel(t *testing.T) {
 	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
 		time.Sleep(50 * time.Millisecond)

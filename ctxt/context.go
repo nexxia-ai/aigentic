@@ -558,6 +558,7 @@ func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 		}
 		r.conversationHistory.appendTurn(*r.currentTurn)
 	}
+	r.currentTurn = NewTurn(r, "", "", "", "")
 	r.save()
 	return r
 }

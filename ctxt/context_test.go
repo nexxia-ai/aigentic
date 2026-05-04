@@ -426,3 +426,24 @@ func TestEndTurnPersistsStartTurnRequestSnapshot(t *testing.T) {
 	assert.NotContains(t, req.Content, "output/tool-artifact.txt")
 	assert.NotContains(t, req.Content, "output/tool-artifact-2.txt")
 }
+
+// Turn() must not advertise a ledger id already stored in history after EndTurn().
+func TestAgentContext_EndTurn_CurrentTurnMustNotReuseCompletedHistoryTurnID(t *testing.T) {
+	ctx := createTestContext(t, "id-endturn-stale-turn", "desc", "inst")
+	ctx.StartTurn("hello", "")
+	require.NotEmpty(t, ctx.Turn().TurnID)
+
+	ctx.EndTurn(ai.AIMessage{
+		Role:    ai.AssistantRole,
+		Content: "assistant reply",
+	})
+
+	histTurns := ctx.GetHistory().GetTurns()
+	require.Len(t, histTurns, 1)
+
+	curID := ctx.Turn().TurnID
+	for _, ht := range histTurns {
+		require.NotEqual(t, ht.TurnID, curID,
+			"Turn().TurnID must not equal a ledger id already persisted in history (stale currentTurn)")
+	}
+}

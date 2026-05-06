@@ -1,6 +1,7 @@
 package ctxt
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -446,4 +447,59 @@ func TestAgentContext_EndTurn_CurrentTurnMustNotReuseCompletedHistoryTurnID(t *t
 		require.NotEqual(t, ht.TurnID, curID,
 			"Turn().TurnID must not equal a ledger id already persisted in history (stale currentTurn)")
 	}
+}
+
+func TestFailTurnPersistsTurnJSONConversationAndErrorMeta(t *testing.T) {
+	ctx := createTestContext(t, "fail-turn-persist", "d", "inst")
+	ctx.StartTurn("user hello", `{"k":"v"}`)
+	turn := ctx.Turn()
+	require.NotEmpty(t, turn.TurnID)
+	tracePath := filepath.Join(turn.Dir(), "trace.txt")
+	turn.TraceFile = tracePath
+
+	failErr := fmt.Errorf("402 payment required")
+	u := ai.Usage{PromptTokens: 7, CompletionTokens: 2, TotalTokens: 9}
+	ctx.FailTurn(failErr, u)
+
+	require.Empty(t, ctx.Turn().TurnID)
+	require.Equal(t, 1, ctx.GetHistory().Len())
+
+	turns := ctx.GetHistory().GetTurns()
+	require.Len(t, turns, 1)
+	assert.Equal(t, "user hello", turns[0].UserMessage)
+	assert.JSONEq(t, `{"k":"v"}`, turns[0].UserData)
+	assert.Equal(t, tracePath, turns[0].TraceFile)
+	if assert.NotNil(t, turns[0].Request) {
+		req, ok := turns[0].Request.(ai.UserMessage)
+		require.True(t, ok)
+		assert.Contains(t, req.Content, "user hello")
+	}
+	assert.Equal(t, u.PromptTokens, turns[0].Usage.PromptTokens)
+	assert.Equal(t, u.TotalTokens, turns[0].Usage.TotalTokens)
+	meta := turns[0].Meta()
+	require.Equal(t, "error", meta["status"])
+	assert.Contains(t, meta["error"], "402 payment required")
+
+	_, err := os.Stat(filepath.Join(turn.Dir(), "turn.json"))
+	require.NoError(t, err, "turn.json should exist under ledger dir")
+
+	loaded, err := ctx.Ledger().Get(turns[0].TurnID)
+	require.NoError(t, err)
+	assert.Equal(t, "error", loaded.Meta()["status"])
+	assert.Contains(t, loaded.Meta()["error"], "402 payment required")
+}
+
+func TestFailTurnHiddenSkipsHistoryAppend(t *testing.T) {
+	ctx := createTestContext(t, "fail-turn-hidden", "d", "inst")
+	ctx.StartTurn("h", "")
+	ctx.Turn().Hidden = true
+	ctx.FailTurn(fmt.Errorf("silent"), ai.Usage{})
+	assert.Equal(t, 0, ctx.GetHistory().Len())
+	require.Empty(t, ctx.Turn().TurnID)
+}
+
+func TestFailTurnNoOpWhenTurnIDEmpty(t *testing.T) {
+	ctx := createTestContext(t, "fail-turn-noop", "d", "inst")
+	ctx.FailTurn(fmt.Errorf("x"), ai.Usage{})
+	assert.Equal(t, 0, ctx.GetHistory().Len())
 }

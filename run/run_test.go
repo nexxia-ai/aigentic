@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -585,6 +586,78 @@ func TestAgentRun_ContextCommand_CurrentTurnMustNotReuseCompletedLedgerID(t *tes
 		require.NotEqual(t, ht.TurnID, curID,
 			"after command-only Run, Turn().TurnID must not match a completed history row")
 	}
+}
+
+func TestAgentRun_ModelErrorPersistsFailedTurnWithTraceAndMeta(t *testing.T) {
+	modelErr := fmt.Errorf("openrouter 402 payment required")
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{}, modelErr
+	})
+	ar, err := NewAgentRun("test-model-fail-persist", "d", "i", t.TempDir())
+	require.NoError(t, err)
+	ar.SetModel(model)
+	ar.SetEnableTrace(true)
+
+	ar.Run(context.Background(), "first llm call", "", nil)
+	_, waitErr := ar.Wait(0)
+	require.ErrorIs(t, waitErr, modelErr)
+
+	turns := ar.AgentContext().GetHistory().GetTurns()
+	require.Len(t, turns, 1)
+	assert.Equal(t, "first llm call", turns[0].UserMessage)
+	meta := turns[0].Meta()
+	require.Equal(t, "error", meta["status"])
+	assert.Contains(t, meta["error"], "402")
+	if assert.NotEmpty(t, turns[0].TraceFile) {
+		_, statErr := os.Stat(turns[0].TraceFile)
+		assert.NoError(t, statErr)
+	}
+}
+
+func TestAgentRun_SuccessThenErrorAddsTwoTurnsWithoutDuplicatingFirst(t *testing.T) {
+	call := 0
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		call++
+		if call == 1 {
+			return ai.AIMessage{Role: ai.AssistantRole, Content: "ok"}, nil
+		}
+		return ai.AIMessage{}, fmt.Errorf("second call failed")
+	})
+	ar, err := NewAgentRun("test-success-then-fail", "d", "i", t.TempDir())
+	require.NoError(t, err)
+	ar.SetModel(model)
+
+	ar.Run(context.Background(), "one", "", nil)
+	_, err = ar.Wait(0)
+	require.NoError(t, err)
+	firstTurnID := ar.AgentContext().GetHistory().GetTurns()[0].TurnID
+	require.NotEmpty(t, firstTurnID)
+
+	ar.Run(context.Background(), "two", "", nil)
+	_, err = ar.Wait(0)
+	require.Error(t, err)
+
+	all := ar.AgentContext().GetHistory().GetTurns()
+	require.Len(t, all, 2)
+	assert.Equal(t, firstTurnID, all[0].TurnID)
+	assert.NotEqual(t, firstTurnID, all[1].TurnID)
+	assert.Equal(t, "ok", all[0].Reply.(ai.AIMessage).Content)
+	assert.Equal(t, "error", all[1].Meta()["status"])
+}
+
+func TestAgentRun_ContextOnlyNoHistoryTurn(t *testing.T) {
+	model := ai.NewDummyModel(func(ctx context.Context, messages []ai.Message, tools []ai.Tool) (ai.AIMessage, error) {
+		return ai.AIMessage{Role: ai.AssistantRole, Content: "unused"}, nil
+	})
+	ar, err := NewAgentRun("test-context-only-history", "d", "i", t.TempDir())
+	require.NoError(t, err)
+	ar.SetModel(model)
+
+	ar.Run(context.Background(), "/context", "", nil)
+	out, err := ar.Wait(0)
+	require.NoError(t, err)
+	require.Contains(t, out, "Agent:")
+	assert.Equal(t, 0, ar.AgentContext().GetHistory().Len())
 }
 
 func TestAgentRun_ReuseAfterCancel(t *testing.T) {

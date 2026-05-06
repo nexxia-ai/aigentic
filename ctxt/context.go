@@ -563,6 +563,33 @@ func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 	return r
 }
 
+// FailTurn persists the active turn as failed (turn.json, conversation ref, meta status=error)
+// when a run stops with a non-nil error before EndTurn. Idempotent if the turn was already
+// appended (ledger has turn.json). Hidden turns are not appended; currentTurn is still reset.
+func (r *AgentContext) FailTurn(err error, usage ai.Usage) *AgentContext {
+	if err == nil || r.currentTurn == nil || r.currentTurn.TurnID == "" {
+		return r
+	}
+	if r.ledger != nil && r.ledger.Exists(r.currentTurn.TurnID) {
+		r.currentTurn = NewTurn(r, "", "", "", "")
+		r.save()
+		return r
+	}
+	r.currentTurn.Usage = usage
+	if !r.currentTurn.Hidden {
+		if r.currentTurn.RequestSnapshot != nil {
+			r.currentTurn.Request = r.currentTurn.RequestSnapshot
+		} else if userMsg, err2 := createUserMsgForTurn(r, r.currentTurn); err2 == nil {
+			r.currentTurn.Request = userMsg
+		}
+		r.currentTurn.SetMeta(map[string]string{"status": "error", "error": err.Error()})
+		r.conversationHistory.appendTurn(*r.currentTurn)
+	}
+	r.currentTurn = NewTurn(r, "", "", "", "")
+	r.save()
+	return r
+}
+
 func (r *AgentContext) Turn() *Turn {
 	return r.currentTurn
 }

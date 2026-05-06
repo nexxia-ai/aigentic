@@ -522,6 +522,7 @@ func (r *AgentRun) processLoop() {
 
 func (r *AgentRun) runStopAction(act *stopAction) {
 	if act.Error != nil {
+		r.agentContext.FailTurn(act.Error, r.turnMetrics.usage)
 		r.Logger.Error("stopping agent", "error", act.Error)
 		event := &event.ErrorEvent{
 			RunID:     r.id,

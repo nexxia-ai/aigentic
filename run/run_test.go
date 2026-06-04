@@ -822,9 +822,9 @@ func TestFormatAigenticStats_IncludesSubagentTurns(t *testing.T) {
 	}
 	assert.NoError(t, ledger.Append(&childTurn))
 
-	convFile := filepath.Join(batchDir, "conversation.json")
-	convData, _ := json.Marshal(map[string]interface{}{"turn_refs": []string{turnID}})
-	assert.NoError(t, os.WriteFile(convFile, convData, 0644))
+	convFile := filepath.Join(batchDir, ctxt.ConversationLogName)
+	convLine, _ := json.Marshal(map[string]string{"turn_id": turnID})
+	assert.NoError(t, os.WriteFile(convFile, append(convLine, '\n'), 0644))
 
 	ar.Run(context.Background(), "/context", "", nil)
 	var content string
@@ -876,8 +876,8 @@ func TestFormatAigenticStats_ShowsReasoningWhenOnlyChildHasIt(t *testing.T) {
 		Usage:       u,
 	}
 	assert.NoError(t, ledger.Append(&childTurn))
-	convData, _ := json.Marshal(map[string]interface{}{"turn_refs": []string{turnID}})
-	os.WriteFile(filepath.Join(batchDir, "conversation.json"), convData, 0644)
+	convLine, _ := json.Marshal(map[string]string{"turn_id": turnID})
+	os.WriteFile(filepath.Join(batchDir, ctxt.ConversationLogName), append(convLine, '\n'), 0644)
 
 	ar.Run(context.Background(), "/context", "", nil)
 	var content string

@@ -130,20 +130,6 @@ func (t *Turn) SetLedgerDir(dir string) {
 	t.ledgerDir = dir
 }
 
-func (t *Turn) loadFromFile(turnJSONPath string) error {
-	data, err := os.ReadFile(turnJSONPath)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, t); err != nil {
-		return err
-	}
-	turnDir := filepath.Dir(turnJSONPath)
-	t.ledgerDir = turnDir
-	t.TraceFile = filepath.Join(turnDir, "trace.txt")
-	return t.loadMeta()
-}
-
 func (t *Turn) metaPath() string {
 	if t.ledgerDir == "" {
 		return ""
@@ -188,11 +174,7 @@ func (t *Turn) saveMeta() error {
 		}
 		return nil
 	}
-	data, err := json.MarshalIndent(t.meta, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0644)
+	return writeAtomicJSON(path, t.meta)
 }
 
 func (t *Turn) InjectSystemTag(tagName string, content string) {
@@ -230,7 +212,12 @@ func (t *Turn) SetMeta(meta map[string]string) {
 	if len(t.meta) == 0 {
 		t.meta = nil
 	}
-	_ = t.saveMeta()
+	if err := t.saveMeta(); err != nil {
+		return
+	}
+	if t.ledgerDir != "" {
+		_ = appendShardIndex(filepath.Dir(t.ledgerDir), t)
+	}
 }
 
 func (t *Turn) Meta() map[string]string {
@@ -264,38 +251,6 @@ func lastAssistantMessage(msgs []ai.Message) ai.Message {
 
 func (t *Turn) MarshalJSON() ([]byte, error) {
 	type Alias Turn
-
-	type messageJSON struct {
-		Type          string            `json:"type"`
-		UserMessage   *ai.UserMessage   `json:"user_message,omitempty"`
-		AIMessage     *ai.AIMessage     `json:"ai_message,omitempty"`
-		ToolMessage   *ai.ToolMessage   `json:"tool_message,omitempty"`
-		SystemMessage *ai.SystemMessage `json:"system_message,omitempty"`
-	}
-
-	messageToJSON := func(msg ai.Message) *messageJSON {
-		if msg == nil {
-			return nil
-		}
-		mj := &messageJSON{}
-		switch m := msg.(type) {
-		case ai.UserMessage:
-			mj.Type = "user_message"
-			mj.UserMessage = &m
-		case ai.AIMessage:
-			mj.Type = "ai_message"
-			mj.AIMessage = &m
-		case ai.ToolMessage:
-			mj.Type = "tool_message"
-			mj.ToolMessage = &m
-		case ai.SystemMessage:
-			mj.Type = "system_message"
-			mj.SystemMessage = &m
-		default:
-			return nil
-		}
-		return mj
-	}
 
 	var request *messageJSON
 	if t.Request != nil {
@@ -349,39 +304,6 @@ type legacyFileRefEntry struct {
 
 func (t *Turn) UnmarshalJSON(data []byte) error {
 	type Alias Turn
-
-	type messageJSON struct {
-		Type          string            `json:"type"`
-		UserMessage   *ai.UserMessage   `json:"user_message,omitempty"`
-		AIMessage     *ai.AIMessage     `json:"ai_message,omitempty"`
-		ToolMessage   *ai.ToolMessage   `json:"tool_message,omitempty"`
-		SystemMessage *ai.SystemMessage `json:"system_message,omitempty"`
-	}
-
-	jsonToMessage := func(mj *messageJSON) ai.Message {
-		if mj == nil {
-			return nil
-		}
-		switch mj.Type {
-		case "user_message":
-			if mj.UserMessage != nil {
-				return *mj.UserMessage
-			}
-		case "ai_message":
-			if mj.AIMessage != nil {
-				return *mj.AIMessage
-			}
-		case "tool_message":
-			if mj.ToolMessage != nil {
-				return *mj.ToolMessage
-			}
-		case "system_message":
-			if mj.SystemMessage != nil {
-				return *mj.SystemMessage
-			}
-		}
-		return nil
-	}
 
 	aux := &struct {
 		*Alias

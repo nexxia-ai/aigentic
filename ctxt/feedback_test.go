@@ -1,14 +1,12 @@
 package ctxt
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/nexxia-ai/aigentic/ai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -158,7 +156,8 @@ func TestListTurnArtifactsWithFeedback_EmptyOrMissingMetaExcludesTurn(t *testing
 	turnDir := filepath.Join(ledgerShard, "20250318-aaaaaaaa")
 	require.NoError(t, os.MkdirAll(turnDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(turnDir, "meta.json"), []byte("{}"), 0644))
-	writeTurnJSON(t, turnDir, "20250318-aaaaaaaa", "agent", nil)
+	turn := testTurnFixture("20250318-aaaaaaaa", "agent", nil)
+	require.NoError(t, saveTurn(turnDir, turn))
 
 	artifacts, err := ListTurnArtifactsWithFeedback(baseDir, day, 10)
 	require.NoError(t, err)
@@ -180,6 +179,42 @@ func TestListTurnArtifactsWithFeedback_EmptyAgentNamePreserved(t *testing.T) {
 	assert.Equal(t, "", artifacts[0].AgentName)
 }
 
+func TestFeedbackIndexUpdatesAfterSetMeta(t *testing.T) {
+	base := t.TempDir()
+	turnID := "20250318-index01"
+	turn := testTurnFixture(turnID, "agent-a", nil)
+	turn.RunID = "20250318-runid123"
+	ledger := NewLedger(base)
+	dir := ledger.TurnDir(turnID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	turn.SetLedgerDir(dir)
+	if err := saveTurn(dir, turn); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendShardIndex(filepath.Join(base, ledgerDir, "20250318"), turn); err != nil {
+		t.Fatal(err)
+	}
+	day := time.Date(2025, 3, 18, 0, 0, 0, 0, time.UTC)
+	before, err := ListTurnArtifactsWithFeedback(base, day, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != 0 {
+		t.Fatalf("expected no feedback before SetMeta, got %d", len(before))
+	}
+
+	turn.SetMeta(map[string]string{"feedback": "positive"})
+	arts, err := ListTurnArtifactsWithFeedback(base, day, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arts) != 1 || arts[0].TurnID != turnID {
+		t.Fatalf("artifacts=%+v", arts)
+	}
+}
+
 func TestListTurnArtifactsWithFeedback_EmptyShardReturnsNil(t *testing.T) {
 	baseDir := t.TempDir()
 	day := time.Date(2025, 3, 18, 0, 0, 0, 0, time.UTC)
@@ -191,54 +226,14 @@ func TestListTurnArtifactsWithFeedback_EmptyShardReturnsNil(t *testing.T) {
 
 func mkTurn(t *testing.T, ledgerShard, turnID string, meta map[string]string, agentName string, files []FileRef) {
 	t.Helper()
-	turnDir := filepath.Join(ledgerShard, turnID)
-	require.NoError(t, os.MkdirAll(turnDir, 0755))
-	metaPath := filepath.Join(turnDir, "meta.json")
-	metaData, err := json.MarshalIndent(meta, "", "  ")
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(metaPath, metaData, 0644))
-
-	writeTurnJSON(t, turnDir, turnID, agentName, files)
+	turn := testTurnFixture(turnID, agentName, files)
+	turn.SetMeta(meta)
+	require.NoError(t, saveTurn(filepath.Join(ledgerShard, turnID), turn))
 }
 
 func mkTurnNoMeta(t *testing.T, ledgerShard, turnID string, agentName string, files []FileRef) {
 	t.Helper()
-	turnDir := filepath.Join(ledgerShard, turnID)
-	require.NoError(t, os.MkdirAll(turnDir, 0755))
-	writeTurnJSON(t, turnDir, turnID, agentName, files)
+	turn := testTurnFixture(turnID, agentName, files)
+	require.NoError(t, saveTurn(filepath.Join(ledgerShard, turnID), turn))
 }
 
-func writeTurnJSON(t *testing.T, turnDir, turnID, agentName string, files []FileRef) {
-	t.Helper()
-	if files == nil {
-		files = []FileRef{}
-	}
-	type fileEntry struct {
-		Path            string            `json:"path"`
-		IncludeInPrompt bool              `json:"include_in_prompt"`
-		Ephemeral       bool              `json:"ephemeral"`
-		Metadata        map[string]string `json:"metadata,omitempty"`
-	}
-	entries := make([]fileEntry, len(files))
-	for i, f := range files {
-		entries[i] = fileEntry{
-			Path:            f.Path,
-			IncludeInPrompt: f.IncludeInPrompt,
-			Ephemeral:       f.Ephemeral,
-			Metadata:        f.Meta(),
-		}
-	}
-	payload := map[string]interface{}{
-		"turn_id":          turnID,
-		"run_id":           "20250318-runid123",
-		"user_message":     "test",
-		"agent_name":       agentName,
-		"timestamp":        time.Date(2025, 3, 18, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		"files":            entries,
-		"system_tags":      []TagEntry{},
-		"turn_tags":        []ai.KeyValue{},
-	}
-	data, err := json.MarshalIndent(payload, "", "  ")
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(turnDir, "turn.json"), data, 0644))
-}

@@ -480,8 +480,8 @@ func TestFailTurnPersistsTurnJSONConversationAndErrorMeta(t *testing.T) {
 	require.Equal(t, "error", meta["status"])
 	assert.Contains(t, meta["error"], "402 payment required")
 
-	_, err := os.Stat(filepath.Join(turn.Dir(), "turn.json"))
-	require.NoError(t, err, "turn.json should exist under ledger dir")
+	_, err := os.Stat(filepath.Join(turn.Dir(), "head.json"))
+	require.NoError(t, err, "head.json should exist under ledger dir")
 
 	loaded, err := ctx.Ledger().Get(turns[0].TurnID)
 	require.NoError(t, err)

@@ -75,7 +75,7 @@ func New(id, description, instructions string, basePath string) (*AgentContext, 
 	}
 	ctx.workspace = ws
 	ctx.ledger = NewLedger(absBase)
-	conversationPath := filepath.Join(runDir, aigenticDirName, "conversation.json")
+	conversationPath := conversationPathForPrivateDir(filepath.Join(runDir, aigenticDirName))
 	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
@@ -114,7 +114,7 @@ func NewAtPath(id, description, instructions, runDir string) (*AgentContext, err
 	}
 	ctx.workspace = ws
 	ctx.ledger = NewLedger(basePath)
-	conversationPath := filepath.Join(absRunDir, aigenticDirName, "conversation.json")
+	conversationPath := conversationPathForPrivateDir(filepath.Join(absRunDir, aigenticDirName))
 	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
@@ -150,7 +150,7 @@ func NewChild(id, description, instructions, privateDir, sharedLLMDir, basePath 
 		ledger:      NewLedger(absBase),
 		systemParts: childSystemParts(description, instructions, inheritedParts),
 	}
-	conversationPath := filepath.Join(privateDir, "conversation.json")
+	conversationPath := conversationPathForPrivateDir(privateDir)
 	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	return ctx, nil
@@ -411,7 +411,7 @@ func (r *AgentContext) upsertPendingRef(ref FileRef) {
 
 func (r *AgentContext) SetConversationHistory(history *ConversationHistory) *AgentContext {
 	if history == nil && r.ledger != nil && r.workspace != nil {
-		conversationPath := filepath.Join(r.workspace.PrivateDir, "conversation.json")
+		conversationPath := conversationPathForPrivateDir(r.workspace.PrivateDir)
 		history = NewConversationHistory(r.ledger, conversationPath)
 	}
 	r.conversationHistory = history
@@ -447,6 +447,7 @@ func (r *AgentContext) SetMeta(key string, value interface{}) {
 	}
 	r.runMeta[key] = value
 	r.saveRunMeta()
+	_ = upsertCatalogForContext(r)
 }
 
 func (r *AgentContext) GetMeta(key string) (interface{}, bool) {
@@ -563,9 +564,9 @@ func (r *AgentContext) EndTurn(msg ai.Message) *AgentContext {
 	return r
 }
 
-// FailTurn persists the active turn as failed (turn.json, conversation ref, meta status=error)
+// FailTurn persists the active turn as failed (head.json, conversation ref, meta status=error)
 // when a run stops with a non-nil error before EndTurn. Idempotent if the turn was already
-// appended (ledger has turn.json). Hidden turns are not appended; currentTurn is still reset.
+// appended (ledger has head.json). Hidden turns are not appended; currentTurn is still reset.
 func (r *AgentContext) FailTurn(err error, usage ai.Usage) *AgentContext {
 	if err == nil || r.currentTurn == nil || r.currentTurn.TurnID == "" {
 		return r
@@ -596,6 +597,7 @@ func (r *AgentContext) Turn() *Turn {
 
 func (r *AgentContext) ClearHistory() *AgentContext {
 	r.conversationHistory.Clear()
+	_ = upsertCatalogForContext(r)
 	return r
 }
 
@@ -648,5 +650,6 @@ func (r *AgentContext) save() error {
 	}
 
 	r.saveRunMeta()
+	_ = upsertCatalogForContext(r)
 	return nil
 }

@@ -55,9 +55,9 @@ func discoverChildTurns(ledger *ctxt.Ledger, runRoot string) []childTurnStats {
 				childDir := filepath.Join(subDir, e2.Name())
 				meta := loadRunMeta(childDir)
 				agentName := metaString(meta, "agent_name")
-				refs := loadConversationRefs(filepath.Join(childDir, "conversation.json"))
+				refs, _ := ctxt.LoadConversationRefs(filepath.Join(childDir, ctxt.ConversationLogName))
 				for _, turnID := range refs {
-					turn, err := ledger.Get(turnID)
+					turn, err := ledger.Head(turnID)
 					if err != nil {
 						continue
 					}
@@ -77,20 +77,6 @@ func discoverChildTurns(ledger *ctxt.Ledger, runRoot string) []childTurnStats {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Timestamp.Before(out[j].Timestamp) })
 	return out
-}
-
-func loadConversationRefs(path string) []string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var cf struct {
-		TurnRefs []string `json:"turn_refs"`
-	}
-	if json.Unmarshal(data, &cf) != nil || cf.TurnRefs == nil {
-		return nil
-	}
-	return cf.TurnRefs
 }
 
 func loadRunMeta(privateDir string) map[string]interface{} {

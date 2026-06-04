@@ -500,19 +500,29 @@ if err != nil {
 
 Each agent run uses a `Workspace` (accessed via `AgentContext.Workspace()`) that provides a structured directory layout for agent execution. The workspace is created when an agent run starts. If no base directory is specified, it defaults to the system temporary directory.
 
-**Directory Structure:**
+**Directory Structure (workspace root):**
 
 ```
 {baseDir}/
-  └── {timestamp}-{runID}/
-      ├── llm/
-      │   ├── uploads/  # Documents uploaded for the run
-      │   └── output/   # Agent output files and tool-generated content
-      └── _private/
-          └── main/     # Private workspace state
+  ├── runs/
+  │   ├── catalog.snapshot.json
+  │   ├── catalog.log
+  │   └── {shard}/{runID}/
+  │       ├── llm/uploads, llm/output
+  │       └── _aigentic/
+  │           ├── context.json
+  │           ├── conversation.log
+  │           └── conversation.state.json
+  └── ledger/{shard}/{turnID}/
+      ├── head.json
+      ├── messages.jsonl
+      ├── meta.json
+      └── trace.txt
 ```
 
-Optional memory files can be loaded into prompts via `Workspace.SetMemoryDir()`. Conversation history and turn traces are stored by the Ledger at `basePath/ledger/{shard}/{turnID}/`, where `{shard}` is the UTC calendar date `yyyymmdd` (same convention as run ID prefixes).
+`{shard}` is the UTC calendar date `yyyymmdd` (same convention as run and turn ID prefixes). `ListSessions` reads the run catalog; `FindSession` loads a run by ID directly. `ctxt.RepairWorkspace(basePath)` rebuilds the catalog, per-run conversation logs, and ledger shard indexes from current-format run/turn directories (idempotent; does not remove `llm/` files). Legacy run and turn storage formats are ignored by listing, loading, and repair.
+
+Optional memory files can be loaded into prompts via `Workspace.SetMemoryDir()`. `Ledger.Head(turnID)` loads turn metadata without reading `messages.jsonl` (used for prompt history caps). Full turn bodies use `Ledger.Get`. Benchmark storage paths with `go test ./ctxt -bench=. -benchmem -count=3`.
 
 **File References:**
 

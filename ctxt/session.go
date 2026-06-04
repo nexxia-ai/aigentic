@@ -26,7 +26,6 @@ const (
 	sessionRunStateInactive = "inactive"
 )
 
-// sessionRunMetaIndicatesArchived returns true only when run_meta.json decodes and run_state is inactive.
 func sessionRunMetaIndicatesArchived(privateDir string) bool {
 	data, err := os.ReadFile(filepath.Join(privateDir, "run_meta.json"))
 	if err != nil {
@@ -53,6 +52,40 @@ func deriveBasePath(runDir string) string {
 	return parentDir
 }
 
+// runHasLegacyConversationJSON is a fast legacy probe (one stat). Legacy runs
+// used monolithic conversation.json; current runs use conversation.log.
+func runHasLegacyConversationJSON(runDir string) bool {
+	_, err := os.Stat(filepath.Join(runDir, aigenticDirName, "conversation.json"))
+	return err == nil
+}
+
+// runUsesCurrentStorage fully validates current storage (conversation.log refs
+// resolve to ledger head.json). Used only by RepairWorkspace catalog rebuild.
+func runUsesCurrentStorage(runDir string) bool {
+	privateDir := filepath.Join(runDir, aigenticDirName)
+	if _, err := os.Stat(filepath.Join(privateDir, "context.json")); err != nil {
+		return false
+	}
+	if runHasLegacyConversationJSON(runDir) {
+		return false
+	}
+	refs, err := LoadConversationRefs(conversationPathForPrivateDir(privateDir))
+	if err != nil {
+		return false
+	}
+	if len(refs) == 0 {
+		return true
+	}
+	ledger := NewLedger(deriveBasePath(runDir))
+	for _, turnID := range refs {
+		dir := ledger.TurnDir(turnID)
+		if dir == "" || !turnHeadExists(dir) {
+			return false
+		}
+	}
+	return true
+}
+
 func sessionRunDirs(baseDir string) ([]string, error) {
 	absBaseDir, err := filepath.Abs(baseDir)
 	if err != nil {
@@ -61,32 +94,56 @@ func sessionRunDirs(baseDir string) ([]string, error) {
 
 	runDirs := make([]string, 0)
 	runsDir := filepath.Join(absBaseDir, "runs")
-	if entries, err := os.ReadDir(runsDir); err == nil {
-		for _, shardEntry := range entries {
-			if !shardEntry.IsDir() {
-				continue
-			}
-			shardDir := filepath.Join(runsDir, shardEntry.Name())
-			if _, err := os.Stat(filepath.Join(shardDir, aigenticDirName, "context.json")); err == nil {
-				runDirs = append(runDirs, shardDir)
-				continue
-			}
-			runEntries, err := os.ReadDir(shardDir)
-			if err != nil {
-				continue
-			}
-			for _, runEntry := range runEntries {
-				if !runEntry.IsDir() {
-					continue
-				}
-				runDirs = append(runDirs, filepath.Join(shardDir, runEntry.Name()))
-			}
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return runDirs, nil
 		}
-	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to read runs directory: %w", err)
 	}
-
+	for _, shardEntry := range entries {
+		if !shardEntry.IsDir() {
+			continue
+		}
+		shardDir := filepath.Join(runsDir, shardEntry.Name())
+		runEntries, err := os.ReadDir(shardDir)
+		if err != nil {
+			continue
+		}
+		for _, runEntry := range runEntries {
+			if !runEntry.IsDir() {
+				continue
+			}
+			privateDir := filepath.Join(shardDir, runEntry.Name(), aigenticDirName)
+			if _, err := os.Stat(filepath.Join(privateDir, "context.json")); err != nil {
+				continue
+			}
+			runDir := filepath.Join(shardDir, runEntry.Name())
+			if runHasLegacyConversationJSON(runDir) {
+				continue
+			}
+			runDirs = append(runDirs, runDir)
+		}
+	}
 	return runDirs, nil
+}
+
+func listSessionsFromCatalog(baseDir string, includeArchived bool) ([]Session, error) {
+	entries, err := materializeCatalog(baseDir)
+	if err != nil {
+		return nil, err
+	}
+	var sessions []Session
+	for _, e := range entries {
+		if !includeArchived && e.RunState == sessionRunStateInactive {
+			continue
+		}
+		if !catalogEntryListable(e) {
+			continue
+		}
+		sessions = append(sessions, catalogEntryToSession(e))
+	}
+	return sessions, nil
 }
 
 func ListSessions(baseDir string, opts ...ListSessionsOptions) ([]Session, error) {
@@ -94,25 +151,25 @@ func ListSessions(baseDir string, opts ...ListSessionsOptions) ([]Session, error
 	if len(opts) > 0 {
 		includeArchived = opts[0].IncludeArchived
 	}
-
-	runDirs, err := sessionRunDirs(baseDir)
+	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, err
 	}
-
-	var sessions []Session
-	for _, runDir := range runDirs {
-		privateDir := filepath.Join(runDir, aigenticDirName)
-		if !includeArchived && sessionRunMetaIndicatesArchived(privateDir) {
-			continue
+	if catalogMissing(absBase) {
+		if _, err := os.Stat(runsDir(absBase)); os.IsNotExist(err) {
+			return []Session{}, nil
 		}
-		session, err := loadSession(runDir)
-		if err != nil {
-			continue
+		if err := RepairWorkspace(absBase); err != nil {
+			return nil, err
 		}
-		sessions = append(sessions, *session)
 	}
-
+	sessions, err := listSessionsFromCatalog(absBase, includeArchived)
+	if err != nil {
+		if err2 := RepairWorkspace(absBase); err2 != nil {
+			return nil, err
+		}
+		return listSessionsFromCatalog(absBase, includeArchived)
+	}
 	return sessions, nil
 }
 
@@ -121,11 +178,20 @@ func FindSession(baseDir, runID string) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
-
 	if RunIDShard(runID) == "" {
 		return nil, fmt.Errorf("run not found: %s", runID)
 	}
-	session, err := loadSession(RunDir(absBaseDir, runID))
+	runDir := RunDir(absBaseDir, runID)
+	if _, err := os.Stat(runDir); os.IsNotExist(err) {
+		_ = RepairWorkspace(absBaseDir)
+		if _, err := os.Stat(runDir); os.IsNotExist(err) {
+			return nil, fmt.Errorf("run not found: %s", runID)
+		}
+	}
+	if runHasLegacyConversationJSON(runDir) {
+		return nil, fmt.Errorf("run not found: %s", runID)
+	}
+	session, err := loadSession(runDir)
 	if err != nil || session.ID != runID {
 		return nil, fmt.Errorf("run not found: %s", runID)
 	}
@@ -169,7 +235,7 @@ func LoadContext(runDir string) (*AgentContext, error) {
 	}
 
 	loadRunMeta(ctx, ws.PrivateDir)
-	conversationPath := filepath.Join(ws.PrivateDir, "conversation.json")
+	conversationPath := conversationPathForPrivateDir(ws.PrivateDir)
 	ctx.conversationHistory = NewConversationHistory(ctx.ledger, conversationPath)
 	ctx.UpdateUserTemplate(DefaultUserTemplate)
 	ctx.currentTurn = NewTurn(ctx, "", "", "", "")
@@ -177,7 +243,6 @@ func LoadContext(runDir string) (*AgentContext, error) {
 	return ctx, nil
 }
 
-// skipJSONValue advances the decoder past one complete JSON value.
 func skipJSONValue(d *json.Decoder) error {
 	tok, err := d.Token()
 	if err != nil {
@@ -307,14 +372,10 @@ func loadSession(runDir string) (*Session, error) {
 		Name:    name,
 		Summary: summary,
 		Path:    runDir,
+		Turns:   conversationTurnCount(privateDir),
 	}
 	if err := loadSessionRunMeta(session, privateDir); err != nil {
 		return nil, err
-	}
-	if refs, err := LoadConversationRefs(filepath.Join(privateDir, "conversation.json")); err != nil {
-		return nil, err
-	} else {
-		session.Turns = len(refs)
 	}
 	return session, nil
 }

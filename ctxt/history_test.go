@@ -37,7 +37,7 @@ func TestLedgerGetResolvesTurns(t *testing.T) {
 func TestGetMessagesUsesTurnLimit(t *testing.T) {
 	tmp := t.TempDir()
 	ledger := NewLedger(tmp)
-	h := NewConversationHistory(ledger, filepath.Join(tmp, "conversation.json"))
+	h := NewConversationHistory(ledger, filepath.Join(tmp, ConversationLogName))
 	h.SetTurnLimit(2)
 
 	for i := 0; i < 4; i++ {
@@ -61,7 +61,7 @@ func TestGetMessagesUsesTurnLimit(t *testing.T) {
 func TestGetMessagesAppliesByteBudgetToRecentTurns(t *testing.T) {
 	tmp := t.TempDir()
 	ledger := NewLedger(tmp)
-	h := NewConversationHistory(ledger, filepath.Join(tmp, "conversation.json"))
+	h := NewConversationHistory(ledger, filepath.Join(tmp, ConversationLogName))
 	h.SetBudget(10, 16*1024)
 
 	payload := strings.Repeat("x", 5*1024)
@@ -121,7 +121,7 @@ func TestLedgerGetResolvesUserMessageAndUserData(t *testing.T) {
 func TestGetMessagesSkipsNilRequest(t *testing.T) {
 	tmp := t.TempDir()
 	ledger := NewLedger(tmp)
-	convPath := filepath.Join(tmp, "conversation.json")
+	convPath := filepath.Join(tmp, ConversationLogName)
 	h := NewConversationHistory(ledger, convPath)
 	turnID, _, err := ledger.PrepareTurn(time.Now())
 	if err != nil {
@@ -157,7 +157,7 @@ func TestGetMessagesSkipsNilRequest(t *testing.T) {
 func TestGetMessagesUsesDefaultTurnLimit(t *testing.T) {
 	tmp := t.TempDir()
 	ledger := NewLedger(tmp)
-	h := NewConversationHistory(ledger, filepath.Join(tmp, "conversation.json"))
+	h := NewConversationHistory(ledger, filepath.Join(tmp, ConversationLogName))
 
 	for i := 0; i < 120; i++ {
 		turnID, _, err := ledger.PrepareTurn(time.Now())

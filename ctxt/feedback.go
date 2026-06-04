@@ -21,9 +21,28 @@ type TurnArtifact struct {
 	Files     []FileRef
 }
 
+func loadShardIndexLatest(shardDir string) (map[string]shardIndexLine, error) {
+	indexPath := filepath.Join(shardDir, ShardIndexFileName)
+	latest := make(map[string]shardIndexLine)
+	err := readJSONLLines(indexPath, func(line []byte, _ int, _ bool) error {
+		var row shardIndexLine
+		if err := json.Unmarshal(line, &row); err != nil || row.TurnID == "" {
+			return nil
+		}
+		latest[row.TurnID] = row
+		return nil
+	})
+	if err != nil {
+		if os.IsNotExist(err) {
+			return latest, nil
+		}
+		return nil, err
+	}
+	return latest, nil
+}
+
 // ListTurnArtifactsWithFeedback scans the ledger for a single UTC calendar day and returns turns
-// that have feedback or feedback_comment metadata. Operates on one user's baseDir.
-// The ledger subdirectory is yyyymmdd for day converted to UTC (same convention as turn IDs).
+// that have feedback or feedback_comment metadata.
 func ListTurnArtifactsWithFeedback(baseDir string, day time.Time, limit int) ([]TurnArtifact, error) {
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
@@ -31,35 +50,58 @@ func ListTurnArtifactsWithFeedback(baseDir string, day time.Time, limit int) ([]
 	}
 	shard := day.In(time.UTC).Format("20060102")
 	shardDir := filepath.Join(absBase, ledgerDir, shard)
-	entries, err := os.ReadDir(shardDir)
+	latest, err := loadShardIndexLatest(shardDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	var artifacts []TurnArtifact
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		turnID := e.Name()
-		if turnIDShard(turnID) != shard {
-			continue
-		}
-		metaPath := filepath.Join(shardDir, turnID, "meta.json")
-		meta, err := loadMetaFromPath(metaPath)
+	if len(latest) == 0 {
+		entries, err := os.ReadDir(shardDir)
 		if err != nil {
-			continue
+			if os.IsNotExist(err) {
+				return nil, nil
+			}
+			return nil, err
 		}
-		if !hasFeedback(meta) {
-			continue
+		for _, e := range entries {
+			if !e.IsDir() || e.Name() == ShardIndexFileName {
+				continue
+			}
+			turnID := e.Name()
+			if turnIDShard(turnID) != shard {
+				continue
+			}
+			turnDir := filepath.Join(shardDir, turnID)
+			if !turnHeadExists(turnDir) {
+				continue
+			}
+			t, err := loadTurnHead(turnDir, turnID)
+			if err != nil {
+				continue
+			}
+			latest[turnID] = shardIndexLine{
+				Version:     storageVersion,
+				TurnID:      turnID,
+				RunID:       t.RunID,
+				Timestamp:   t.Timestamp,
+				AgentName:   t.AgentName,
+				HasFeedback: hasFeedbackMeta(t.Meta()),
+			}
+		}
+	}
+	var artifacts []TurnArtifact
+	for turnID, row := range latest {
+		if !row.HasFeedback {
+			metaPath := filepath.Join(shardDir, turnID, "meta.json")
+			meta, err := loadMetaFromPath(metaPath)
+			if err != nil || !hasFeedback(meta) {
+				continue
+			}
 		}
 		if len(artifacts) >= limit {
 			return nil, ErrFeedbackTurnLimitExceeded
 		}
-		turnPath := filepath.Join(shardDir, turnID, "turn.json")
-		t, err := loadTurnFromPath(turnPath, turnID)
+		turnDir := filepath.Join(shardDir, turnID)
+		t, err := loadTurnHead(turnDir, turnID)
 		if err != nil {
 			continue
 		}
@@ -91,25 +133,7 @@ func loadMetaFromPath(path string) (map[string]string, error) {
 }
 
 func hasFeedback(meta map[string]string) bool {
-	if meta == nil {
-		return false
-	}
-	if v := meta["feedback"]; v != "" {
-		return true
-	}
-	if v := meta["feedback_comment"]; v != "" {
-		return true
-	}
-	return false
-}
-
-func loadTurnFromPath(path, turnID string) (*Turn, error) {
-	var t Turn
-	if err := t.loadFromFile(path); err != nil {
-		return nil, err
-	}
-	t.TurnID = turnID
-	return &t, nil
+	return hasFeedbackMeta(meta)
 }
 
 func filterExportableFiles(files []FileRef) []FileRef {

@@ -57,7 +57,9 @@ The `ctxt` package (`github.com/nexxia-ai/aigentic/ctxt`) provides context manag
 - **AgentContext** (`context.go`) - Manages agent state including documents, conversation history, and workspace. Handles file references from tool executions and automatically includes them in subsequent prompts when requested.
 - **PromptPart** (`context.go`) - Ordered key/value system prompt parts. `SetSystemPart` upserts/removes parts while preserving order, and `PromptPart` reads by key.
 - **NewChild** (`context.go`) - Creates a child `AgentContext` with its own `_private/` directory but sharing the parent's `llm/` directory: `NewChild(id, description, instructions, privateDir, sharedLLMDir)`.
-- **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`). Turn storage is managed by the Ledger at `basePath/ledger/{shard}/{turnID}/` where `{shard}` is the UTC calendar date `yyyymmdd`. Use `AgentContext.Workspace()`. `newChildWorkspace(privateDir, sharedLLMDir)` creates workspaces for child contexts.
+- **Workspace** (`workspace.go`) - Provides the structured directory layout for agent execution (`llm/uploads`, `llm/output`). Turn storage is managed by the Ledger at `basePath/ledger/{shard}/{turnID}/` where `{shard}` is the UTC calendar date `yyyymmdd`. Each turn dir holds `head.json` (metadata + request/reply), `messages.jsonl`, `meta.json`, and `trace.txt`. Shard feedback queries use append-only `ledger/{shard}/index.jsonl` (latest-wins per `turn_id`). Use `AgentContext.Workspace()`. `newChildWorkspace(privateDir, sharedLLMDir)` creates workspaces for child contexts.
+- **Run catalog** (`catalog.go`) - `runs/catalog.snapshot.json` plus append-only `runs/catalog.log` for `ListSessions`; catalog entries carry `run_storage_version` so listing skips legacy runs with an in-memory check. Older catalog versions trigger `RepairWorkspace`, which uses full `runUsesCurrentStorage` when rebuilding the catalog. `FindSession` rejects legacy runs via a single `conversation.json` stat. Legacy formats are ignored rather than migrated.
+- **Conversation log** (`conversation_store.go`) - Per-run `_aigentic/conversation.log` (append-only turn IDs) and `conversation.state.json`; replaces monolithic `conversation.json`.
 - **ConversationHistory** (`conversation_history.go`) - Tracks conversation turns across multiple agent runs
 - **Turn** (`turn.go`) - Represents individual conversation turns. Contains `Files []FileRef` to track files registered by tools during the turn.
 - **FileRef** (`fileref.go`) - Canonical file reference with `Path` (relative to LLM dir), `IncludeInPrompt`, `Ephemeral`, `MimeType`, and caller metadata via `Meta()`/`SetMeta()`.
@@ -78,6 +80,7 @@ Files can be attached to agents via `Agent.Files` (create `ctxt.FileRef` values 
 ## Build, Test, and Development Commands
 - Build library: `go build ./...` — compile all packages.
 - Run tests: `go test ./...` — execute unit/integration tests.
+- Storage benchmarks: `go test ./ctxt -bench='Benchmark(ListSessions|FindSession|GetTurns|GetMessages|LedgerHead|EndTurn)' -benchmem -count=3` — quick regression; `go test ./ctxt -bench=. -benchmem -benchtime=3s -count=5` for stable comparisons. Optional: save output to `ctxt/bench_results.txt` (gitignored) and diff locally.
 - Race + coverage: `go test -race -cover ./...` — safety and coverage.
 - Lint (if installed): `golangci-lint run` — run linters across the repo.
 - Example run (if you add a main): `go run ./cmd/<your-app>`.

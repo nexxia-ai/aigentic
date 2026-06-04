@@ -1,6 +1,8 @@
 package ctxt
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -184,6 +186,52 @@ func TestListSessions(t *testing.T) {
 	if !foundInactive {
 		t.Fatal("inactive session missing when IncludeArchived is true")
 	}
+}
+
+func TestListSessionsPreservesRunMeta(t *testing.T) {
+	baseDir := t.TempDir()
+	ctx, err := New(NewRunID(time.Now()), "desc", "inst", baseDir)
+	if err != nil {
+		t.Fatalf("failed to create context: %v", err)
+	}
+	ctx.SetMeta("agent_name", "support-agent")
+	ctx.SetMeta("package_id", "support-agent-1.0.0")
+	ctx.SetMeta("display_name", "Billing question")
+	if err := ctx.save(); err != nil {
+		t.Fatalf("failed to save context: %v", err)
+	}
+
+	sessions, err := ListSessions(baseDir)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if got := metaString(sessions[0].Meta, "agent_name"); got != "support-agent" {
+		t.Fatalf("agent_name = %q, want support-agent", got)
+	}
+	if got := metaString(sessions[0].Meta, "package_id"); got != "support-agent-1.0.0" {
+		t.Fatalf("package_id = %q, want support-agent-1.0.0", got)
+	}
+	if got := metaString(sessions[0].Meta, "display_name"); got != "Billing question" {
+		t.Fatalf("display_name = %q, want Billing question", got)
+	}
+}
+
+func metaString(meta map[string]interface{}, key string) string {
+	if meta == nil {
+		return ""
+	}
+	v, ok := meta[key]
+	if !ok || v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
 }
 
 func TestListSessionsEmpty(t *testing.T) {
@@ -441,6 +489,82 @@ func TestLoadContextMetadataWithHistory(t *testing.T) {
 	}
 	if loaded.GetHistory().Len() != 1 {
 		t.Errorf("expected 1 turn in history, got %d", loaded.GetHistory().Len())
+	}
+}
+
+func writeLegacyRunForTest(t *testing.T, base string, id time.Time) string {
+	t.Helper()
+	runID := NewRunID(id)
+	runDir := RunDir(base, runID)
+	private := filepath.Join(runDir, aigenticDirName)
+	if err := os.MkdirAll(private, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(runDir, "llm"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	ctxData := map[string]string{"id": runID, "name": "legacy", "summary": "s"}
+	data, err := json.Marshal(ctxData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(private, "context.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	ledger := NewLedger(base)
+	turnID, dir, err := ledger.PrepareTurn(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := testTurnFixture(turnID, "a", nil)
+	payload, err := json.Marshal(turn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "turn.json"), payload, 0644); err != nil {
+		t.Fatal(err)
+	}
+	cf := map[string][]string{"turn_refs": []string{turnID}}
+	cdata, err := json.Marshal(cf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(private, "conversation.json"), cdata, 0644); err != nil {
+		t.Fatal(err)
+	}
+	return runID
+}
+
+func TestListSessionsExcludesLegacyStorage(t *testing.T) {
+	base := t.TempDir()
+	now := time.Now().UTC()
+	legacyID := writeLegacyRunForTest(t, base, now)
+	ctx, err := New(NewRunID(now.Add(time.Second)), "d", "i", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx.SetName("current")
+	if err := ctx.save(); err != nil {
+		t.Fatal(err)
+	}
+	ctx.StartTurn("q", "")
+	ctx.EndTurn(ai.AIMessage{Role: ai.AssistantRole, Content: "ok"})
+
+	if err := RepairWorkspace(base); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := ListSessions(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 current session, got %d: %+v", len(sessions), sessions)
+	}
+	if sessions[0].ID == legacyID {
+		t.Fatal("legacy run should not be listed")
+	}
+	if _, err := FindSession(base, legacyID); err == nil {
+		t.Fatal("expected FindSession to fail for legacy run")
 	}
 }
 
